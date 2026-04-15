@@ -50,7 +50,16 @@
       "Bash(tasklist //FI \"IMAGENAME eq claude.cmd\")",
       "Bash(echo '{\"session_id\":\"9bbb58e8-0ee1-4702-a1b3-6685fca39601\",\"transcript_path\":\"C:\\\\\\\\Users\\\\\\\\kite_\\\\\\\\.claude\\\\\\\\projects\\\\\\\\c--Users-kite--Documents-Program-Throughline\\\\\\\\9bbb58e8-0ee1-4702-a1b3-6685fca39601.jsonl\",\"cwd\":\"c:\\\\\\\\Users\\\\\\\\kite_\\\\\\\\Documents\\\\\\\\Program\\\\\\\\Throughline\",\"hook_event_name\":\"Stop\"}')",
       "Bash(node scripts/debug-stop.mjs)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(node --test src/turn-processor.test.mjs)",
+      "Bash(ls -la ~/.throughline/throughline.db*)",
+      "Bash(grep -l \"detail-capture\\\\|INTO details\" c:/Users/kite_/Documents/Program/Throughline/src/*.mjs c:/Users/kite_/Documents/Program/Throughline/.claude/settings.json)",
+      "Bash(cp c:/Users/kite_/.claude/plans/vectorized-tinkering-wadler.md c:/Users/kite_/Documents/Program/Throughline/docs/L1_L2_L3_REDESIGN.md)",
+      "Bash(rm c:/Users/kite_/.claude/plans/vectorized-tinkering-wadler.md)",
+      "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md)",
+      "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/CLAUDE.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md c:/Users/kite_/Documents/Program/Throughline/docs/archive/*.md)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",

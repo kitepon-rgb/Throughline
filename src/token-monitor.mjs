@@ -44,6 +44,41 @@ function color(c, text) {
   return `${c}${text}${ANSI.reset}`;
 }
 
+/** ANSI エスケープシーケンスを除いた可視文字数を返す（サロゲートペア考慮はしない簡易版） */
+function visibleLength(s) {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').length;
+}
+
+/**
+ * 行をターミナル幅に収まるよう切り詰める。ANSI コードを壊さないため、
+ * 可視文字だけを数えながらコピーし、上限に達したら reset を付けて返す。
+ * @param {string} line
+ * @param {number} maxWidth
+ */
+function truncateToWidth(line, maxWidth) {
+  if (maxWidth <= 0) return '';
+  if (visibleLength(line) <= maxWidth) return line;
+  let out = '';
+  let visible = 0;
+  let i = 0;
+  while (i < line.length && visible < maxWidth) {
+    const ch = line[i];
+    if (ch === '\x1b' && line[i + 1] === '[') {
+      // ANSI sequence: copy until final byte (a-zA-Z)
+      const end = line.slice(i).search(/[a-zA-Z]/);
+      if (end === -1) break;
+      out += line.slice(i, i + end + 1);
+      i += end + 1;
+      continue;
+    }
+    out += ch;
+    visible++;
+    i++;
+  }
+  return out + ANSI.reset;
+}
+
 // --- CLI 引数 ---
 function parseArgs(argv) {
   const args = { all: false, session: null };
@@ -156,6 +191,14 @@ function renderFrame(args) {
     }
   }
 
+  // ★ 折り返し対策: 各行を (columns - 1) 幅に切り詰めて物理 1 行に収める。
+  //   こうすれば ANSI.up(lines.length) と論理行数が物理行数と一致する。
+  //   columns - 1 にしてるのはターミナル末尾列に書くと自動改行する端末があるため。
+  const columns = process.stdout.columns && process.stdout.columns > 10
+    ? process.stdout.columns - 1
+    : 120;
+  const clipped = lines.map((l) => truncateToWidth(l, columns));
+
   // 前フレームを消去してから再描画:
   //   1. カーソルを前フレームの先頭行へ戻す (CUU = 行移動のみ)
   //   2. 列 1 へ戻す (CR)
@@ -165,8 +208,8 @@ function renderFrame(args) {
     process.stdout.write(ANSI.up(lastRenderedLines) + '\r' + ANSI.clearBelow);
   }
 
-  process.stdout.write(lines.join('\n') + '\n');
-  lastRenderedLines = lines.length;
+  process.stdout.write(clipped.join('\n') + '\n');
+  lastRenderedLines = clipped.length;
 }
 
 // --- 起動 ---

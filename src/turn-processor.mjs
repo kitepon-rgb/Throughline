@@ -10,7 +10,11 @@
  *      （input session が別セッションに合流済みなら合流先に書く）
  *   2. 最後の assistant ターン + 直前の user ターンのペアを取得
  *   3. L2 本文 (bodies) に user / assistant の 2 行を INSERT
- *   4. Haiku 4.5 で L2 を約 1/5 に要約 → skeletons (L1) に INSERT
+ *   4. 【遅延要約】target 配下の bodies ターン数 (distinct origin×turn) が
+ *      WINDOW (=20) を超えていたら、最古の未要約ターンを 1 件だけ
+ *      Haiku 4.5 で要約 → skeletons (L1) に INSERT。
+ *      20 ターン以内で作業が終わるケースでは Haiku コスト 0。
+ *      /clear 跨ぎでも同様に、合流後のターン総数が 20 超えた時点から逐次発火。
  *      失敗時は L2 全文をそのまま L1 に入れる（情報欠損ゼロ）
  *   5. turn_number=NULL の details レコードを確定 (L3)
  *
@@ -33,6 +37,54 @@ import { getLastTurnPair } from './transcript-reader.mjs';
 import { resolveMergeTarget } from './session-merger.mjs';
 import { writeSessionState } from './state-file.mjs';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
+
+/** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
+export const L2_WINDOW = 20;
+
+/**
+ * target 配下の distinct (origin_session_id, turn_number) ターン数を返す。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {string} target
+ */
+export function countDistinctBodyTurns(db, target) {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM (
+         SELECT DISTINCT origin_session_id, turn_number
+         FROM bodies
+         WHERE session_id = ?
+       )`,
+    )
+    .get(target);
+  return row?.c ?? 0;
+}
+
+/**
+ * bodies に存在し skeletons に未登録の最古ターンを 1 件返す。
+ * 遅延要約のターゲット選択に使う。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {string} target
+ * @returns {{ origin_session_id: string, turn_number: number, created_at: number } | null}
+ */
+export function pickOldestUnsummarizedTurn(db, target) {
+  const row = db
+    .prepare(
+      `SELECT b.origin_session_id, b.turn_number, MIN(b.created_at) AS created_at
+       FROM bodies b
+       WHERE b.session_id = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM skeletons s
+           WHERE s.session_id = b.session_id
+             AND s.origin_session_id = b.origin_session_id
+             AND s.turn_number = b.turn_number
+         )
+       GROUP BY b.origin_session_id, b.turn_number
+       ORDER BY created_at ASC
+       LIMIT 1`,
+    )
+    .get(target);
+  return row ?? null;
+}
 
 /**
  * user と assistant のペアを結合して L2 要約用テキストを作る。
@@ -104,11 +156,14 @@ async function main() {
        (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
+  // user / assistant を「1 往復 = 1 ターン」として扱うため、同じ turn_number
+  // （= assistant 側の turn_number）でペアリングして保存する。
+  // これにより bodies と skeletons が同じ turn_number で突合できる。
   if (userTurn?.content) {
     insertBody.run(
       target,
       origin,
-      userTurn.turn_number,
+      turnNumber,
       'user',
       userTurn.content,
       Math.round(userTurn.content.length / 4),
@@ -119,7 +174,7 @@ async function main() {
     insertBody.run(
       target,
       origin,
-      assistantTurn.turn_number,
+      turnNumber,
       'assistant',
       assistantTurn.content,
       Math.round(assistantTurn.content.length / 4),
@@ -127,15 +182,39 @@ async function main() {
     );
   }
 
-  // L1 = Haiku で L2 を約 1/5 に要約 → skeletons
-  const l2ForSummary = buildL2ForSummary(userTurn, assistantTurn);
-  const { summary } = summarizeToL1(l2ForSummary);
+  // L1 = 遅延要約。target 配下の bodies ターン数 (distinct origin×turn) が
+  // WINDOW を超えていたら、最古の未要約ターンを 1 件だけ要約する。
+  // 20 ターン以内で終わる作業では Haiku コストゼロ。
+  if (countDistinctBodyTurns(db, target) > L2_WINDOW) {
+    const oldest = pickOldestUnsummarizedTurn(db, target);
+    if (oldest) {
+      const rows = db
+        .prepare(
+          `SELECT role, text FROM bodies
+           WHERE session_id = ? AND origin_session_id = ? AND turn_number = ?`,
+        )
+        .all(target, oldest.origin_session_id, oldest.turn_number);
+      const userRow = rows.find((r) => r.role === 'user');
+      const asstRow = rows.find((r) => r.role === 'assistant');
+      const l2ForSummary = buildL2ForSummary(
+        userRow ? { content: userRow.text } : null,
+        asstRow ? { content: asstRow.text } : null,
+      );
+      const { summary } = summarizeToL1(l2ForSummary);
 
-  db.prepare(
-    `INSERT OR IGNORE INTO skeletons
-       (session_id, origin_session_id, turn_number, role, summary, created_at)
-     VALUES (?, ?, ?, 'assistant', ?, ?)`,
-  ).run(target, origin, turnNumber, summary, now);
+      db.prepare(
+        `INSERT OR IGNORE INTO skeletons
+           (session_id, origin_session_id, turn_number, role, summary, created_at)
+         VALUES (?, ?, ?, 'assistant', ?, ?)`,
+      ).run(
+        target,
+        oldest.origin_session_id,
+        oldest.turn_number,
+        summary,
+        oldest.created_at,
+      );
+    }
+  }
 
   // L3 = turn_number=NULL の details レコードを確定
   db.prepare(
