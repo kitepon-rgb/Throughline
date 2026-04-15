@@ -5,10 +5,11 @@
  * 動作:
  *   1. merged_into チェーンを全セッションについて辿り、サイクルを構成するノード集合を検出
  *   2. 各サイクルについて、同プロジェクトの最新非合流セッション (liveTarget) を決定
- *   3. サイクル内の全 skeletons/judgments/details の session_id を liveTarget に付け替え
+ *   3. サイクル内の全 skeletons/details/bodies の session_id を liveTarget に付け替え
  *   4. サイクル内の全セッションの merged_into = liveTarget に設定
  *
  * --dry-run で差分のみ表示。
+ * 注意: judgments テーブルは schema v4 で廃止。v3 DB 残存分は触らない。
  */
 
 import { getDb } from '../src/db.mjs';
@@ -89,9 +90,14 @@ function main() {
     if (dryRun) {
       for (const m of members) {
         const sk = db.prepare('SELECT COUNT(*) c FROM skeletons WHERE session_id = ?').get(m).c;
-        const jg = db.prepare('SELECT COUNT(*) c FROM judgments WHERE session_id = ?').get(m).c;
         const dt = db.prepare('SELECT COUNT(*) c FROM details   WHERE session_id = ?').get(m).c;
-        process.stderr.write(`    ${m}: sk=${sk} jg=${jg} dt=${dt}\n`);
+        let bd = 0;
+        try {
+          bd = db.prepare('SELECT COUNT(*) c FROM bodies WHERE session_id = ?').get(m).c;
+        } catch {
+          // bodies テーブルは v4 以降
+        }
+        process.stderr.write(`    ${m}: sk=${sk} dt=${dt} bd=${bd}\n`);
       }
       continue;
     }
@@ -102,12 +108,17 @@ function main() {
       const sk = db
         .prepare(`UPDATE skeletons SET session_id = ? WHERE session_id IN (${placeholders})`)
         .run(liveTarget, ...members);
-      const jg = db
-        .prepare(`UPDATE judgments SET session_id = ? WHERE session_id IN (${placeholders})`)
-        .run(liveTarget, ...members);
       const dt = db
         .prepare(`UPDATE details   SET session_id = ? WHERE session_id IN (${placeholders})`)
         .run(liveTarget, ...members);
+      let bd = { changes: 0 };
+      try {
+        bd = db
+          .prepare(`UPDATE bodies SET session_id = ? WHERE session_id IN (${placeholders})`)
+          .run(liveTarget, ...members);
+      } catch (err) {
+        if (!/no such table/i.test(err.message || '')) throw err;
+      }
 
       db.prepare(`UPDATE sessions SET merged_into = ? WHERE session_id IN (${placeholders})`).run(
         liveTarget,
@@ -116,7 +127,7 @@ function main() {
 
       db.exec('COMMIT');
       process.stderr.write(
-        `    REPAIRED: moved sk=${sk.changes} jg=${jg.changes} dt=${dt.changes} rows -> ${liveTarget}\n`,
+        `    REPAIRED: moved sk=${sk.changes} dt=${dt.changes} bd=${bd.changes} rows -> ${liveTarget}\n`,
       );
     } catch (err) {
       try {

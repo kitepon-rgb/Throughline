@@ -9,7 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 let _db = null;
 
@@ -126,6 +126,33 @@ function initSchema(db) {
         ON skeletons(session_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_judgments_session
         ON judgments(session_id, resolved, created_at);
+    `);
+  }
+
+  // v3 → v4: bodies テーブル追加（L2 = 会話自然言語ロスレス保存）、judgments DROP
+  if (version < 4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bodies (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id        TEXT    NOT NULL,
+        origin_session_id TEXT    NOT NULL,
+        turn_number       INTEGER NOT NULL,
+        role              TEXT    NOT NULL,
+        text              TEXT    NOT NULL,
+        token_count       INTEGER,
+        created_at        INTEGER NOT NULL,
+        UNIQUE(session_id, origin_session_id, turn_number, role)
+      );
+      CREATE INDEX IF NOT EXISTS idx_bodies_session_created
+        ON bodies(session_id, created_at);
+    `);
+
+    // judgments テーブルと関連インデックスを DROP
+    db.exec(`
+      DROP INDEX IF EXISTS uq_judgments_hash_v3;
+      DROP INDEX IF EXISTS uq_judgments_hash;
+      DROP INDEX IF EXISTS idx_judgments_session;
+      DROP TABLE IF EXISTS judgments;
     `);
   }
 

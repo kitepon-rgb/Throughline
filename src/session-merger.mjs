@@ -50,13 +50,14 @@ export function resolveMergeTarget(db, sessionId) {
  *
  * 実行順序（BEGIN IMMEDIATE トランザクション内）:
  *   1. 前任候補 SELECT（同 project_path, session_id != new, merged_into IS NULL, 最新 updated_at）
- *   2. skeletons / judgments / details の session_id を new に UPDATE
+ *   2. skeletons / details / bodies の session_id を new に UPDATE
+ *      （bodies は schema v4 で追加された L2 テーブル。v3 DB でも UPDATE は no-op で害なし）
  *   3. 前任 sessions.merged_into = new
  *   4. 新セッション sessions.updated_at = now
  *
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {{ newSessionId: string, projectPath: string }} params
- * @returns {{ merged: boolean, predecessorId?: string, rowCounts?: { sk: number, jg: number, dt: number } }}
+ * @returns {{ merged: boolean, predecessorId?: string, rowCounts?: { sk: number, dt: number, bd: number } }}
  */
 export function mergePredecessorInto(db, { newSessionId, projectPath }) {
   db.exec('BEGIN IMMEDIATE');
@@ -86,12 +87,19 @@ export function mergePredecessorInto(db, { newSessionId, projectPath }) {
     const sk = db
       .prepare('UPDATE skeletons SET session_id = ? WHERE session_id = ?')
       .run(newSessionId, predecessorId);
-    const jg = db
-      .prepare('UPDATE judgments SET session_id = ? WHERE session_id = ?')
-      .run(newSessionId, predecessorId);
     const dt = db
       .prepare('UPDATE details SET session_id = ? WHERE session_id = ?')
       .run(newSessionId, predecessorId);
+    // bodies は schema v4 以降のみ存在。v3 DB では 0 changes で害なし
+    let bd = { changes: 0 };
+    try {
+      bd = db
+        .prepare('UPDATE bodies SET session_id = ? WHERE session_id = ?')
+        .run(newSessionId, predecessorId);
+    } catch (err) {
+      // bodies テーブルが未作成の場合は無視（schema v3 DB 互換）
+      if (!/no such table/i.test(err.message || '')) throw err;
+    }
 
     db.prepare('UPDATE sessions SET merged_into = ? WHERE session_id = ?').run(
       newSessionId,
@@ -106,7 +114,7 @@ export function mergePredecessorInto(db, { newSessionId, projectPath }) {
     return {
       merged: true,
       predecessorId,
-      rowCounts: { sk: sk.changes, jg: jg.changes, dt: dt.changes },
+      rowCounts: { sk: sk.changes, dt: dt.changes, bd: bd.changes },
     };
   } catch (err) {
     try {

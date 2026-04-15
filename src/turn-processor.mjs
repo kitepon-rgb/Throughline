@@ -1,27 +1,50 @@
 #!/usr/bin/env node
 /**
- * Stop hook — L1 サマリ生成 + L2 分類 + turn_number 確定
+ * Stop hook — L1 要約生成 + L2 本文保存 + turn_number 確定
  *
  * stdin: { session_id, transcript_path }
  * 処理:
+ *   0. 【再帰ガード】環境変数 THROUGHLINE_IN_HAIKU_SUBPROCESS=1 が立っていたら即 exit
+ *      （Haiku 要約用の claude -p subprocess 内で自分自身の Stop hook として起動された場合）
  *   1. resolveMergeTarget で「実書き込み先 (target) / origin」を解決
  *      （input session が別セッションに合流済みなら合流先に書く）
- *   2. 最後の assistant ターンを取得
- *   3. L1 サマリをヒューリスティックで生成 → skeletons (target, origin)
- *   4. L2 判断をヒューリスティックで抽出 → judgments (target, origin)（重複排除）
- *   5. details の turn_number を確定 (target, origin で絞り込み)
+ *   2. 最後の assistant ターン + 直前の user ターンのペアを取得
+ *   3. L2 本文 (bodies) に user / assistant の 2 行を INSERT
+ *   4. Haiku 4.5 で L2 を約 1/5 に要約 → skeletons (L1) に INSERT
+ *      失敗時は L2 全文をそのまま L1 に入れる（情報欠損ゼロ）
+ *   5. turn_number=NULL の details レコードを確定 (L3)
+ *
+ * schema v4 以降で動作。judgments テーブルは廃止済み。
  */
 
+// ★★★ 再帰暴走ガード ★★★
+// haiku-summarizer が spawn する claude -p は独立した Claude Code セッションで、
+// 同じ .claude/settings.json を読んで自分の Stop hook を起動する。放置すると
+// turn-processor → claude -p → turn-processor → claude -p → ... の無限再帰で
+// 大量の node プロセスが生まれ API 500 を引き起こす。
+// haiku-summarizer が spawn 時に env.THROUGHLINE_IN_HAIKU_SUBPROCESS=1 を設定するので
+// ここで即検出して exit する。env は child_process.spawn で継承される。
+if (process.env.THROUGHLINE_IN_HAIKU_SUBPROCESS === '1') {
+  process.exit(0);
+}
+
 import { getDb } from './db.mjs';
-import { getLastAssistantTurn } from './transcript-reader.mjs';
-import { classifyAssistantText } from './classifier.mjs';
+import { getLastTurnPair } from './transcript-reader.mjs';
 import { resolveMergeTarget } from './session-merger.mjs';
 import { writeSessionState } from './state-file.mjs';
+import { summarizeToL1 } from './haiku-summarizer.mjs';
 
-function buildSummary(content) {
-  if (!content) return '(no content)';
-  const oneline = content.replace(/\n+/g, ' ').trim();
-  return oneline.length <= 200 ? oneline : oneline.slice(0, 197) + '...';
+/**
+ * user と assistant のペアを結合して L2 要約用テキストを作る。
+ * @param {{content: string} | null} userTurn
+ * @param {{content: string} | null} assistantTurn
+ * @returns {string}
+ */
+function buildL2ForSummary(userTurn, assistantTurn) {
+  const parts = [];
+  if (userTurn?.content) parts.push(`[user]: ${userTurn.content}`);
+  if (assistantTurn?.content) parts.push(`[assistant]: ${assistantTurn.content}`);
+  return parts.join('\n\n');
 }
 
 async function main() {
@@ -35,12 +58,11 @@ async function main() {
   });
 
   const payload = JSON.parse(raw || '{}');
-
   const { session_id, transcript_path, cwd } = payload;
   if (!session_id) throw new Error('Missing session_id in Stop payload');
 
   // Stop hook 時点で state ファイルを更新 → token-monitor の「アクティブ行」判定が
-  // アシスタント応答終了時刻まで追従する（§4.5/4.6 設計判断）
+  // アシスタント応答終了時刻まで追従する
   writeSessionState({
     sessionId: session_id,
     projectPath: cwd ?? process.cwd(),
@@ -48,72 +70,84 @@ async function main() {
     pid: process.ppid,
   });
 
-  {
-    const db = getDb();
-    const now = Date.now();
+  const db = getDb();
+  const now = Date.now();
 
-    // merge target 解決: 入力 session が既に合流済みなら target = 合流先
-    const { target, origin } = resolveMergeTarget(db, session_id);
+  // merge target 解決: 入力 session が既に合流済みなら target = 合流先
+  const { target, origin } = resolveMergeTarget(db, session_id);
 
-    // target の sessions 行を upsert
-    const existing = db
-      .prepare('SELECT session_id FROM sessions WHERE session_id = ?')
-      .get(target);
-    if (!existing) {
-      db.prepare(
-        `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
-         VALUES (?, ?, 'active', ?, ?)`,
-      ).run(target, process.cwd(), now, now);
-    } else {
-      db.prepare('UPDATE sessions SET updated_at = ? WHERE session_id = ?').run(
-        now,
-        target,
-      );
-    }
-
-    // 最後の assistant ターンを取得
-    const lastTurn = getLastAssistantTurn(transcript_path);
-    if (!lastTurn) {
-      // /clear 直後などでトランスクリプトが空の場合は何もしない
-      process.exit(0);
-    }
-    const turnNumber = lastTurn.turn_number;
-    const content = lastTurn.content;
-    const summary = buildSummary(content);
-
-    // L1 を skeletons テーブルに保存（重複しないよう IGNORE）
+  // target の sessions 行を upsert
+  const existing = db
+    .prepare('SELECT session_id FROM sessions WHERE session_id = ?')
+    .get(target);
+  if (!existing) {
     db.prepare(
-      `INSERT OR IGNORE INTO skeletons
-         (session_id, origin_session_id, turn_number, role, summary, created_at)
-       VALUES (?, ?, ?, 'assistant', ?, ?)`,
-    ).run(target, origin, turnNumber, summary, now);
-
-    // L2 を judgments テーブルに保存（content_hash で重複排除）
-    const judgments = classifyAssistantText(content);
-    const insertJudgment = db.prepare(
-      `INSERT OR IGNORE INTO judgments
-         (session_id, origin_session_id, turn_number, category, content, content_hash, resolved, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-    );
-    for (const j of judgments) {
-      insertJudgment.run(target, origin, turnNumber, j.category, j.content, j.contentHash, now);
-    }
-
-    // turn_number=NULL の details レコードを確定（origin で絞り、他 origin の残留 NULL を誤埋めしない）
-    db.prepare(
-      `UPDATE details SET turn_number = ?
-       WHERE session_id = ? AND origin_session_id = ? AND turn_number IS NULL`,
-    ).run(turnNumber, target, origin);
-
-    // 30日以上経った resolved=1 の judgments を削除（DB 定期クリーンアップ）
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    db.prepare(`DELETE FROM judgments WHERE resolved = 1 AND created_at < ?`).run(cutoff);
+      `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+       VALUES (?, ?, 'active', ?, ?)`,
+    ).run(target, cwd ?? process.cwd(), now, now);
+  } else {
+    db.prepare('UPDATE sessions SET updated_at = ? WHERE session_id = ?').run(now, target);
   }
+
+  // 最後の assistant ターン + 直前の user ターンを取得
+  const { user: userTurn, assistant: assistantTurn } = getLastTurnPair(transcript_path);
+  if (!assistantTurn) {
+    // /clear 直後などでトランスクリプトが空の場合は何もしない
+    process.exit(0);
+  }
+
+  const turnNumber = assistantTurn.turn_number;
+
+  // L2 = bodies に user / assistant を個別行で保存
+  const insertBody = db.prepare(
+    `INSERT OR IGNORE INTO bodies
+       (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  if (userTurn?.content) {
+    insertBody.run(
+      target,
+      origin,
+      userTurn.turn_number,
+      'user',
+      userTurn.content,
+      Math.round(userTurn.content.length / 4),
+      now,
+    );
+  }
+  if (assistantTurn?.content) {
+    insertBody.run(
+      target,
+      origin,
+      assistantTurn.turn_number,
+      'assistant',
+      assistantTurn.content,
+      Math.round(assistantTurn.content.length / 4),
+      now,
+    );
+  }
+
+  // L1 = Haiku で L2 を約 1/5 に要約 → skeletons
+  const l2ForSummary = buildL2ForSummary(userTurn, assistantTurn);
+  const { summary } = summarizeToL1(l2ForSummary);
+
+  db.prepare(
+    `INSERT OR IGNORE INTO skeletons
+       (session_id, origin_session_id, turn_number, role, summary, created_at)
+     VALUES (?, ?, ?, 'assistant', ?, ?)`,
+  ).run(target, origin, turnNumber, summary, now);
+
+  // L3 = turn_number=NULL の details レコードを確定
+  db.prepare(
+    `UPDATE details SET turn_number = ?
+     WHERE session_id = ? AND origin_session_id = ? AND turn_number IS NULL`,
+  ).run(turnNumber, target, origin);
 
   process.exit(0);
 }
 
 main().catch((err) => {
-  process.stderr.write(`[turn-processor] error: ${err.message}\n`);
+  const msg = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`[turn-processor] error: ${msg}\n`);
   process.exit(1);
 });

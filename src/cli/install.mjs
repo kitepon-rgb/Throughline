@@ -15,13 +15,15 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 
 // Throughline が管理する hook コマンド一覧
+// schema v4 以降: PostToolUse (capture-tool) は廃止。Stop 内で L2/L3 を一括処理する。
 const SC_COMMANDS = [
-  'throughline capture-tool',
   'throughline process-turn',
   'throughline inject-context',
   'throughline session-start',
   // 旧コマンド（アンインストール時に除去する）
+  'throughline capture-tool',
   'node src/detail-capture.mjs',
+  'node src/classifier.mjs',
   'node src/turn-processor.mjs',
   'node src/context-injector.mjs',
 ];
@@ -29,10 +31,6 @@ const SC_COMMANDS = [
 const SC_HOOKS = {
   SessionStart: {
     hooks: [{ type: 'command', command: 'throughline session-start' }],
-  },
-  PostToolUse: {
-    matcher: 'Bash|Write|Edit|Read|Grep|Glob',
-    hooks: [{ type: 'command', command: 'throughline capture-tool' }],
   },
   Stop: {
     hooks: [{ type: 'command', command: 'throughline process-turn' }],
@@ -107,10 +105,9 @@ export async function run(args = []) {
   console.log(`  ${settingsPath}`);
   console.log('');
   console.log('有効な hooks:');
-  console.log('  SessionStart     → throughline session-start   (セッション記録)');
-  console.log('  PostToolUse      → throughline capture-tool    (L3 キャプチャ)');
-  console.log('  Stop             → throughline process-turn    (L1 生成)');
-  console.log('  UserPromptSubmit → throughline inject-context  (L1+L2 再注入)');
+  console.log('  SessionStart     → throughline session-start   (セッション記録・記憶張り替え)');
+  console.log('  Stop             → throughline process-turn    (L1 要約 + L2 本文保存)');
+  console.log('  UserPromptSubmit → throughline inject-context  (L1/L2 注入)');
   console.log('');
   console.log('  アンインストール: throughline uninstall');
 }

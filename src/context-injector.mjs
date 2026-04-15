@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * UserPromptSubmit hook — L1+L2 の通常再注入
+ * UserPromptSubmit hook — 前任ターンの再注入（schema v4 新設計）
  *
  * ユーザーがメッセージを送るたびに呼ばれる。
- * SQLite から現プロジェクトの L1+L2 を読んで生テキストで stdout に出力する。
+ * 注入対象は「前任チェーンの過去ターンのみ」。現セッション内のターンは
+ * Claude Code 本体のコンテキストに既に全文入っているので注入しない。
  *
  * 【/clear 後の引き継ぎは SessionStart hook 側で完了している前提】
- *   SessionStart が前任を張り替え、新セッション配下に L1/L2/L3 を寄せ集めている。
- *   本 hook は毎ターン「現セッション (= 合流先)」の最新状態を再注入するだけ。
+ *   SessionStart が前任を張り替え、新セッション配下に bodies/skeletons/details を
+ *   寄せ集めている。本 hook は毎ターン前任分を再注入するだけ。
  *
  * 【merge 追従】
  *   並行セッション A が B に合流された後に A から UserPromptSubmit が来る可能性があるため、
@@ -46,11 +47,13 @@ async function main() {
   const db = getDb();
 
   // merge 追従: payload.session_id が既に合流されていたら合流先を使う
-  const { target } = resolveMergeTarget(db, payload.session_id);
+  const { target, origin } = resolveMergeTarget(db, payload.session_id);
 
+  // 現セッション origin のターンは既に Claude Code 本体のコンテキストにあるので除外
   const context = buildResumeContext(db, {
     sessionId: target,
     isInheritance: false,
+    excludeOriginId: origin,
   });
 
   if (context) {

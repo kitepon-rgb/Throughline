@@ -91,3 +91,40 @@ export function getLastAssistantTurn(transcriptPath) {
   }
   return null;
 }
+
+/**
+ * 最後の assistant ターンと、それに対応する直前の user ターンをペアで返す。
+ * Stop フックで L2 (bodies) に 1 往復分を保存するために使う。
+ *
+ * user メッセージには tool_result のような合成メッセージも混じるが、
+ * readTranscript() は text ブロックだけを抽出しているので、text が
+ * 空の user メッセージは自動的に除外されている（= tool_result のみの行は弾かれる）。
+ *
+ * @param {string} transcriptPath
+ * @returns {{
+ *   user: {role: string, content: string, turn_number: number} | null,
+ *   assistant: {role: string, content: string, turn_number: number} | null
+ * }}
+ */
+export function getLastTurnPair(transcriptPath) {
+  const turns = readTranscript(transcriptPath);
+  let assistantIdx = -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role === 'assistant') {
+      assistantIdx = i;
+      break;
+    }
+  }
+  if (assistantIdx < 0) return { user: null, assistant: null };
+
+  // assistant の直前の user ターンを探す
+  let userTurn = null;
+  for (let i = assistantIdx - 1; i >= 0; i--) {
+    if (turns[i].role === 'user') {
+      userTurn = turns[i];
+      break;
+    }
+  }
+
+  return { user: userTurn, assistant: turns[assistantIdx] };
+}

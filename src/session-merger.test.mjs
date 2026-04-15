@@ -23,15 +23,14 @@ function makeDb() {
       summary TEXT NOT NULL,
       created_at INTEGER NOT NULL
     );
-    CREATE TABLE judgments (
+    CREATE TABLE bodies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL,
-      origin_session_id TEXT,
+      origin_session_id TEXT NOT NULL,
       turn_number INTEGER NOT NULL,
-      category TEXT NOT NULL,
-      content TEXT NOT NULL,
-      content_hash TEXT NOT NULL,
-      resolved INTEGER NOT NULL DEFAULT 0,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      token_count INTEGER,
       created_at INTEGER NOT NULL
     );
     CREATE TABLE details (

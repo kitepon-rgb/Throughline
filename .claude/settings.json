@@ -15,11 +15,48 @@
       "Bash(node scripts/repair-merge-cycles.mjs --dry-run)",
       "Bash(node scripts/repair-merge-cycles.mjs)",
       "Bash(node --test src/session-merger.test.mjs)",
-      "Bash(node --input-type=module -e \"import {getDb} from './src/db.mjs'; import {resolveMergeTarget} from './src/session-merger.mjs'; const db=getDb\\(\\); const r=db.prepare\\('SELECT session_id, merged_into FROM sessions ORDER BY updated_at DESC'\\).all\\(\\); console.log\\('total:', r.length\\); console.log\\('unmerged:', r.filter\\(x=>x.merged_into===null\\).length\\); const t=db.prepare\\('SELECT COUNT\\(*\\) c FROM skeletons WHERE session_id=?'\\).get\\('7c57fdfd-17fe-4ef9-b9f8-a32be3c01f16'\\).c; console.log\\('7c57 skeletons:', t\\); console.log\\('resolve 2ed5 ->', resolveMergeTarget\\(db, '2ed5039c-0093-45cb-8326-17af07780c13'\\).target\\);\")"
+      "Bash(node --input-type=module -e \"import {getDb} from './src/db.mjs'; import {resolveMergeTarget} from './src/session-merger.mjs'; const db=getDb\\(\\); const r=db.prepare\\('SELECT session_id, merged_into FROM sessions ORDER BY updated_at DESC'\\).all\\(\\); console.log\\('total:', r.length\\); console.log\\('unmerged:', r.filter\\(x=>x.merged_into===null\\).length\\); const t=db.prepare\\('SELECT COUNT\\(*\\) c FROM skeletons WHERE session_id=?'\\).get\\('7c57fdfd-17fe-4ef9-b9f8-a32be3c01f16'\\).c; console.log\\('7c57 skeletons:', t\\); console.log\\('resolve 2ed5 ->', resolveMergeTarget\\(db, '2ed5039c-0093-45cb-8326-17af07780c13'\\).target\\);\")",
+      "Bash(powershell -Command \"Get-Process -Id 77192 -ErrorAction SilentlyContinue | Select-Object Id, Name\")",
+      "Bash(powershell -Command \"Get-Process -Id 5864 -ErrorAction SilentlyContinue | Select-Object Id, Name\")",
+      "Bash(powershell -Command 'Get-CimInstance Win32_Process -Filter \"Name='\\\\''node.exe'\\\\''\" | Where-Object { $_.CommandLine -like '\\\\''*token-monitor*'\\\\'' } | Select-Object ProcessId')",
+      "Bash(powershell -Command \"Stop-Process -Id 37396 -Force\")",
+      "Bash(ls ~/.claude/projects/c--Users-kite--Documents-Program-Throughline/*.jsonl)",
+      "Bash(powershell -Command 'Get-CimInstance Win32_Process -Filter \"Name='\\\\''node.exe'\\\\''\" | Where-Object { $_.CommandLine -like '\\\\''*token-monitor*'\\\\'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }')",
+      "Bash(echo '{\"session_id\":\"7c57fdfd-17fe-4ef9-b9f8-a32be3c01f16\",\"cwd\":\"c:\\\\\\\\Users\\\\\\\\kite_\\\\\\\\Documents\\\\\\\\Program\\\\\\\\Throughline\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"test\"}')",
+      "Bash(node -e 'const p=JSON.stringify\\({session_id:\"7c57fdfd-17fe-4ef9-b9f8-a32be3c01f16\",cwd:process.cwd\\(\\),hook_event_name:\"UserPromptSubmit\",prompt:\"test\"}\\);require\\(\"child_process\"\\).execSync\\(\"node src/context-injector.mjs\",{input:p,stdio:[\"pipe\",\"inherit\",\"inherit\"]}\\)')",
+      "WebFetch(domain:www3.nhk.or.jp)",
+      "WebFetch(domain:ja.wikipedia.org)",
+      "Bash(claude --version)",
+      "Bash(claude -p --model claude-haiku-4-5-20251001 \"次の日本語テキストを約370文字に要約してください。固有名詞・数値・因果関係を優先して残し、枝葉は落としてください。要約文だけを出力し、前置きや説明は不要です。\")",
+      "Bash(claude -p --model claude-haiku-4-5-20251001 \"次の日本語テキストを約185文字に要約してください。固有名詞・数値・因果関係を優先して残し、枝葉は落としてください。要約文だけを出力し、前置きや説明は不要です。\")",
+      "Bash(claude -p --model claude-haiku-4-5-20251001 \"次の日本語テキストを約93文字に要約してください。固有名詞・数値・因果関係を優先して残し、枝葉は落としてください。要約文だけを出力し、前置きや説明は不要です。\")",
+      "Bash(claude -p --model claude-haiku-4-5-20251001 \"次の日本語テキストを約280文字に要約してください。固有名詞・数値・因果関係を優先して残し、枝葉は落としてください。要約文だけを出力し、前置きや説明は不要です。\")",
+      "Bash(claude -p --model claude-haiku-4-5-20251001 \"次の日本語テキストを約140文字に要約してください。固有名詞・数値・因果関係を優先して残し、枝葉は落としてください。要約文だけを出力し、前置きや説明は不要です。\")",
+      "Bash(python -c ' *)",
+      "Read(//c/temp/**)",
+      "Bash(node src/sc-detail.mjs 14:23:05)",
+      "Bash(node --check src/haiku-summarizer.mjs)",
+      "Bash(node --check src/sc-detail.mjs)",
+      "Bash(node --check bin/throughline.mjs)",
+      "Bash(node --check src/cli/install.mjs)",
+      "Bash(node --check src/resume-context.mjs)",
+      "Bash(taskkill //IM claude.cmd //F)",
+      "Bash(taskkill //IM claude.exe //F)",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(ls -la ~/.throughline/*.log)",
+      "Bash(THROUGHLINE_IN_HAIKU_SUBPROCESS=1 echo '{\"session_id\":\"test\",\"transcript_path\":\"nonexistent\",\"cwd\":\"c:\\\\\\\\Users\\\\\\\\kite_\\\\\\\\Documents\\\\\\\\Program\\\\\\\\Throughline\"}')",
+      "Bash(THROUGHLINE_IN_HAIKU_SUBPROCESS=1 node src/turn-processor.mjs)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(tasklist //FI \"IMAGENAME eq claude.cmd\")",
+      "Bash(echo '{\"session_id\":\"9bbb58e8-0ee1-4702-a1b3-6685fca39601\",\"transcript_path\":\"C:\\\\\\\\Users\\\\\\\\kite_\\\\\\\\.claude\\\\\\\\projects\\\\\\\\c--Users-kite--Documents-Program-Throughline\\\\\\\\9bbb58e8-0ee1-4702-a1b3-6685fca39601.jsonl\",\"cwd\":\"c:\\\\\\\\Users\\\\\\\\kite_\\\\\\\\Documents\\\\\\\\Program\\\\\\\\Throughline\",\"hook_event_name\":\"Stop\"}')",
+      "Bash(node scripts/debug-stop.mjs)",
+      "Bash(git add *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",
-      "C:\\Users\\kite_\\.smart-compact"
+      "C:\\Users\\kite_\\.smart-compact",
+      "C:\\Users\\kite_\\.throughline",
+      "\\tmp"
     ]
   },
   "hooks": {
@@ -41,27 +78,12 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash|Write|Edit|Read|Grep|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "throughline capture-tool"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "throughline process-turn"
-          },
-          {
-            "type": "command",
-            "command": "node spike/session-link-writer.mjs"
           },
           {
             "type": "command",

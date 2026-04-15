@@ -9,7 +9,12 @@ export async function run() {
 
   const sessions = db.prepare('SELECT COUNT(*) as count FROM sessions').get();
   const skeletons = db.prepare('SELECT COUNT(*) as count FROM skeletons').get();
-  const judgments = db.prepare('SELECT COUNT(*) as count FROM judgments WHERE resolved = 0').get();
+  let bodies = { count: 0 };
+  try {
+    bodies = db.prepare('SELECT COUNT(*) as count FROM bodies').get();
+  } catch {
+    // bodies テーブルは schema v4 以降。v3 DB では存在しない
+  }
   const details = db.prepare('SELECT COUNT(*) as count FROM details').get();
 
   const recentSessions = db.prepare(`
@@ -22,7 +27,7 @@ export async function run() {
   console.log('throughline status\n');
   console.log(`  sessions  : ${sessions.count}`);
   console.log(`  skeletons : ${skeletons.count} (L1)`);
-  console.log(`  judgments : ${judgments.count} (L2, unresolved)`);
+  console.log(`  bodies    : ${bodies.count} (L2)`);
   console.log(`  details   : ${details.count} (L3)`);
   console.log('');
   console.log('最近のセッション:');
