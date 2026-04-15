@@ -29,7 +29,8 @@ const ANSI = {
   showCursor: '\x1b[?25h',
   clearLine: '\x1b[2K',
   clearScreen: '\x1b[2J\x1b[H',
-  up: (n) => `\x1b[${n}F`,
+  clearBelow: '\x1b[0J',        // 現在位置から画面末尾までをクリア
+  up: (n) => `\x1b[${n}A`,       // CUU: カーソルを N 行上へ (列は変えない)
   reset: '\x1b[0m',
   dim: '\x1b[2m',
   bold: '\x1b[1m',
@@ -155,14 +156,13 @@ function renderFrame(args) {
     }
   }
 
-  // 前フレームを消去してから再描画
+  // 前フレームを消去してから再描画:
+  //   1. カーソルを前フレームの先頭行へ戻す (CUU = 行移動のみ)
+  //   2. 列 1 へ戻す (CR)
+  //   3. 現在位置から画面末尾までを一括消去 (ED 0)
+  // CPL (\x1b[nF) は VSCode 統合ターミナルで挙動が不安定だったため使わない
   if (lastRenderedLines > 0) {
-    process.stdout.write(ANSI.up(lastRenderedLines));
-    for (let i = 0; i < lastRenderedLines; i++) {
-      process.stdout.write(ANSI.clearLine);
-      if (i < lastRenderedLines - 1) process.stdout.write('\n');
-    }
-    process.stdout.write(ANSI.up(lastRenderedLines - 1));
+    process.stdout.write(ANSI.up(lastRenderedLines) + '\r' + ANSI.clearBelow);
   }
 
   process.stdout.write(lines.join('\n') + '\n');

@@ -37,23 +37,39 @@ import { readFileSync, statSync, existsSync } from 'node:fs';
  */
 
 /**
- * モデル名 + 実測トークン数から context_window_size を推論する。
+ * モデル名 + 実測トークン数 + transcript 本文のヒントから context_window_size を推論する。
  *
  * 注意: Claude Code の transcript JSONL の `message.model` は base name のみで
  * `[1m]` サフィックスが含まれない（実測確認済み 2026-04-15）。slug/entrypoint/version にも
  * 1M コンテキスト識別子は無い。そのため純粋なモデル名推論では 1M セッションを検出できない。
- * 対策: 実測トークン数が 200k を超えていたら 1M コンテキストとみなす（事後検出）。
+ *
+ * 検出優先順位:
+ *   1. モデル名に `[1m]` サフィックス
+ *   2. transcript 本文に `[1m]` / `1M context` 文字列（Claude の system prompt 由来）
+ *   3. 実測トークン数 > 200k（事後検出、フォールバック）
  *
  * @param {string} model
  * @param {number} [observedTokens=0]
+ * @param {boolean} [rawHint=false] - transcript 本文に 1M 識別子が含まれるか
  * @returns {number}
  */
-export function inferContextWindowSize(model, observedTokens = 0) {
-  // 明示的な [1m] サフィックスがあれば即 1M
+export function inferContextWindowSize(model, observedTokens = 0, rawHint = false) {
   if (model && /\[1m\]/i.test(model)) return 1_000_000;
-  // 事後検出: 200k を超えているなら 1M コンテキスト確定
+  if (rawHint) return 1_000_000;
   if (observedTokens > 200_000) return 1_000_000;
   return 200_000;
+}
+
+/**
+ * transcript 本文に 1M コンテキスト識別子が含まれるかを判定する。
+ * Claude の system prompt に "claude-opus-4-6[1m]" や "(with 1M context)" が
+ * 含まれる場合、transcript JSONL の本文にも当該文字列が現れる。
+ *
+ * @param {string} raw
+ * @returns {boolean}
+ */
+function hasContextWindowHint(raw) {
+  return /\[1m\]|1M context/i.test(raw);
 }
 
 /** @type {Map<string, {size: number, sample: UsageSample|null}>} */
@@ -74,6 +90,7 @@ export function readLatestUsage(transcriptPath) {
   }
 
   const raw = readFileSync(transcriptPath, 'utf8');
+  const rawHint = hasContextWindowHint(raw);
   let latest = null;
   for (const line of raw.split('\n')) {
     const trimmed = line.trim();
@@ -96,7 +113,7 @@ export function readLatestUsage(transcriptPath) {
     latest = {
       tokens,
       model,
-      contextWindowSize: inferContextWindowSize(model, tokens),
+      contextWindowSize: inferContextWindowSize(model, tokens, rawHint),
       outputTokens: usage.output_tokens ?? 0,
     };
   }
