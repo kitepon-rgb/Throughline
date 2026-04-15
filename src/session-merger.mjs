@@ -61,16 +61,20 @@ export function resolveMergeTarget(db, sessionId) {
 export function mergePredecessorInto(db, { newSessionId, projectPath }) {
   db.exec('BEGIN IMMEDIATE');
   try {
+    // 時系列単調制約: 前任は新セッションより created_at が古いものに限る。
+    // これにより merge chain は厳密に時系列順となり、循環参照が構造的に発生不可能になる。
+    // (同時刻に複数 SessionStart が発火しても、自分自身より新しいセッションは選ばない)
     const pred = db
       .prepare(
         `SELECT session_id FROM sessions
          WHERE lower(project_path) = lower(?)
            AND session_id != ?
            AND merged_into IS NULL
+           AND created_at < (SELECT created_at FROM sessions WHERE session_id = ?)
          ORDER BY updated_at DESC
          LIMIT 1`,
       )
-      .get(projectPath, newSessionId);
+      .get(projectPath, newSessionId, newSessionId);
 
     if (!pred) {
       db.exec('COMMIT');

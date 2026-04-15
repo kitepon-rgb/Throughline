@@ -10,10 +10,16 @@
       "Bash(throughline doctor *)",
       "Bash(powershell -Command 'Get-CimInstance Win32_Process -Filter \"Name='\\\\''node.exe'\\\\''\" | Where-Object { $_.CommandLine -like '\\\\''*token-monitor*'\\\\'' } | Select-Object ProcessId, CommandLine | Format-List')",
       "Bash(powershell -Command \"Stop-Process -Id 31728 -Force\")",
-      "Bash(gh repo *)"
+      "Bash(gh repo *)",
+      "Bash(node --input-type=module -e \"import {getDb} from './src/db.mjs'; const db=getDb\\(\\); const rows=db.prepare\\('SELECT session_id, merged_into, created_at, updated_at FROM sessions ORDER BY updated_at DESC'\\).all\\(\\); console.log\\(JSON.stringify\\(rows,null,2\\)\\);\")",
+      "Bash(node scripts/repair-merge-cycles.mjs --dry-run)",
+      "Bash(node scripts/repair-merge-cycles.mjs)",
+      "Bash(node --test src/session-merger.test.mjs)",
+      "Bash(node --input-type=module -e \"import {getDb} from './src/db.mjs'; import {resolveMergeTarget} from './src/session-merger.mjs'; const db=getDb\\(\\); const r=db.prepare\\('SELECT session_id, merged_into FROM sessions ORDER BY updated_at DESC'\\).all\\(\\); console.log\\('total:', r.length\\); console.log\\('unmerged:', r.filter\\(x=>x.merged_into===null\\).length\\); const t=db.prepare\\('SELECT COUNT\\(*\\) c FROM skeletons WHERE session_id=?'\\).get\\('7c57fdfd-17fe-4ef9-b9f8-a32be3c01f16'\\).c; console.log\\('7c57 skeletons:', t\\); console.log\\('resolve 2ed5 ->', resolveMergeTarget\\(db, '2ed5039c-0093-45cb-8326-17af07780c13'\\).target\\);\")"
     ],
     "additionalDirectories": [
-      "C:\\Users\\kite_\\.throughline\\state"
+      "C:\\Users\\kite_\\.throughline\\state",
+      "C:\\Users\\kite_\\.smart-compact"
     ]
   },
   "hooks": {
