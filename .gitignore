@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.log
+
+# Per-machine local Claude Code permissions
+.claude/settings.local.json

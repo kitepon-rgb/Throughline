@@ -1,0 +1,28 @@
+{
+  "name": "throughline",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Claude Code hooks plugin for structured context compression (/clear-safe persistent memory)",
+  "keywords": ["claude-code", "hooks", "context-compression", "llm"],
+  "author": "kitepon",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kitepon-rgb/Throughline"
+  },
+  "bin": {
+    "throughline": "./bin/throughline.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test src/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

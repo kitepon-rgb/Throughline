@@ -1,0 +1,173 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(node --input-type=module -e \"import {getDb} from './src/db.mjs'; const db=getDb\\(\\); console.log\\('sessions:', JSON.stringify\\(db.prepare\\('SELECT session_id, project_path, merged_into, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 5'\\).all\\(\\), null, 2\\)\\); console.log\\('skel count by session:', JSON.stringify\\(db.prepare\\('SELECT session_id, COUNT\\(*\\) c, COUNT\\(DISTINCT origin_session_id\\) origins FROM skeletons GROUP BY session_id ORDER BY c DESC LIMIT 5'\\).all\\(\\), null, 2\\)\\);\")",
+      "Bash(node --input-type=module -e \"import {getDb} from './src/db.mjs'; const db=getDb\\(\\); const s=db.prepare\\('SELECT COUNT\\(*\\) c FROM sessions'\\).get\\(\\); const k=db.prepare\\('SELECT COUNT\\(*\\) c FROM skeletons'\\).get\\(\\); console.log\\('sessions:', s.c, 'skeletons:', k.c\\);\")",
+      "Bash(where throughline *)",
+      "Bash(where smart-compact *)",
+      "Bash(npm unlink *)",
+      "Bash(throughline doctor *)",
+      "Bash(powershell -Command 'Get-CimInstance Win32_Process -Filter \"Name='\\\\''node.exe'\\\\''\" | Where-Object { $_.CommandLine -like '\\\\''*token-monitor*'\\\\'' } | Select-Object ProcessId, CommandLine | Format-List')",
+      "Bash(powershell -Command \"Stop-Process -Id 31728 -Force\")",
+      "Bash(gh repo *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\kite_\\.throughline\\state"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/session-link-reader.mjs"
+          },
+          {
+            "type": "command",
+            "command": "throughline session-start"
+          },
+          {
+            "type": "command",
+            "command": "node spike/test-session-start.mjs"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "throughline capture-tool"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "throughline process-turn"
+          },
+          {
+            "type": "command",
+            "command": "node spike/session-link-writer.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs Stop"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "throughline inject-context"
+          },
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs SessionEnd"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs StopFailure"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs SubagentStart"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs SubagentStop"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs PostToolUseFailure"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs PermissionRequest"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs PreCompact"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node spike/hook-logger.mjs Notification"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "ecc@ecc": true
+  },
+  "extraKnownMarketplaces": {
+    "ecc": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/affaan-m/everything-claude-code.git"
+      }
+    }
+  }
+}
