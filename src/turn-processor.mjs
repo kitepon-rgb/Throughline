@@ -33,7 +33,12 @@ if (process.env.THROUGHLINE_IN_HAIKU_SUBPROCESS === '1') {
 }
 
 import { getDb } from './db.mjs';
-import { getLastTurnPair } from './transcript-reader.mjs';
+import {
+  getLastTurnPair,
+  readRawEntries,
+  sliceCurrentTurnEntries,
+  extractDetailBlocks,
+} from './transcript-reader.mjs';
 import { resolveMergeTarget } from './session-merger.mjs';
 import { writeSessionState } from './state-file.mjs';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
@@ -216,11 +221,38 @@ async function main() {
     }
   }
 
-  // L3 = turn_number=NULL の details レコードを確定
-  db.prepare(
-    `UPDATE details SET turn_number = ?
-     WHERE session_id = ? AND origin_session_id = ? AND turn_number IS NULL`,
-  ).run(turnNumber, target, origin);
+  // L3 = transcript から tool_use / tool_result / attachment (hook) を抽出して details に INSERT
+  // extractDetailBlocks はこの論理ターンの範囲のみをスキャンする。再実行時は
+  // source_id ベースの UNIQUE 制約で冪等性を確保（INSERT OR IGNORE）。
+  const allEntries = transcript_path ? readRawEntries(transcript_path) : [];
+  const turnEntries = sliceCurrentTurnEntries(allEntries);
+  const detailBlocks = extractDetailBlocks(turnEntries);
+
+  if (detailBlocks.length > 0) {
+    const insertDetail = db.prepare(
+      `INSERT OR IGNORE INTO details
+         (session_id, origin_session_id, turn_number, tool_name, input_text, output_text,
+          token_count, created_at, kind, source_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const d of detailBlocks) {
+      const tokenCount = Math.round(
+        ((d.input_text?.length ?? 0) + (d.output_text?.length ?? 0)) / 4,
+      );
+      insertDetail.run(
+        target,
+        origin,
+        turnNumber,
+        d.tool_name,
+        d.input_text,
+        d.output_text,
+        tokenCount,
+        now,
+        d.kind,
+        d.source_id,
+      );
+    }
+  }
 
   process.exit(0);
 }

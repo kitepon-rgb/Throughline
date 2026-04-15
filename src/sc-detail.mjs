@@ -128,36 +128,76 @@ function main() {
     lines.push('');
   }
 
-  // 対応する L3 を details から取得
+  // 対応する L3 を details から取得（kind 別に表示）
   const detailRows = [];
   for (const key of turnKeys) {
     const [sid, origin, turn] = key.split('\x00');
     const rows = db
       .prepare(
-        `SELECT turn_number, tool_name, input_text, output_text, created_at
+        `SELECT id, turn_number, kind, tool_name, input_text, output_text, created_at
          FROM details
          WHERE session_id = ? AND origin_session_id = ? AND turn_number = ?
-         ORDER BY created_at ASC`,
+         ORDER BY id ASC`,
       )
       .all(sid, origin, Number(turn));
     for (const row of rows) detailRows.push(row);
   }
 
   if (detailRows.length > 0) {
-    lines.push('### L3 (ツール入出力)');
-    for (const d of detailRows) {
-      lines.push(`[${formatTime(d.created_at)}] ${d.tool_name}`);
-      if (d.input_text) {
-        lines.push(`  IN:  ${d.input_text.replace(/\n/g, '\n       ')}`);
+    const toolRows = detailRows.filter(
+      (d) => d.kind === 'tool_input' || d.kind === 'tool_output',
+    );
+    const systemRows = detailRows.filter((d) => d.kind === 'system');
+    const imageRows = detailRows.filter((d) => d.kind === 'image');
+    const legacyRows = detailRows.filter(
+      (d) => !['tool_input', 'tool_output', 'system', 'image'].includes(d.kind),
+    );
+
+    if (toolRows.length > 0) {
+      lines.push('### L3 (ツール入出力)');
+      for (const d of toolRows) {
+        const marker = d.kind === 'tool_input' ? 'IN ' : 'OUT';
+        lines.push(`[${formatTime(d.created_at)}] ${marker} ${d.tool_name}`);
+        if (d.input_text) {
+          lines.push(`  IN:  ${d.input_text.replace(/\n/g, '\n       ')}`);
+        }
+        if (d.output_text) {
+          lines.push(`  OUT: ${d.output_text.replace(/\n/g, '\n       ')}`);
+        }
+        lines.push('');
       }
-      if (d.output_text) {
-        lines.push(`  OUT: ${d.output_text.replace(/\n/g, '\n       ')}`);
+    }
+
+    if (systemRows.length > 0) {
+      lines.push('### L3 (システムメッセージ / hook 出力)');
+      for (const d of systemRows) {
+        lines.push(`[${formatTime(d.created_at)}] ${d.tool_name}`);
+        if (d.input_text) lines.push(`  CMD: ${d.input_text}`);
+        if (d.output_text) lines.push(`  OUT: ${d.output_text.replace(/\n/g, '\n       ')}`);
+        lines.push('');
+      }
+    }
+
+    if (imageRows.length > 0) {
+      lines.push('### L3 (画像)');
+      for (const d of imageRows) {
+        lines.push(`[${formatTime(d.created_at)}] ${d.output_text ?? '[image]'}`);
       }
       lines.push('');
     }
+
+    if (legacyRows.length > 0) {
+      lines.push('### L3 (legacy)');
+      for (const d of legacyRows) {
+        lines.push(`[${formatTime(d.created_at)}] ${d.tool_name}`);
+        if (d.input_text) lines.push(`  IN:  ${d.input_text.replace(/\n/g, '\n       ')}`);
+        if (d.output_text) lines.push(`  OUT: ${d.output_text.replace(/\n/g, '\n       ')}`);
+        lines.push('');
+      }
+    }
   } else {
-    lines.push('### L3 (ツール入出力)');
-    lines.push('（該当ターンにツール実行記録なし）');
+    lines.push('### L3');
+    lines.push('（該当ターンに L3 レコード無し）');
   }
 
   process.stdout.write(lines.join('\n') + '\n');

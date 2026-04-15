@@ -1,7 +1,7 @@
 # 新 L1/L2/L3 設計（再定義）
 
-> **Status**: 実装途中（2026-04-16 時点）
-> ステップ 1/2/3/5/6/7/8 は実装済み。**ステップ 4（Stop フックのブロック分類 → details 分離書き込み）が未完**。
+> **Status**: 実装完了（2026-04-16 時点）
+> 全ステップ (1〜8) 実装済み。L1/L2/L3 すべて書き込みパスが稼働。schema v5 で details に `kind` / `source_id` 列追加済み。
 > 進捗の詳細は「実装順序」セクション末尾の進捗表を参照。
 
 ## Context
@@ -329,24 +329,33 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
 |---|---|---|---|
 | 1 | judgments 参照の全削除 | ✅ | |
 | 2 | schema v4 migration (bodies 追加 / judgments DROP) | ✅ | |
-| 3 | /sc-detail コマンド | ⚠️ | コマンド自体は動くが details が空のため L3 が常に空返り |
-| 4 | **Stop フックのブロック分類 → bodies/skeletons/details 3 テーブル分離書き込み** | ❌ | **未完**。bodies と skeletons だけ書かれ、details への tool_use / tool_result / system / image 振り分けが未実装 |
+| 3 | /sc-detail コマンド | ✅ | kind 別グループ化表示対応（tool / system / image / legacy） |
+| 4 | **Stop フックのブロック分類 → bodies/skeletons/details 3 テーブル分離書き込み** | ✅ | schema v5 で details に `kind` / `source_id` 追加。`extractDetailBlocks()` で分類 |
 | 5 | detail-capture.mjs 削除 | ✅ | |
 | 6 | 注入パイプライン改修（新フォーマット） | ✅ | |
 | 7 | session-merger の bodies 対応 | ✅ | |
 | 8 | SessionStart 改修 | ✅ | |
-| 9 | 検証 | 🔄 | ステップ 4 完了後にまとめて実施 |
 
-### ステップ 4 の残作業（具体）
+### ステップ 4 の実装メモ
 
-- [ ] `details` テーブルに `kind` 列追加（`'tool_input' | 'tool_output' | 'system' | 'image'`）
-- [ ] transcript-reader を拡張して 1 ターン分の全ブロックを種類付きで返す
-- [ ] turn-processor.mjs でブロック分類 → bodies / details に振り分け
-- [ ] ノイズ除去（空白・進捗表示・ANSI・`<system-reminder>` タグ）
-- [ ] `thinking` ブロックの破棄（L2/L3 両方に入れない）
-- [ ] transcript JSONL サンプル 1 件で実データ事前検証
-- [ ] sc-detail.mjs の L3 出力が期待どおり出ることを確認
-- [ ] docs/CONCEPT.md の反映
+- **schema v5**: `details.kind TEXT NOT NULL DEFAULT 'tool_input'`, `details.source_id TEXT`。`UNIQUE(session_id, origin_session_id, source_id) WHERE source_id IS NOT NULL` で冪等再処理を保証
+- **transcript-reader 拡張**:
+  - `readRawEntries()` — 全エントリを生で返す（user/assistant だけでなく attachment/system も含む）
+  - `sliceCurrentTurnEntries()` — 最後の user text から 最後の assistant text までを 1 論理ターンとして切り出す
+  - `extractDetailBlocks()` — ブロック分類してレコード配列を返す
+  - `stripAnsi()` / `normalizeToolResultContent()` — ノイズ除去ヘルパ
+- **ブロック分類ルール（実装で確定）**:
+  | 入力 | 出力 |
+  |---|---|
+  | assistant の `tool_use` | L3 kind=`tool_input`、source_id=`toolu_xxx`、input_text に JSON.stringify した input |
+  | user の `tool_result` | L3 kind=`tool_output`、source_id=`toolu_xxx:result`、output_text (ANSI 剥離済み) |
+  | attachment の `hook_success` | L3 kind=`system`、source_id=`attachment.uuid`、tool_name=`hook:<event>`、input_text=`command`、output_text=`content` |
+  | `text` (user/assistant) | L2 bodies（L3 には入れない） |
+  | `thinking` | 破棄（L2/L3 どちらにも入れない） |
+  | `image` | L3 kind=`image`、プレースホルダ `[image]` |
+  | `system` エントリ (`stop_hook_summary`) / `queue-operation` / `file-history-snapshot` | skip |
+- **`<system-reminder>` タグ**: 実データ調査の結果、user text ブロックには **含まれない**（129 件すべて assistant の quote 内）。実体は attachment entry の hook_success として保存されるため、kind='system' として L3 に入る。したがって user text からの剥離は不要だった
+- **実データ検証済み**: 現セッション (2292 entries) の最終ターンを slice すると 295 entries、そこから 20 tool_input + 20 tool_output + 173 system が抽出される
 
 ---
 

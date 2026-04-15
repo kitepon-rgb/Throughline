@@ -9,7 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-const CURRENT_VERSION = 4;
+const CURRENT_VERSION = 5;
 
 let _db = null;
 
@@ -153,6 +153,27 @@ function initSchema(db) {
       DROP INDEX IF EXISTS uq_judgments_hash;
       DROP INDEX IF EXISTS idx_judgments_session;
       DROP TABLE IF EXISTS judgments;
+    `);
+  }
+
+  // v4 → v5: details テーブルに kind / source_id 列追加（L3 分離書き込み対応）
+  // - kind: 'tool_input' | 'tool_output' | 'system' | 'image'
+  // - source_id: transcript の一意 ID (tool_use.id, attachment.uuid 等)、冪等再処理のため
+  // - 既存行は kind='tool_input' (デフォルト)、source_id NULL
+  if (version < 5) {
+    const detailCols = db.prepare('PRAGMA table_info(details)').all();
+    if (!detailCols.some((c) => c.name === 'kind')) {
+      db.exec("ALTER TABLE details ADD COLUMN kind TEXT NOT NULL DEFAULT 'tool_input'");
+    }
+    if (!detailCols.some((c) => c.name === 'source_id')) {
+      db.exec('ALTER TABLE details ADD COLUMN source_id TEXT');
+    }
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_details_source
+        ON details(session_id, origin_session_id, source_id)
+        WHERE source_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_details_session_kind
+        ON details(session_id, kind, created_at);
     `);
   }
 

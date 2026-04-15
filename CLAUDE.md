@@ -116,8 +116,9 @@ node --test src/*.test.mjs
 - `sessions` — `session_id`, `project_path`, `status`, `created_at`, `updated_at`, `merged_into`
 - `skeletons` (L1) — `session_id`, `origin_session_id`, `turn_number`, `role`, `summary`, `created_at`
 - `bodies` (L2) — `session_id`, `origin_session_id`, `turn_number`, `role`, `text`, `token_count`, `created_at`
-- `details` (L3) — `session_id`, `origin_session_id`, `turn_number`, `tool_name`, `input_text`, `output_text`, `token_count`, `created_at`
-  - **書き込みパスは未実装**。[docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) のステップ 4 残作業
+- `details` (L3, schema v5) — `session_id`, `origin_session_id`, `turn_number`, `tool_name`, `input_text`, `output_text`, `token_count`, `created_at`, `kind`, `source_id`
+  - `kind`: `'tool_input' | 'tool_output' | 'system' | 'image'`
+  - `source_id`: `tool_use.id` / `attachment.uuid` 等の一意キー。`INSERT OR IGNORE` の冪等性を保証
 - `injection_log` — 監査用（未活用）
 
 `judgments` テーブルは v4 で DROP 済み。`classifier.mjs` による抽出は精度が低く廃止。

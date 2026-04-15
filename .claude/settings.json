@@ -59,7 +59,8 @@
       "Bash(cp c:/Users/kite_/.claude/plans/vectorized-tinkering-wadler.md c:/Users/kite_/Documents/Program/Throughline/docs/L1_L2_L3_REDESIGN.md)",
       "Bash(rm c:/Users/kite_/.claude/plans/vectorized-tinkering-wadler.md)",
       "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md)",
-      "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/CLAUDE.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md c:/Users/kite_/Documents/Program/Throughline/docs/archive/*.md)"
+      "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/CLAUDE.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md c:/Users/kite_/Documents/Program/Throughline/docs/archive/*.md)",
+      "Bash(ls -t C:/Users/kite_/.claude/projects/c--Users-kite--Documents-Program-Throughline/*.jsonl)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",
