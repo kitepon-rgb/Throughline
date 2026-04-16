@@ -51,7 +51,7 @@ Start any Claude Code session and your turns will begin flowing into
 
 ---
 
-## Three-layer memory model (schema v4)
+## Three-layer memory model (schema v5)
 
 | Layer | Name       | Where it lives        | Content                                                    | Cost per turn |
 | ----- | ---------- | --------------------- | ---------------------------------------------------------- | ------------- |
@@ -287,7 +287,7 @@ unchanged here.
 
 **Database got corrupted / want a clean slate**
 Delete `~/.throughline/throughline.db` (and the `-shm` / `-wal` companion files)
-and `~/.throughline/state/*.json`. A fresh database with schema v4 is created on
+and `~/.throughline/state/*.json`. A fresh database with schema v5 is created on
 the next hook fire.
 
 ---
@@ -297,7 +297,7 @@ the next hook fire.
 ```bash
 git clone https://github.com/kitepon-rgb/Throughline.git
 cd Throughline
-npm link                              # Put `throughline` on PATH
+npm link                              # Put `throughline` on PATH (dev only)
 throughline install --project         # Register hooks for this repo only
 node --test src/turn-processor.test.mjs src/session-merger.test.mjs
 ```
@@ -316,7 +316,8 @@ the folder in VS Code.
 ## Design docs
 
 - [`docs/L1_L2_L3_REDESIGN.md`](docs/L1_L2_L3_REDESIGN.md) — **current design
-  spec** for the L1/L2/L3 differential layer model (schema v4). Authoritative.
+  spec** for the L1/L2/L3 differential layer model (schema v4 base + v5 L3
+  classification extension). Authoritative.
 - [`docs/PUBLIC_RELEASE_PLAN.md`](docs/PUBLIC_RELEASE_PLAN.md) — public release
   plan (CLI surface, package.json layout, § 0 fallback rule)
 - [`docs/archive/`](docs/archive/) — superseded design documents kept for

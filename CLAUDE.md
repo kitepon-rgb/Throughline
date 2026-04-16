@@ -22,9 +22,9 @@
 
 | ドキュメント | 内容 |
 |---|---|
-| [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **現行設計の仕様書**。L1/L2/L3 の定義、ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表、途中で発覚した課題。schema v4 の唯一の正 |
-| [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、実装ステータス、E2E 検証手順） |
-| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v4、トラブルシュート） |
+| [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **現行設計の仕様書**。L1/L2/L3 の定義、ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表、途中で発覚した課題。schema v4 基盤 + v5 の L3 分類拡張を記載 |
+| [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、実装ステータス、E2E 検証手順、npm publish 完了状況） |
+| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v5、トラブルシュート） |
 | [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録など）。歴史記述用 |
 
 ---
@@ -37,7 +37,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v4 migration。`node:sqlite` 組み込み、依存ゼロ |
+| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v5 migration。`node:sqlite` 組み込み、依存ゼロ |
 | [src/transcript-reader.mjs](src/transcript-reader.mjs) | transcript JSONL パーサー |
 | [src/transcript-usage.mjs](src/transcript-usage.mjs) | 最新 assistant の `message.usage` から実測トークン数を抽出、1M context 検出 |
 | [src/token-estimator.mjs](src/token-estimator.mjs) | 補助的なトークン数推定 (length/4) |

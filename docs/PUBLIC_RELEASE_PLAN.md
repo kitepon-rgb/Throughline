@@ -83,56 +83,56 @@ schema v4 では PostToolUse (`capture-tool`) は廃止。UserPromptSubmit (`inj
 | Haiku 4.5 同期要約（subprocess 再帰ガードつき） | [src/haiku-summarizer.mjs](../src/haiku-summarizer.mjs) |
 | L1/L2 書き込み（Stop フック内で一括処理） | [src/turn-processor.mjs](../src/turn-processor.mjs) |
 | 遅延 Haiku 要約（20 ターン以内はコストゼロ） | [src/turn-processor.mjs](../src/turn-processor.mjs) |
-| README（schema v4 対応版） | [../README.md](../README.md) |
+| README（schema v5 対応版） | [../README.md](../README.md) |
 | LICENSE | [../LICENSE](../LICENSE) (MIT) |
 | token-monitor 折り返し対策（ANSI 幅切り詰め） | [src/token-monitor.mjs](../src/token-monitor.mjs) |
 | § 0 ルール適用（silent try/catch 掃除） | 主要ファイルすべて |
+| **`npm pack --dry-run` 検証** | 2026-04-17 確認、23 ファイル / 38.3 KB、秘密情報なし |
+| **npm 公開** | 2026-04-17 v0.1.0 を https://www.npmjs.com/package/throughline に publish 済み |
+| **グローバル E2E 検証** | 2026-04-17 別ディレクトリから `throughline doctor` 全緑を確認 |
 
 ### ❌ 未完タスク
 
 | 項目 | 備考 |
 |---|---|
-| **`npm pack --dry-run` 検証** | tarball 内容確認、秘密情報の混入チェック |
-| **`npm link` による E2E 検証** | 別プロジェクトで install → 1〜2 ターン会話 → `doctor` 緑 → `uninstall` クリーンの流れ |
-| **npm publish** | 本番リリース（`throughline` 名の空き確認含む） |
-| **GitHub Actions 自動 publish** | `release` タグ push をトリガー（Phase 3+） |
+| **awesome-claude-code 登録申請** | 初回 public commit から 1 週間経過（2026-04-21 以降）に Web UI 経由で提出 |
+| **外部環境での実運用検証** | 別 PC / OS での install、並行 `/clear` 時の merge chain 挙動、1M context 検出のロバストさ |
+| **GitHub Actions 自動 publish** | `release` タグ push をトリガー（Phase 3+、Trusted Publishing 使用） |
+| **Claude Code プラグインマーケットプレース登録** | npm 公開の後継ステップ（Phase 3+） |
 
 ---
 
-## 検証方法（End-to-End、未実施）
+## 検証方法（End-to-End）
 
-1. ローカルで `npm link` して CLI を PATH に通す
-   ```bash
-   cd Throughline
-   npm link
-   throughline --version
-   ```
+初回 publish（v0.1.0 / 2026-04-17）は以下の実行で確認済み:
 
-2. 自プロジェクト以外のディレクトリに移動
-   ```bash
-   mkdir ~/tmp-test-project && cd ~/tmp-test-project
-   ```
+1. `npm pack --dry-run` で tarball 内容を確認（23 ファイル、秘密情報なし）
+2. `npm publish` 実行 → `+ throughline@0.1.0`
+3. `npm view throughline` でレジストリに反映されていることを確認
+4. 別ディレクトリで `npm install -g throughline` → `throughline install` → `throughline doctor` 全緑
+5. `~/.claude/settings.json` の hook が global スコープに登録されていることを確認
 
-3. `throughline install` で `~/.claude/settings.json` に hook が書かれていることを確認
+次バージョン以降は次の手順で：
 
-4. そのディレクトリで `claude` を起動し、1〜2 ターン会話
-   - 全 hook がエラーなく発火するか確認
-   - `/clear` 後に引き継ぎヘッダが表示されるか確認
-   - バナーなしの新規 `claude` 起動で汚染がないことを確認
+```bash
+# 版上げ（例: patch）
+npm version patch
 
-5. DB を直接確認: `project_path` が正しいディレクトリになっていること
+# publish（granular access token with bypass 2FA を使う場合は OTP 不要）
+npm publish
 
-6. `throughline doctor` で全チェックが緑になるか
+# 反映確認
+npm view throughline
+npm install -g throughline
+throughline doctor
+```
 
-7. `throughline uninstall` で Throughline 行だけがクリーンに消えること
-
-8. `npm pack --dry-run` で秘密情報・不要ファイルが含まれていないか確認
+さらに別環境（macOS / Linux / 別 PC）での claude 起動・並行 `/clear` 挙動・1M context 検出のロバストさは未検証。
 
 ---
 
 ## スコープ外（別 Phase）
 
-- npm への実 publish
-- GitHub Actions による自動リリース
+- GitHub Actions による自動リリース（Trusted Publishing 推奨）
 - `injection_log` 効果測定
 - Claude Code プラグインマーケットプレース登録（Phase 3+）
