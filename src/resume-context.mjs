@@ -22,9 +22,6 @@ const RESUME_HEADER_TEMPLATE = (turnCount) =>
 
 const NORMAL_HEADER = '## Throughline: セッション記憶';
 
-// Claude 宛の行動指示。スラッシュコマンド形式ではなく、Bash ツールで叩ける
-// PATH 解決型サブコマンドを提示する。ユーザー向けの案内ではなく、Claude 自身が
-// 記憶の解像度を上げるために使う道具として明示する。
 const FOOTER_GUIDE =
   '---\n' +
   '**[Claude 向け — 記憶の使い方]**\n' +

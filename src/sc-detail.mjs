@@ -19,6 +19,7 @@
  */
 
 import { getDb } from './db.mjs';
+import { DETAIL_KIND, DETAIL_KIND_VALUES } from './constants.mjs';
 
 function parseTimeArg(arg) {
   const m = String(arg || '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -71,8 +72,13 @@ function formatTime(unixMs) {
   return `${hh}:${mm}:${ss}`;
 }
 
-function main() {
-  const arg = process.argv[2];
+/**
+ * コアロジック。bin/throughline.mjs などから直接呼び出せるよう、
+ * process.argv ではなく引数配列を受け取る。
+ * @param {string[]} args
+ */
+export function run(args) {
+  const arg = args[0];
   if (!arg) {
     process.stderr.write(
       '使い方: throughline detail <HH:MM:SS>\n' +
@@ -128,35 +134,36 @@ function main() {
     lines.push('');
   }
 
-  // 対応する L3 を details から取得（kind 別に表示）
-  const detailRows = [];
-  for (const key of turnKeys) {
-    const [sid, origin, turn] = key.split('\x00');
-    const rows = db
-      .prepare(
-        `SELECT id, turn_number, kind, tool_name, input_text, output_text, created_at
-         FROM details
-         WHERE session_id = ? AND origin_session_id = ? AND turn_number = ?
-         ORDER BY id ASC`,
-      )
-      .all(sid, origin, Number(turn));
-    for (const row of rows) detailRows.push(row);
-  }
+  // 対応する L3 を details から 1 クエリで取得（N+1 回避のため row-value IN）
+  const turnTuples = [...turnKeys].map((k) => k.split('\x00'));
+  const placeholders = turnTuples.map(() => '(?, ?, ?)').join(', ');
+  const params = turnTuples.flatMap(([sid, origin, turn]) => [sid, origin, Number(turn)]);
+  const detailRows = db
+    .prepare(
+      `SELECT id, turn_number, kind, tool_name, input_text, output_text, created_at
+       FROM details
+       WHERE (session_id, origin_session_id, turn_number) IN (VALUES ${placeholders})
+       ORDER BY id ASC`,
+    )
+    .all(...params);
 
   if (detailRows.length > 0) {
-    const toolRows = detailRows.filter(
-      (d) => d.kind === 'tool_input' || d.kind === 'tool_output',
-    );
-    const systemRows = detailRows.filter((d) => d.kind === 'system');
-    const imageRows = detailRows.filter((d) => d.kind === 'image');
-    const legacyRows = detailRows.filter(
-      (d) => !['tool_input', 'tool_output', 'system', 'image'].includes(d.kind),
-    );
+    // 単一 pass で kind ごとに振り分け
+    const toolRows = [];
+    const systemRows = [];
+    const imageRows = [];
+    const legacyRows = [];
+    for (const d of detailRows) {
+      if (d.kind === DETAIL_KIND.TOOL_INPUT || d.kind === DETAIL_KIND.TOOL_OUTPUT) toolRows.push(d);
+      else if (d.kind === DETAIL_KIND.SYSTEM) systemRows.push(d);
+      else if (d.kind === DETAIL_KIND.IMAGE) imageRows.push(d);
+      else if (!DETAIL_KIND_VALUES.has(d.kind)) legacyRows.push(d);
+    }
 
     if (toolRows.length > 0) {
       lines.push('### L3 (ツール入出力)');
       for (const d of toolRows) {
-        const marker = d.kind === 'tool_input' ? 'IN ' : 'OUT';
+        const marker = d.kind === DETAIL_KIND.TOOL_INPUT ? 'IN ' : 'OUT';
         lines.push(`[${formatTime(d.created_at)}] ${marker} ${d.tool_name}`);
         if (d.input_text) {
           lines.push(`  IN:  ${d.input_text.replace(/\n/g, '\n       ')}`);
@@ -202,12 +209,4 @@ function main() {
 
   process.stdout.write(lines.join('\n') + '\n');
   process.exit(0);
-}
-
-try {
-  main();
-} catch (err) {
-  const msg = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`[sc-detail] error: ${msg}\n`);
-  process.exit(1);
 }

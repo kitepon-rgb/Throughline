@@ -39,10 +39,7 @@ switch (cmd) {
     await import('../src/token-monitor.mjs');
     break;
   case 'detail':
-    // 時刻引数を process.argv[2] として sc-detail.mjs に渡す必要がある。
-    // sc-detail は process.argv[2] を読むので、argv を rewrite してから import する。
-    process.argv = [process.argv[0], process.argv[1], ...rest];
-    await import('../src/sc-detail.mjs');
+    (await import('../src/sc-detail.mjs')).run(rest);
     break;
   case 'doctor':
     await (await import('../src/cli/doctor.mjs')).run();

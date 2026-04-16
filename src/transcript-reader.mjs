@@ -9,6 +9,7 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
+import { DETAIL_KIND } from './constants.mjs';
 
 /**
  * content 配列からテキスト部分だけを結合する。
@@ -219,7 +220,7 @@ export function extractDetailBlocks(turnEntries) {
         if (b.type === 'tool_use' && typeof b.id === 'string') {
           toolNameById.set(b.id, b.name ?? 'unknown');
           out.push({
-            kind: 'tool_input',
+            kind: DETAIL_KIND.TOOL_INPUT,
             tool_name: b.name ?? 'unknown',
             source_id: b.id,
             input_text: JSON.stringify(b.input ?? null),
@@ -227,7 +228,7 @@ export function extractDetailBlocks(turnEntries) {
           });
         } else if (b.type === 'image') {
           out.push({
-            kind: 'image',
+            kind: DETAIL_KIND.IMAGE,
             tool_name: 'image',
             source_id: null,
             input_text: null,
@@ -248,7 +249,7 @@ export function extractDetailBlocks(turnEntries) {
             : 'unknown';
           const rawOutput = normalizeToolResultContent(b.content);
           out.push({
-            kind: 'tool_output',
+            kind: DETAIL_KIND.TOOL_OUTPUT,
             tool_name: toolName,
             source_id: toolUseId ? `${toolUseId}:result` : null,
             input_text: null,
@@ -256,7 +257,7 @@ export function extractDetailBlocks(turnEntries) {
           });
         } else if (b.type === 'image') {
           out.push({
-            kind: 'image',
+            kind: DETAIL_KIND.IMAGE,
             tool_name: 'image',
             source_id: null,
             input_text: null,
@@ -272,7 +273,7 @@ export function extractDetailBlocks(turnEntries) {
       if (a.type === 'hook_success') {
         const content = a.content ?? a.stdout ?? '';
         out.push({
-          kind: 'system',
+          kind: DETAIL_KIND.SYSTEM,
           tool_name: `hook:${a.hookEvent ?? a.hookName ?? 'unknown'}`,
           source_id: e.uuid ?? null,
           input_text: a.command ?? null,

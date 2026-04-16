@@ -6,6 +6,7 @@ import {
   sliceCurrentTurnEntries,
   extractDetailBlocks,
 } from './transcript-reader.mjs';
+import { DETAIL_KIND } from './constants.mjs';
 
 test('stripAnsi: ANSI 色コードを除去する', () => {
   assert.equal(stripAnsi('\x1b[32mgreen\x1b[0m text'), 'green text');
@@ -101,13 +102,13 @@ test('extractDetailBlocks: tool_use と tool_result をペアで抽出', () => {
   assert.equal(details.length, 2);
 
   const [input, output] = details;
-  assert.equal(input.kind, 'tool_input');
+  assert.equal(input.kind, DETAIL_KIND.TOOL_INPUT);
   assert.equal(input.tool_name, 'Bash');
   assert.equal(input.source_id, 'toolu_42');
   assert.ok(input.input_text.includes('echo hi'));
   assert.equal(input.output_text, null);
 
-  assert.equal(output.kind, 'tool_output');
+  assert.equal(output.kind, DETAIL_KIND.TOOL_OUTPUT);
   assert.equal(output.tool_name, 'Bash'); // tool_use からマップされる
   assert.equal(output.source_id, 'toolu_42:result');
   assert.equal(output.output_text, 'hi\n');
@@ -139,7 +140,7 @@ test('extractDetailBlocks: attachment (hook_success) を system として抽出'
   ];
   const details = extractDetailBlocks(entries);
   assert.equal(details.length, 1);
-  assert.equal(details[0].kind, 'system');
+  assert.equal(details[0].kind, DETAIL_KIND.SYSTEM);
   assert.equal(details[0].tool_name, 'hook:UserPromptSubmit');
   assert.equal(details[0].source_id, 'att-uuid-1');
   assert.equal(details[0].input_text, 'node hook.mjs');
@@ -154,7 +155,7 @@ test('extractDetailBlocks: tool_output の ANSI コードは剥離される', ()
     asstTextEntry('ok'),
   ];
   const details = extractDetailBlocks(entries);
-  const output = details.find((d) => d.kind === 'tool_output');
+  const output = details.find((d) => d.kind === DETAIL_KIND.TOOL_OUTPUT);
   assert.equal(output.output_text, 'green file');
 });
 
@@ -181,7 +182,7 @@ test('extractDetailBlocks: tool_result の content が配列でも処理でき�
     asstTextEntry('done'),
   ];
   const details = extractDetailBlocks(entries);
-  const output = details.find((d) => d.kind === 'tool_output');
+  const output = details.find((d) => d.kind === DETAIL_KIND.TOOL_OUTPUT);
   assert.equal(output.output_text, 'line1\nline2');
 });
 
@@ -198,6 +199,6 @@ test('extractDetailBlocks: 複数ツール連続呼び出しを全て拾う', ()
   assert.equal(details.length, 4);
   assert.deepEqual(
     details.map((d) => d.kind),
-    ['tool_input', 'tool_output', 'tool_input', 'tool_output'],
+    [DETAIL_KIND.TOOL_INPUT, DETAIL_KIND.TOOL_OUTPUT, DETAIL_KIND.TOOL_INPUT, DETAIL_KIND.TOOL_OUTPUT],
   );
 });

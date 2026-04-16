@@ -235,22 +235,30 @@ async function main() {
           token_count, created_at, kind, source_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    for (const d of detailBlocks) {
-      const tokenCount = Math.round(
-        ((d.input_text?.length ?? 0) + (d.output_text?.length ?? 0)) / 4,
-      );
-      insertDetail.run(
-        target,
-        origin,
-        turnNumber,
-        d.tool_name,
-        d.input_text,
-        d.output_text,
-        tokenCount,
-        now,
-        d.kind,
-        d.source_id,
-      );
+    // 数百行の INSERT を 1 トランザクションにまとめて fsync コストを 1 回に抑える
+    db.exec('BEGIN');
+    try {
+      for (const d of detailBlocks) {
+        const tokenCount = Math.round(
+          ((d.input_text?.length ?? 0) + (d.output_text?.length ?? 0)) / 4,
+        );
+        insertDetail.run(
+          target,
+          origin,
+          turnNumber,
+          d.tool_name,
+          d.input_text,
+          d.output_text,
+          tokenCount,
+          now,
+          d.kind,
+          d.source_id,
+        );
+      }
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
     }
   }
 

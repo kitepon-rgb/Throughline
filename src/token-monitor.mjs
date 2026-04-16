@@ -20,6 +20,7 @@
 import { basename } from 'node:path';
 import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjectPath } from './state-file.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
+import { stripAnsi } from './transcript-reader.mjs';
 
 const REFRESH_MS = 1000;
 
@@ -46,8 +47,7 @@ function color(c, text) {
 
 /** ANSI エスケープシーケンスを除いた可視文字数を返す（サロゲートペア考慮はしない簡易版） */
 function visibleLength(s) {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').length;
+  return stripAnsi(s).length;
 }
 
 /**

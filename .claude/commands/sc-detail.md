@@ -6,7 +6,7 @@ argument-hint: <HH:MM:SS> または <HH:MM:SS>-<HH:MM:SS>
 以下の Bash コマンドを実行し、結果を全文そのまま表示してください（要約せず、一字一句）。
 
 ```bash
-node src/sc-detail.mjs "$ARGUMENTS"
+throughline detail "$ARGUMENTS"
 ```
 
 ## 使い方
