@@ -62,115 +62,18 @@
       "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/CLAUDE.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md c:/Users/kite_/Documents/Program/Throughline/docs/archive/*.md)",
       "Bash(ls -t C:/Users/kite_/.claude/projects/c--Users-kite--Documents-Program-Throughline/*.jsonl)",
       "Bash(node bin/throughline.mjs uninstall --project)",
-      "Bash(node bin/throughline.mjs install --project)"
+      "Bash(node bin/throughline.mjs install --project)",
+      "Bash(npm list *)",
+      "Bash(npm ls *)",
+      "Bash(npm view *)",
+      "Bash(npm whoami *)",
+      "Bash(rtk ls *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",
       "C:\\Users\\kite_\\.smart-compact",
       "C:\\Users\\kite_\\.throughline",
       "\\tmp"
-    ]
-  },
-  "hooks": {
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs SessionEnd"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs StopFailure"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs SubagentStart"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs SubagentStop"
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs PostToolUseFailure"
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs PermissionRequest"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs PreCompact"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs Notification"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "throughline session-start"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "throughline process-turn"
-          }
-        ]
-      }
     ]
   },
   "enabledPlugins": {
