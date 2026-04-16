@@ -141,10 +141,98 @@ test('extractDetailBlocks: attachment (hook_success) を system として抽出'
   const details = extractDetailBlocks(entries);
   assert.equal(details.length, 1);
   assert.equal(details[0].kind, DETAIL_KIND.SYSTEM);
-  assert.equal(details[0].tool_name, 'hook:UserPromptSubmit');
+  assert.equal(details[0].tool_name, 'hook_success:UserPromptSubmit');
   assert.equal(details[0].source_id, 'att-uuid-1');
   assert.equal(details[0].input_text, 'node hook.mjs');
   assert.equal(details[0].output_text, 'injected context');
+});
+
+test('extractDetailBlocks: attachment (async_hook_response) を system として抽出', () => {
+  const entries = [
+    userEntry('prompt'),
+    {
+      type: 'attachment',
+      uuid: 'async-1',
+      attachment: {
+        type: 'async_hook_response',
+        hookName: 'Stop',
+        hookEvent: 'Stop',
+        stdout: 'hook output text',
+        stderr: '',
+        exitCode: 0,
+      },
+    },
+    asstTextEntry('reply'),
+  ];
+  const details = extractDetailBlocks(entries);
+  assert.equal(details.length, 1);
+  assert.equal(details[0].kind, DETAIL_KIND.SYSTEM);
+  assert.equal(details[0].tool_name, 'async_hook_response:Stop');
+  assert.equal(details[0].source_id, 'async-1');
+  assert.equal(details[0].output_text, 'hook output text');
+});
+
+test('extractDetailBlocks: attachment (nested_memory) も system として拾う', () => {
+  const entries = [
+    userEntry('prompt'),
+    {
+      type: 'attachment',
+      uuid: 'mem-1',
+      attachment: {
+        type: 'nested_memory',
+        path: 'C:\\Users\\x\\.claude\\rules\\x.md',
+        content: 'memory file body',
+      },
+    },
+    asstTextEntry('reply'),
+  ];
+  const details = extractDetailBlocks(entries);
+  assert.equal(details.length, 1);
+  assert.equal(details[0].tool_name, 'nested_memory');
+  assert.equal(details[0].input_text, 'C:\\Users\\x\\.claude\\rules\\x.md');
+  assert.equal(details[0].output_text, 'memory file body');
+});
+
+test('extractDetailBlocks: attachment (mcp_instructions_delta) の addedBlocks も拾う', () => {
+  const entries = [
+    userEntry('prompt'),
+    {
+      type: 'attachment',
+      uuid: 'mcp-1',
+      attachment: {
+        type: 'mcp_instructions_delta',
+        addedNames: ['plugin:foo'],
+        addedBlocks: ['## plugin:foo\nDo things'],
+        removedNames: [],
+      },
+    },
+    asstTextEntry('reply'),
+  ];
+  const details = extractDetailBlocks(entries);
+  assert.equal(details.length, 1);
+  assert.equal(details[0].tool_name, 'mcp_instructions_delta');
+  assert.ok(details[0].output_text.includes('plugin:foo'));
+});
+
+test('extractDetailBlocks: 未知の attachment 種別は JSON dump で残す (情報ロスゼロ)', () => {
+  const entries = [
+    userEntry('prompt'),
+    {
+      type: 'attachment',
+      uuid: 'unknown-1',
+      attachment: {
+        type: 'some_future_type',
+        foo: 'bar',
+        count: 42,
+      },
+    },
+    asstTextEntry('reply'),
+  ];
+  const details = extractDetailBlocks(entries);
+  assert.equal(details.length, 1);
+  assert.equal(details[0].tool_name, 'some_future_type');
+  assert.ok(details[0].output_text.includes('bar'));
+  assert.ok(details[0].output_text.includes('42'));
 });
 
 test('extractDetailBlocks: tool_output の ANSI コードは剥離される', () => {

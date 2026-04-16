@@ -267,20 +267,35 @@ export function extractDetailBlocks(turnEntries) {
         // text は扱わない
       }
     } else if (e.type === 'attachment') {
-      // hook 実行結果。SessionStart/UserPromptSubmit 等の hook stdout が格納される
+      // attachment は Claude Code が会話に差し込むコンテキスト全般を表す汎用エンベロープ。
+      // 既知の種別（実機観測）:
+      //   hook_success, async_hook_response, hook_additional_context,
+      //   deferred_tools_delta, mcp_instructions_delta, skill_listing,
+      //   nested_memory, todo_reminder, command_permissions
+      // すべて L3 kind=system として捕捉する。ペイロードのフィールド名は種別ごとに
+      // 異なるため、共通のテキストフィールドを優先度順に試す。
       const a = e.attachment;
-      if (!a) continue;
-      if (a.type === 'hook_success') {
-        const content = a.content ?? a.stdout ?? '';
-        out.push({
-          kind: DETAIL_KIND.SYSTEM,
-          tool_name: `hook:${a.hookEvent ?? a.hookName ?? 'unknown'}`,
-          source_id: e.uuid ?? null,
-          input_text: a.command ?? null,
-          output_text: stripAnsi(String(content)),
-        });
-      }
-      // 他の attachment 種別は現状対象外
+      if (!a || !a.type) continue;
+
+      const output =
+        (typeof a.content === 'string' && a.content) ||
+        (Array.isArray(a.content) && a.content.join('\n')) ||
+        (typeof a.stdout === 'string' && a.stdout) ||
+        (Array.isArray(a.addedBlocks) && a.addedBlocks.join('\n')) ||
+        (Array.isArray(a.addedLines) && a.addedLines.join('\n')) ||
+        // 既知フィールドがすべて空ならメタ情報を JSON で残す（情報ロスを避ける §0）
+        JSON.stringify(a);
+
+      // 種別名 + hook イベント名で tool_name を一意化
+      const toolName = a.hookEvent ? `${a.type}:${a.hookEvent}` : a.type;
+
+      out.push({
+        kind: DETAIL_KIND.SYSTEM,
+        tool_name: toolName,
+        source_id: e.uuid ?? null,
+        input_text: a.command ?? a.path ?? null,
+        output_text: stripAnsi(String(output)),
+      });
     }
     // type === 'system' (stop_hook_summary) や queue-operation / file-history-snapshot は skip
   }
