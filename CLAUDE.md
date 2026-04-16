@@ -48,7 +48,6 @@
 |---|---|---|
 | [src/session-start.mjs](src/session-start.mjs) | `throughline session-start` | SessionStart |
 | [src/turn-processor.mjs](src/turn-processor.mjs) | `throughline process-turn` | Stop |
-| [src/context-injector.mjs](src/context-injector.mjs) | `throughline inject-context` | UserPromptSubmit |
 
 ### 記憶張り替え・注入共通
 
@@ -83,24 +82,24 @@ node --test src/*.test.mjs
 
 ### 削除済み
 
-`src/classifier.mjs`, `src/detail-capture.mjs`, `src/throughline.mjs` は schema v4 で不要化して削除済み。CLAUDE.md や docs の旧記述に残っていたら現状と乖離しているサイン。
+`src/classifier.mjs`, `src/detail-capture.mjs`, `src/throughline.mjs` は schema v4 で不要化して削除済み。`src/context-injector.mjs` は SessionStart との重複注入を解消するため廃止。CLAUDE.md や docs の旧記述に残っていたら現状と乖離しているサイン。
 
 ---
 
 ## Hooks 構成（現状）
 
-`throughline install` が `~/.claude/settings.json` に書く内容は [src/cli/install.mjs:31-41](src/cli/install.mjs#L31-L41) の `SC_HOOKS` が正。
+`throughline install` が `~/.claude/settings.json` に書く内容は [src/cli/install.mjs:31-38](src/cli/install.mjs#L31-L38) の `SC_HOOKS` が正。
 
 ```json
 {
   "hooks": {
-    "SessionStart":     [{ "hooks": [{ "command": "throughline session-start" }] }],
-    "Stop":             [{ "hooks": [{ "command": "throughline process-turn" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "command": "throughline inject-context" }] }]
+    "SessionStart": [{ "hooks": [{ "command": "throughline session-start" }] }],
+    "Stop":         [{ "hooks": [{ "command": "throughline process-turn" }] }]
   }
 }
 ```
 
+- **UserPromptSubmit** は登録しない（SessionStart との重複注入を解消するため廃止）
 - **PostToolUse** は登録しない（schema v4 で廃止）
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
 - dev 時に spike 系 hook（`spike/hook-logger.mjs` 等）が並行登録されている場合があるが、動作ログ採取用で実害なし

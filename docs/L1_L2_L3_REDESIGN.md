@@ -153,7 +153,9 @@ Haiku 4.5 で L2 を約 1/5 に要約（同期、2 回リトライ）
 
 ---
 
-## 注入パイプライン（UserPromptSubmit フック）
+## 注入パイプライン（SessionStart フック）
+
+> **変更履歴**: 当初は UserPromptSubmit で毎ターン注入していたが、SessionStart と完全に重複するため廃止。注入は SessionStart の 1 回のみ。
 
 注入対象は **前任チェーンの過去ターンのみ**。現セッション内のターンは Claude Code 本体のコンテキストに既に全文入っているので注入不要。
 
@@ -229,8 +231,8 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
 
 - [src/turn-processor.mjs](src/turn-processor.mjs) — Stop フック本体。ブロック分類 + Haiku 呼び出し + 3 テーブル書き込み
 - [src/classifier.mjs](src/classifier.mjs) — **廃止**（judgments 廃止に伴い役割消滅）
-- [src/context-injector.mjs](src/context-injector.mjs) — 新 L2 テーブルから読む、L1 との分離注入
-- [src/session-start.mjs](src/session-start.mjs) — 引き継ぎ注入を新構造に
+- ~~src/context-injector.mjs~~ — **廃止**（SessionStart との重複注入解消。注入は SessionStart に一本化）
+- [src/session-start.mjs](src/session-start.mjs) — 引き継ぎ注入を新構造に（注入の唯一のエントリポイント）
 - [src/resume-context.mjs](src/resume-context.mjs) — レンダラ差し替え
 - [src/db.mjs](src/db.mjs) — schema v4 migration、bodies テーブル追加
 - [src/session-merger.mjs](src/session-merger.mjs) — **bodies テーブルも merge 追従対象に追加**、judgments 張り替えロジックは削除（skeletons/details/bodies の 3 テーブルで session_id 張り替え）
@@ -248,7 +250,7 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
 
 - v3 データの skeletons/details はそのまま読み取り可能（judgments は読まない）
 - v3 セッションを引き継いだ場合、bodies テーブルは空。L2 全文が無い状態
-- context-injector は「bodies がなければ skeletons のみ注入」にフォールバック
+- SessionStart 注入は「bodies がなければ skeletons のみ注入」にフォールバック
 - 二系統分岐の恒久化は避けたいので、v3 セッションは **read-only 扱い、書き込みは新構造のみ** と明示
 
 ---
@@ -272,7 +274,7 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
 
 1. **judgments 参照の全削除**（先行クリーンアップ）
    - [src/turn-processor.mjs](src/turn-processor.mjs) から judgments 書き込みを削除
-   - [src/context-injector.mjs](src/context-injector.mjs) から judgments 読み出しを削除
+   - ~~src/context-injector.mjs~~ から judgments 読み出しを削除（ファイル自体が廃止済み）
    - [src/session-merger.mjs](src/session-merger.mjs) から judgments の UPDATE を削除
    - [src/classifier.mjs](src/classifier.mjs) 削除
    - [.claude/settings.json](.claude/settings.json) / [.claude-plugin/hooks.json](.claude-plugin/hooks.json) から classifier 関連 hook があれば削除
@@ -306,11 +308,12 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
    - Stop フックに統合済みなので不要
    - [.claude-plugin/hooks.json](.claude-plugin/hooks.json) の PostToolUse 登録も同時に削除
 
-6. **注入パイプライン改修** — [src/context-injector.mjs](src/context-injector.mjs)、[src/resume-context.mjs](src/resume-context.mjs)
+6. **注入パイプライン改修** — [src/session-start.mjs](src/session-start.mjs)、[src/resume-context.mjs](src/resume-context.mjs)
    - 新フォーマット（`[HH:MM:SS]` 時刻プレフィックス）
    - 直近 20 ターンは bodies から L2 全文、それ以前は skeletons から L1 要約
    - 末尾に `/sc-detail` 案内文を追加
    - v3 セッションのフォールバック経路（bodies が空なら skeletons のみ）
+   - ~~context-injector.mjs~~ は廃止（SessionStart に一本化）
 
 7. **session-merger の bodies 対応** — [src/session-merger.mjs](src/session-merger.mjs)
    - BEGIN IMMEDIATE トランザクションに bodies の UPDATE を追加
@@ -381,7 +384,7 @@ bodies に user と assistant を別 turn_number で保存してしまい、「1
 2. 新 Stop フックが bodies/skeletons/details に正しく分離書き込み
 3. Haiku 同期呼び出しの平均レイテンシ計測（想定 2〜5 秒）
 4. 要約失敗時のフォールバックが動作（Haiku 側を強制エラーにして確認）
-5. 新 context-injector が「直近は L2 全文、それ以前は L1 要約」で注入
+5. SessionStart 注入が「直近は L2 全文、それ以前は L1 要約」で注入
 6. `/clear` → SessionStart 引き継ぎが新構造で動く
 7. `/sc-detail <turn>` で L3 が取れる
 8. session-merger が bodies を正しく張り替える

@@ -7,7 +7,6 @@
  *   throughline install       # ~/.claude/settings.json に hook を登録
  *   throughline uninstall     # hook を削除
  *   throughline process-turn  # Stop hook (Claude Code から呼ばれる)
- *   throughline inject-context # UserPromptSubmit hook (Claude Code から呼ばれる)
  *   throughline session-start # SessionStart hook (Claude Code から呼ばれる)
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline doctor        # 環境チェック
@@ -15,6 +14,7 @@
  *   throughline --version     # バージョン表示
  *
  * 注意: schema v4 で capture-tool (PostToolUse) は廃止。L2/L3 は Stop 内で一括処理。
+ *        inject-context (UserPromptSubmit) も廃止。L1/L2 注入は SessionStart で 1 回のみ。
  */
 
 const [, , cmd, ...rest] = process.argv;
@@ -28,9 +28,6 @@ switch (cmd) {
     break;
   case 'process-turn':
     await import('../src/turn-processor.mjs');
-    break;
-  case 'inject-context':
-    await import('../src/context-injector.mjs');
     break;
   case 'session-start':
     await import('../src/session-start.mjs');
@@ -75,8 +72,7 @@ Usage:
   throughline --version       Show version
 
 Hook subcommands (called by Claude Code):
-  throughline process-turn    Stop hook
-  throughline inject-context  UserPromptSubmit hook
   throughline session-start   SessionStart hook
+  throughline process-turn    Stop hook
 `);
 }

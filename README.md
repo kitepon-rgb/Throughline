@@ -63,8 +63,8 @@ The layers are **complementary and disjoint** — nothing is duplicated across
 them. Thinking blocks are discarded entirely (not stored at either layer) to
 match the stock Claude Code behavior.
 
-On every `UserPromptSubmit`, Throughline rebuilds the context from SQLite and
-injects it as plain text into the next prompt:
+On `SessionStart`, Throughline rebuilds the context from SQLite and
+injects it as plain text:
 
 - The **most recent 20 turns** are injected as full L2 (`bodies`) text
 - **Older turns** are injected as L1 (`skeletons`) one-liners
@@ -93,7 +93,6 @@ database is untouched. On the next session start:
    `BEGIN IMMEDIATE` transaction
 4. A handover banner is injected:
    `## Throughline: セッション記憶（N ターン引き継ぎ）`
-5. From there, normal `UserPromptSubmit` injection takes over
 
 Each row keeps its **origin_session_id**, so memories accumulate through chains
 of `/clear` rather than being lost or overwritten:
@@ -167,7 +166,7 @@ you open the folder. Drop an equivalent config into your own project's
 | `throughline --version`                        | Print the installed version                                  |
 
 Hook subcommands (invoked by Claude Code, not by humans):
-`process-turn` (Stop), `inject-context` (UserPromptSubmit), `session-start` (SessionStart).
+`session-start` (SessionStart), `process-turn` (Stop).
 
 ### `throughline detail` — for AI, not humans
 
@@ -192,7 +191,7 @@ project history.
 
 - **Node.js >= 22.5** (for the built-in `node:sqlite` module — no native build
   required, no `npm install` of SQLite bindings)
-- **Claude Code** with hooks support (`SessionStart`, `UserPromptSubmit`, `Stop`)
+- **Claude Code** with hooks support (`SessionStart`, `Stop`)
 - **Claude Max subscription** (for Haiku-based L1 summarization via `claude -p`)
 - Works on **Windows, macOS, Linux**
 
@@ -250,8 +249,8 @@ rule.
 ## Haiku recursion defense
 
 L1 summarization spawns `claude -p --model claude-haiku-4-5-*` as a subprocess.
-Without precautions this would recursively fire the same Stop/UserPromptSubmit
-hooks on the subprocess and infinite-loop. Two defenses stack:
+Without precautions this would recursively fire the same Stop hook on the
+subprocess and infinite-loop. Two defenses stack:
 
 1. **Isolated cwd.** The subprocess runs in `~/.throughline/haiku-workdir/`, a
    directory that contains no `.claude/settings.json`, so project-local hooks

@@ -2,7 +2,7 @@
  * state-file.mjs — セッション単位の状態ファイル管理（共有モジュール）
  *
  * パス: ~/.throughline/state/<session_id>.json
- * 書き手: context-injector (UserPromptSubmit) と turn-processor (Stop)
+ * 書き手: turn-processor (Stop)
  * 読み手: token-monitor
  *
  * 設計判断 (docs/PUBLIC_RELEASE_PLAN.md §4.5/4.6):

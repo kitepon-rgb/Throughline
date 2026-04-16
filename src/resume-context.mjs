@@ -3,7 +3,6 @@
  *
  * 呼び出し元:
  *   - session-start.mjs (isInheritance=true, 引き継ぎヘッダ)
- *   - context-injector.mjs (isInheritance=false, 通常ヘッダ)
  *
  * 新設計（schema v4）:
  *   - 直近 N=20 ターンは bodies から L2 全文を注入
