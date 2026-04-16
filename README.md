@@ -1,16 +1,37 @@
 # Throughline
 
-> Claude Code hooks plugin for `/clear`-safe persistent memory, with accurate
-> multi-session token monitoring built on Anthropic's real usage values.
+**Cut ~90% of Claude Code's context usage while keeping nearly all the memory.**
 
-Throughline splits every conversation turn into **three memory layers** and stores
-them in SQLite. On the next prompt, it reinjects just enough context to keep Claude
-on task — even across `/clear`, across new sessions, and across **chains of
-`/clear`** spanning multiple days.
+In a typical Claude Code session, **80% of the context window is tool I/O** —
+file reads, Bash output, grep results. This data is consumed the moment Claude
+acts on it, but it stays in the context forever, pushing you toward the window
+limit.
 
-It also ships an independent multi-session **token monitor** that reads real
-Anthropic API usage from the transcript JSONL (no `length / 4` heuristics, no
-tokenizer libraries required).
+Throughline fixes this by separating conversation content by **type, not time**:
+
+```
+Without Throughline (50 turns, no /clear):
+  Context = user text + assistant text + tool I/O + system messages
+          ≈ 125,000 tokens (80% is tool I/O you'll never re-read)
+
+With Throughline (50 turns → /clear → resume):
+  Context = recent 20 turns of conversation text (L2)
+          + older 30 turns as one-line summaries (L1)
+          + zero tool I/O (L3 — retired to SQLite, on-demand)
+          ≈ 13,000 tokens — same decisions, same context, 90% lighter
+```
+
+Unlike MemGPT or LangChain's SummaryBufferMemory which compress by **recency**
+(old = summarized), Throughline separates by **content type**: human-readable
+conversation stays, machine-generated tool output retires. This is purpose-built
+for coding assistants where tool I/O is heavy but transient.
+
+The retired L3 data isn't lost — Claude can pull it back on demand via
+`throughline detail <time>` when a past turn's tool output becomes relevant
+again.
+
+Throughline also ships a multi-session **token monitor** that reads real
+Anthropic API usage from the transcript JSONL (no `length / 4` heuristics).
 
 ---
 
