@@ -60,7 +60,9 @@
       "Bash(rm c:/Users/kite_/.claude/plans/vectorized-tinkering-wadler.md)",
       "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md)",
       "Bash(wc -l c:/Users/kite_/Documents/Program/Throughline/README.md c:/Users/kite_/Documents/Program/Throughline/CLAUDE.md c:/Users/kite_/Documents/Program/Throughline/docs/*.md c:/Users/kite_/Documents/Program/Throughline/docs/archive/*.md)",
-      "Bash(ls -t C:/Users/kite_/.claude/projects/c--Users-kite--Documents-Program-Throughline/*.jsonl)"
+      "Bash(ls -t C:/Users/kite_/.claude/projects/c--Users-kite--Documents-Program-Throughline/*.jsonl)",
+      "Bash(node bin/throughline.mjs uninstall --project)",
+      "Bash(node bin/throughline.mjs install --project)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",
@@ -70,52 +72,6 @@
     ]
   },
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node spike/session-link-reader.mjs"
-          },
-          {
-            "type": "command",
-            "command": "throughline session-start"
-          },
-          {
-            "type": "command",
-            "command": "node spike/test-session-start.mjs"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "throughline process-turn"
-          },
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs Stop"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "throughline inject-context"
-          },
-          {
-            "type": "command",
-            "command": "node spike/hook-logger.mjs UserPromptSubmit"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "hooks": [
@@ -192,6 +148,26 @@
           {
             "type": "command",
             "command": "node spike/hook-logger.mjs Notification"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "throughline session-start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "throughline process-turn"
           }
         ]
       }
