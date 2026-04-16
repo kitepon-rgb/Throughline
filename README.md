@@ -140,6 +140,7 @@ you open the folder. Drop an equivalent config into your own project's
 | `throughline install --project`                | Register hooks in `.claude/settings.json` for this repo only |
 | `throughline uninstall`                        | Remove Throughline hooks from the settings file              |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
+| `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
@@ -147,10 +148,22 @@ you open the folder. Drop an equivalent config into your own project's
 Hook subcommands (invoked by Claude Code, not by humans):
 `process-turn` (Stop), `inject-context` (UserPromptSubmit), `session-start` (SessionStart).
 
-Slash commands:
+### `throughline detail` — for AI, not humans
 
-- `/sc-detail HH:MM:SS` — retrieve L2 body text (and L3 details, when implemented) for a specific turn
-- `/sc-detail HH:MM:SS-HH:MM:SS` — retrieve a range
+`throughline detail` is the escape hatch Claude itself uses to pull archived
+detail back into the context when an L1 summary isn't enough. The injection
+footer explicitly instructs Claude to run this via its Bash tool when a past
+turn's tool I/O becomes relevant.
+
+```bash
+throughline detail 14:23:05          # single timestamp
+throughline detail 14:23-14:30       # timestamp range
+```
+
+Output groups records by `kind`: L2 conversation bodies, then L3 tool input/
+output, then system messages (hook output), then images. Records are scoped to
+the current project's merge chain so Claude only sees turns from its own
+project history.
 
 ---
 

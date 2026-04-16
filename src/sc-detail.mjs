@@ -75,8 +75,8 @@ function main() {
   const arg = process.argv[2];
   if (!arg) {
     process.stderr.write(
-      '使い方: node src/sc-detail.mjs <HH:MM:SS>\n' +
-        '       node src/sc-detail.mjs <HH:MM:SS>-<HH:MM:SS>\n',
+      '使い方: throughline detail <HH:MM:SS>\n' +
+        '       throughline detail <HH:MM:SS>-<HH:MM:SS>\n',
     );
     process.exit(1);
   }

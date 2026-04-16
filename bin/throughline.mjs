@@ -9,6 +9,7 @@
  *   throughline process-turn  # Stop hook (Claude Code から呼ばれる)
  *   throughline inject-context # UserPromptSubmit hook (Claude Code から呼ばれる)
  *   throughline session-start # SessionStart hook (Claude Code から呼ばれる)
+ *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline doctor        # 環境チェック
  *   throughline status        # DB 統計表示
  *   throughline --version     # バージョン表示
@@ -36,6 +37,12 @@ switch (cmd) {
     break;
   case 'monitor':
     await import('../src/token-monitor.mjs');
+    break;
+  case 'detail':
+    // 時刻引数を process.argv[2] として sc-detail.mjs に渡す必要がある。
+    // sc-detail は process.argv[2] を読むので、argv を rewrite してから import する。
+    process.argv = [process.argv[0], process.argv[1], ...rest];
+    await import('../src/sc-detail.mjs');
     break;
   case 'doctor':
     await (await import('../src/cli/doctor.mjs')).run();
@@ -65,6 +72,7 @@ Usage:
   throughline install         Register hooks in ~/.claude/settings.json
   throughline uninstall       Remove hooks
   throughline monitor         Multi-session token monitor (use --all, --session <id>)
+  throughline detail <time>   Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
   throughline doctor          Check environment
   throughline status          Show DB statistics
   throughline --version       Show version

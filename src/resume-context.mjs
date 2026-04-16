@@ -22,9 +22,19 @@ const RESUME_HEADER_TEMPLATE = (turnCount) =>
 
 const NORMAL_HEADER = '## Throughline: セッション記憶';
 
+// Claude 宛の行動指示。スラッシュコマンド形式ではなく、Bash ツールで叩ける
+// PATH 解決型サブコマンドを提示する。ユーザー向けの案内ではなく、Claude 自身が
+// 記憶の解像度を上げるために使う道具として明示する。
 const FOOTER_GUIDE =
   '---\n' +
-  '過去ターンの詳細は `/sc-detail <時刻>` で取得可能（例: /sc-detail 14:23:05、/sc-detail 14:23-14:30）';
+  '**[Claude 向け — 記憶の使い方]**\n' +
+  '上の L1 要約や L2 本文を読んで「具体的なコマンドやツール出力、ファイル内容を確認したい」と感じたら、' +
+  '推測せずに **Bash ツールで `throughline detail <時刻>` を実行** して L3（ツール入出力・hook 出力）を取得してください。\n' +
+  '- 単一時刻: `throughline detail 14:23:05`\n' +
+  '- 時刻範囲: `throughline detail 14:23-14:30`\n' +
+  '\n' +
+  '返る内容: 指定ターンの L2 会話本文 + L3（tool_input / tool_output / system 別にグループ化）。\n' +
+  'ユーザーに「詳細を見せて」と言われた時だけでなく、**ユーザー発言の文脈が過去ターンに依存しているのに L1/L2 だけでは情報不足だと判断した時**に、Claude 自身の判断で呼び出して構いません。';
 
 /**
  * Unix ms を HH:MM:SS 形式に変換する。
