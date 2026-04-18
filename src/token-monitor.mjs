@@ -242,30 +242,29 @@ export function shouldForceFullRedraw(prevCols, currCols) {
  * 描画に使う列幅を解決する。
  *
  * 優先順:
- *   1. **stdout が TTY** かつ `process.stdout.columns` が 40 以上
+ *   1. **stdout が TTY** かつ `process.stdout.columns` が 1 以上
  *       → その値から 1 引いたもの（末尾列での自動改行回避）
- *   2. `process.env.COLUMNS` が 40 以上 → その値 - 1
- *   3. それ以外 → 200 にフォールバック
+ *   2. `process.env.COLUMNS` が 1 以上 → その値 - 1
+ *   3. それ以外 → 80 にフォールバック
  *
- * 非 TTY のとき columns を信用しない理由:
- *   VSCode の `type: process` タスクは stdout を PTY ではなくパイプとして渡すため、
- *   - 起動時の columns が undefined / 0 / 12 のような極端な値になることがある
- *   - ターミナル panel をドラッグで広げても SIGWINCH が届かず columns が更新されない
- *   - 結果として起動時に狭かった幅のまま永久に truncate され続ける
- *   `isTTY` が false の時点で columns 値は信頼できない契約だと割り切り、env.COLUMNS か
- *   固定 200 にフォールバックする。
+ * 歴史: 0.3.6〜0.3.12 までは `>= 40` の閾値を設けて「狂った小さい値は捨てる」挙動
+ * だった。しかし実際の VSCode task panel は 30 cells 程度で起動することがあり (実測)、
+ * 真の columns=30 なのに閾値に引っかかって 200 フォールバックに倒れ、30 cell 端末に
+ * 200 cell の行を書いて 7 行に折り返し、`\x1b[NA` が 7 倍 under-count して
+ * 描画が永遠に積み上がるバグの真因だった。
  *
- * 200 固定フォールバックは、truncateToCells が 200 セル以下の実内容をそのまま通す
- * （伸長しない）ので過大でも副作用なし。
+ * 正の columns はすべて信頼する。真の幅に合わせて truncate すれば物理行 = 論理行
+ * が保証され、CUU 戻り先が正確になる。狭い terminal ではコンテンツが切り詰められるが、
+ * 積み上がりに比べれば遥かにマシ (ユーザーが panel を広げれば full UI が見える)。
  */
 export function resolveColumns() {
   if (process.stdout.isTTY) {
     const reported = typeof process.stdout.columns === 'number' ? process.stdout.columns : 0;
-    if (reported >= 40) return reported - 1;
+    if (reported > 0) return Math.max(1, reported - 1);
   }
   const fromEnv = Number(process.env.COLUMNS);
-  if (Number.isFinite(fromEnv) && fromEnv >= 40) return fromEnv - 1;
-  return 200;
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return Math.max(1, fromEnv - 1);
+  return 80;
 }
 
 function formatLine({ state, usage, isActive, now = Date.now() }) {

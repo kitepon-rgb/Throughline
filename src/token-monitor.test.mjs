@@ -410,41 +410,46 @@ function withStdoutState({ isTTY, columns, envColumns }, fn) {
   }
 }
 
-test('resolveColumns: TTY かつ columns が 40 以上 → その値 - 1', () => {
+test('resolveColumns: TTY かつ columns が正値 → その値 - 1', () => {
   withStdoutState({ isTTY: true, columns: 120, envColumns: undefined }, () => {
     assert.equal(resolveColumns(), 119);
   });
 });
 
-test('resolveColumns: 非 TTY なら columns が大きくても信用しない (env も 200 も使う)', () => {
-  // type: process タスクで columns が 120 にセットされたが実際の幅とは連動しない、という状況。
-  // env.COLUMNS も無ければ 200 フォールバック。
+test('resolveColumns: TTY かつ columns が狭い値 (VSCode task panel 等の実値) も信用する', () => {
+  // 0.3.6〜0.3.12 の閾値 40 バグを再現防止: 30 cells は実測ベースで正当な値
+  withStdoutState({ isTTY: true, columns: 30, envColumns: undefined }, () => {
+    assert.equal(resolveColumns(), 29);
+  });
+});
+
+test('resolveColumns: TTY かつ columns=1 → 1 にクランプ (columns-1=0 回避)', () => {
+  withStdoutState({ isTTY: true, columns: 1, envColumns: undefined }, () => {
+    assert.equal(resolveColumns(), 1);
+  });
+});
+
+test('resolveColumns: 非 TTY は columns を信用しない', () => {
   withStdoutState({ isTTY: false, columns: 120, envColumns: undefined }, () => {
-    assert.equal(resolveColumns(), 200);
+    assert.equal(resolveColumns(), 80);
   });
 });
 
-test('resolveColumns: TTY でも columns が小さすぎる値 (12 等) ならフォールバック 200', () => {
-  withStdoutState({ isTTY: true, columns: 12, envColumns: undefined }, () => {
-    assert.equal(resolveColumns(), 200);
-  });
-});
-
-test('resolveColumns: 非 TTY でも env.COLUMNS >= 40 があればそれを使う', () => {
+test('resolveColumns: 非 TTY でも env.COLUMNS があればそれを使う', () => {
   withStdoutState({ isTTY: false, columns: undefined, envColumns: '150' }, () => {
     assert.equal(resolveColumns(), 149);
   });
 });
 
-test('resolveColumns: TTY で columns 未設定、env も無ければフォールバック 200', () => {
+test('resolveColumns: TTY で columns 未設定、env も無ければフォールバック 80', () => {
   withStdoutState({ isTTY: true, columns: undefined, envColumns: undefined }, () => {
-    assert.equal(resolveColumns(), 200);
+    assert.equal(resolveColumns(), 80);
   });
 });
 
-test('resolveColumns: 全てのソースが無効ならフォールバック 200', () => {
+test('resolveColumns: 全てのソースが無効ならフォールバック 80', () => {
   withStdoutState({ isTTY: false, columns: undefined, envColumns: undefined }, () => {
-    assert.equal(resolveColumns(), 200);
+    assert.equal(resolveColumns(), 80);
   });
 });
 
