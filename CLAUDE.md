@@ -63,7 +63,7 @@
 | [src/resume-context.mjs](src/resume-context.mjs) | 「中断地点からの再開」注入テキスト組み立て（in-flight メモ → 最終ターン thinking → L1 → L2 の順） |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`)。`usage` フィールド (tokens/model/contextWindowSize) を Stop 完了時に固定保存 — monitor が JSONL を再スキャンせずに済むようにする。旧フォーマット (usage 無し) も読める |
 | [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | `claude -p --model claude-haiku-4-5-*` subprocess 呼び出し（再帰ガード 2 重） |
-| [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を初回 Stop で自動プロビジョニング（token-monitor の folderOpen 自動起動）。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内。冪等性ガード付き |
+| [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を自動プロビジョニング（token-monitor の folderOpen 自動起動）。`ensureMonitorTaskFile` は **SessionStart / Stop / UserPromptSubmit の 3 hook すべてから呼ばれる**（v0.3.18 以降）。冪等性ガード付きなので重複呼び出し安全。1 つの hook が発火しない環境でも残り 2 つのどれかが発火すれば tasks.json が生える。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内 |
 | [src/terminal-size.mjs](src/terminal-size.mjs) | OSC 18t (`\x1b[18t`) で端末に実幅を問い合わせるユーティリティ。Windows ConPTY + VSCode task terminal では `process.stdout.columns` が凍結するので、stdin を raw mode で listen して `\x1b[8;rows;cols t` 応答を parse する。Ctrl+C 検知 (0x03) と stop() での raw mode 解除も担当 |
 
 ### CLI

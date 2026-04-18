@@ -21,6 +21,7 @@ import { getDb } from './db.mjs';
 import { consumeBaton } from './baton.mjs';
 import { mergeSpecificPredecessor, resolveMergeTarget } from './session-merger.mjs';
 import { buildResumeContext } from './resume-context.mjs';
+import { ensureMonitorTaskFile } from './vscode-task.mjs';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
@@ -54,6 +55,18 @@ async function main() {
   const projectPath = cwd ?? process.cwd();
   const db = getDb();
   const now = Date.now();
+
+  // 0. VSCode で開かれた新規プロジェクトに .vscode/tasks.json を自動プロビジョニング。
+  //    Stop hook 側にも同じ呼び出しがあるが、Stop が発火しない環境（応答中断・IDE 挙動差）
+  //    でも SessionStart は必ず走るので、新規プロジェクトでの自動起動を確実化する保険。
+  //    冪等性は ensureMonitorTaskFile 側で保証されており、Stop/UserPromptSubmit と重複呼び
+  //    出しされても安全。
+  try {
+    ensureMonitorTaskFile({ cwd: projectPath, env: process.env });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[vscode-task] ${msg}\n`);
+  }
 
   // 1. sessions テーブルに INSERT OR IGNORE
   db.prepare(

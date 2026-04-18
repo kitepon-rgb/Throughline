@@ -79,7 +79,18 @@
       "Bash(sqlite3 /c/Users/kite_/.throughline/throughline.db \"SELECT session_id, created_at, updated_at, merged_into FROM sessions ORDER BY created_at DESC LIMIT 10;\")",
       "Bash(awk '/source.*clear/{found=1} found && /session_id|transcript_path/{print; count++} count==2{found=0; count=0}' /c/Users/kite_/.throughline/spike/session-start.log)",
       "Bash(awk '/SessionStart/{ *)",
-      "Bash(npm root *)"
+      "Bash(npm root *)",
+      "Bash(node -e \"import\\('node:util'\\).then\\(m => console.log\\(Object.keys\\(m\\).filter\\(k => k.includes\\('String'\\)\\)\\)\\)\")",
+      "mcp__plugin_ecc_sequential-thinking__sequentialthinking",
+      "Bash(node --test src/token-monitor.test.mjs --test-reporter=tap)",
+      "Bash(wait)",
+      "Bash(npm test *)",
+      "mcp__plugin_ecc_github__search_repositories",
+      "mcp__plugin_ecc_github__get_file_contents",
+      "Bash(xargs ls *)",
+      "Bash(npm version *)",
+      "Bash(git commit *)",
+      "Bash(git mv *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",

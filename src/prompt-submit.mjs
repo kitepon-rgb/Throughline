@@ -14,6 +14,7 @@
 
 import { getDb } from './db.mjs';
 import { writeBaton } from './baton.mjs';
+import { ensureMonitorTaskFile } from './vscode-task.mjs';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
@@ -53,6 +54,16 @@ async function main() {
 
   const payload = JSON.parse(raw);
   const { session_id, cwd, prompt } = payload;
+
+  // VSCode 新規プロジェクトへの tasks.json 自動プロビジョニング。
+  // SessionStart/Stop に加えここでも呼ぶことで、どれか 1 つでも発火すれば初回メッセージ送信で
+  // tasks.json が生える。冪等性は ensureMonitorTaskFile 側で保証。/tl 判定より前に置く。
+  try {
+    ensureMonitorTaskFile({ cwd: cwd ?? process.cwd(), env: process.env });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[vscode-task] ${msg}\n`);
+  }
 
   if (!isBatonCommand(prompt)) {
     process.exit(0);
