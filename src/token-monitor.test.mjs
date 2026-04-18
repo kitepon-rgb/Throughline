@@ -26,19 +26,23 @@ const CWD_BAR = normalizeProjectPath('/tmp/bar');
 // ─── parseArgs ─────────────────────────────────────────────────────
 
 test('parseArgs: 引数なしは defaults', () => {
-  assert.deepEqual(parseArgs([]), { all: false, session: null });
+  assert.deepEqual(parseArgs([]), { all: false, session: null, diag: false });
 });
 
 test('parseArgs: --all フラグ', () => {
-  assert.deepEqual(parseArgs(['--all']), { all: true, session: null });
+  assert.deepEqual(parseArgs(['--all']), { all: true, session: null, diag: false });
 });
 
 test('parseArgs: --session <id>', () => {
-  assert.deepEqual(parseArgs(['--session', 'abc123']), { all: false, session: 'abc123' });
+  assert.deepEqual(parseArgs(['--session', 'abc123']), { all: false, session: 'abc123', diag: false });
+});
+
+test('parseArgs: --diag フラグ (環境診断モード)', () => {
+  assert.deepEqual(parseArgs(['--diag']), { all: false, session: null, diag: true });
 });
 
 test('parseArgs: --all と --session の組み合わせ', () => {
-  assert.deepEqual(parseArgs(['--all', '--session', 'abc']), { all: true, session: 'abc' });
+  assert.deepEqual(parseArgs(['--all', '--session', 'abc']), { all: true, session: 'abc', diag: false });
 });
 
 test('parseArgs: --session 値欠落は throw する', () => {
@@ -51,7 +55,7 @@ test('parseArgs: --session の次が別フラグなら throw する', () => {
 
 test('parseArgs: 未知の引数は黙殺', () => {
   // 将来 --help などを足す余地を残すため、現状は黙殺で OK
-  assert.deepEqual(parseArgs(['--unknown', 'value']), { all: false, session: null });
+  assert.deepEqual(parseArgs(['--unknown', 'value']), { all: false, session: null, diag: false });
 });
 
 // ─── filterStates ─────────────────────────────────────────────────

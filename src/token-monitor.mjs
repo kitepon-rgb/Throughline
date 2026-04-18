@@ -34,7 +34,11 @@ const ANSI = {
   hideCursor: '\x1b[?25l',
   showCursor: '\x1b[?25h',
   clearLine: '\x1b[2K',
-  clearScreen: '\x1b[2J\x1b[H',
+  // xterm.js は `\x1b[2J` (ED2) をビューポート消去としてしか実装しておらず、
+  // 消えた内容はスクロールバックに残る（xterm.js issue #5019 の jerch コメント参照）。
+  // VSCode task panel でフレーム更新が「積み上がる」ように見えるのはこれが原因。
+  // `\x1b[3J` (ED3) を続けて送るとスクロールバックも消えて真の全クリアになる。
+  clearScreen: '\x1b[2J\x1b[3J\x1b[H',
   clearBelow: '\x1b[0J',        // 現在位置から画面末尾までをクリア
   up: (n) => `\x1b[${n}A`,       // CUU: カーソルを N 行上へ (列は変えない)
   reset: '\x1b[0m',
@@ -162,14 +166,16 @@ function padCellsEnd(s, targetCells) {
 // --- CLI 引数 ---
 /**
  * @param {string[]} argv
- * @returns {{all: boolean, session: string|null}}
+ * @returns {{all: boolean, session: string|null, diag: boolean}}
  * @throws {Error} --session に値が欠落している場合
  */
 function parseArgs(argv) {
-  const args = { all: false, session: null };
+  const args = { all: false, session: null, diag: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--all') {
       args.all = true;
+    } else if (argv[i] === '--diag') {
+      args.diag = true;
     } else if (argv[i] === '--session') {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) {
@@ -462,6 +468,70 @@ function safeRenderFrame(args) {
   }
 }
 
+/**
+ * 環境診断モード。ユーザー環境で「モニターの描画が壊れる」と報告されたときに、
+ * 実際の process.stdout / env / TERM の値をその場で可視化するための一発起動モード。
+ *
+ * 過去に「`type: process` だと非 TTY」「`type: shell` なら PTY」など推測で描画戦略を
+ * 変えてきたが、PTY が張られるかどうかは VSCode のバージョンや Windows の ConPTY
+ * 実装に依存し、推測は外れ続けた。このコマンドで実測値を 1 ページに出すことで、
+ * 「この環境では何が起きているか」を断定できるようにする。
+ */
+function runDiagnostic() {
+  const out = (k, v) => process.stdout.write(`${k.padEnd(28)}${v}\n`);
+  process.stdout.write('=== Throughline monitor diagnostic ===\n\n');
+
+  process.stdout.write('[process.stdout]\n');
+  out('  isTTY', String(Boolean(process.stdout.isTTY)));
+  out('  columns', String(process.stdout.columns ?? '(undefined)'));
+  out('  rows', String(process.stdout.rows ?? '(undefined)'));
+  out('  hasColors()',
+    typeof process.stdout.hasColors === 'function'
+      ? String(process.stdout.hasColors())
+      : '(n/a)',
+  );
+  process.stdout.write('\n');
+
+  process.stdout.write('[process.stderr]\n');
+  out('  isTTY', String(Boolean(process.stderr.isTTY)));
+  process.stdout.write('\n');
+
+  process.stdout.write('[env]\n');
+  for (const key of ['TERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION', 'COLUMNS', 'LINES', 'VSCODE_PID', 'VSCODE_IPC_HOOK_CLI', 'VSCODE_INJECTION', 'WT_SESSION', 'ConEmuPID']) {
+    out(`  ${key}`, process.env[key] ?? '(unset)');
+  }
+  process.stdout.write('\n');
+
+  process.stdout.write('[resolveColumns()]\n');
+  out('  value', String(resolveColumns()));
+  process.stdout.write('\n');
+
+  // ANSI 検証: 画面クリア系シーケンスが視覚的にどう動くかを判定する
+  // 小テスト。ユーザーには生出力を見て「積み上がっているか」報告してもらう。
+  process.stdout.write('[ANSI probe — 視認用]\n');
+  process.stdout.write('  直後に 3 回フレームを書きます。各フレームは clearScreen で上書きされるはず。\n');
+  process.stdout.write('  スクリーンショットを取って、フレーム A/B/C が「積み上がり」か「上書き」か教えてください。\n\n');
+
+  let frame = 0;
+  const labels = ['A', 'B', 'C'];
+  const probe = () => {
+    process.stdout.write(ANSI.clearScreen);
+    process.stdout.write(`=== frame ${labels[frame]} / 3 ===\n`);
+    process.stdout.write('この行より上に「=== frame X ===」が 2 つ以上見える場合、\n');
+    process.stdout.write(`\\x1b[2J\\x1b[3J\\x1b[H (現行の clearScreen) がこの端末で効いていません。\n`);
+    process.stdout.write(`現行 clearScreen = 0x1b[2J 0x1b[3J 0x1b[H\n`);
+    frame++;
+    if (frame >= labels.length) {
+      process.stdout.write('\n=== diag 終了 ===\n');
+      process.stdout.write('上記の値と、この 3 フレームが積み上がったかどうかを報告してください。\n');
+      process.exit(0);
+    } else {
+      setTimeout(probe, 1500);
+    }
+  };
+  setTimeout(probe, 500);
+}
+
 export function main() {
   let args;
   try {
@@ -470,6 +540,11 @@ export function main() {
     const msg = err instanceof Error ? err.message : 'invalid args';
     process.stderr.write(`[Throughline] ${msg}\n`);
     process.exit(2);
+  }
+
+  if (args.diag) {
+    runDiagnostic();
+    return;
   }
 
   process.stdout.write(ANSI.hideCursor);
