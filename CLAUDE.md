@@ -62,6 +62,7 @@
 | [src/resume-context.mjs](src/resume-context.mjs) | 「中断地点からの再開」注入テキスト組み立て（in-flight メモ → 最終ターン thinking → L1 → L2 の順） |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`) |
 | [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | `claude -p --model claude-haiku-4-5-*` subprocess 呼び出し（再帰ガード 2 重） |
+| [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を初回 Stop で自動プロビジョニング（token-monitor の folderOpen 自動起動）。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内。冪等性ガード付き |
 
 ### CLI
 
@@ -89,6 +90,7 @@
 | [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo` / TTL 動作 / memo_text 永続化 |
 | [src/session-merger.test.mjs](src/session-merger.test.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor` |
 | [src/turn-processor.test.mjs](src/turn-processor.test.mjs) | `countDistinctBodyTurns` / `pickOldestUnsummarizedTurn` / 20 ターン境界 |
+| [src/vscode-task.test.mjs](src/vscode-task.test.mjs) | `ensureMonitorTaskFile` の全分岐 (created / merged / already_present / skipped×複数 reason)、JSONC 検出、インデント保持、冪等性 |
 
 ```bash
 node --test src/*.test.mjs

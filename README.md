@@ -179,12 +179,56 @@ Example output (real values from a running 1M-context Opus session):
   before drawing, preserving ANSI color codes. The redraw cursor math cannot
   desync on narrow terminals.
 
-### VS Code auto-start
+### VS Code auto-start (automatic)
 
-For contributors working on Throughline itself, a `.vscode/tasks.json` in this
-repo launches `throughline monitor` automatically in a dedicated terminal when
-you open the folder. Drop an equivalent config into your own project's
-`.vscode/tasks.json` to get the same behavior.
+After `throughline install`, any VS Code / Cursor / VSCodium project you work in
+gets `.vscode/tasks.json` provisioned automatically on the next assistant turn.
+The file configures `runOn: folderOpen` so the monitor appears in a dedicated
+terminal panel the next time you open that folder.
+
+**How it works.** The Stop hook runs at the end of every assistant response.
+Once per project it inspects `.vscode/tasks.json`:
+
+- **No file yet** → creates one with a single `Throughline Monitor` task.
+- **Plain JSON with other tasks** → appends the monitor task, preserves your
+  existing entries, `version`, and indentation.
+- **JSONC (comments or trailing commas)** → does not touch the file. Prints a
+  one-time notice to stderr asking you to paste the snippet below.
+- **Already contains a Throughline Monitor task** → does nothing (idempotent;
+  this is the common path on every subsequent turn).
+
+The generated task uses `type: 'process'` with the absolute path to Node and
+`bin/throughline.mjs` so Windows `.cmd` shims and missing PATH entries cannot
+break it.
+
+**Opt out:** set `THROUGHLINE_NO_VSCODE=1` in the environment used by Claude
+Code. Delete `.vscode/tasks.json` (or just the monitor entry) if you want to
+stop auto-start for a project that already has one.
+
+**Manual snippet for JSONC tasks.json files.** If Throughline refused to edit
+your `tasks.json` because it contains comments or trailing commas, add this
+entry to the `tasks` array yourself:
+
+```jsonc
+{
+  "label": "Throughline Monitor",
+  "type": "shell",
+  "command": "throughline monitor",
+  "isBackground": true,
+  "presentation": {
+    "reveal": "always",
+    "panel": "dedicated",
+    "group": "throughline",
+    "close": false,
+    "echo": false,
+    "focus": false,
+    "showReuseMessage": false,
+    "clear": true
+  },
+  "runOptions": { "runOn": "folderOpen" },
+  "problemMatcher": []
+}
+```
 
 ---
 

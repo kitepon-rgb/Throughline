@@ -42,6 +42,7 @@ import {
 import { resolveMergeTarget } from './session-merger.mjs';
 import { writeSessionState } from './state-file.mjs';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
+import { ensureMonitorTaskFile } from './vscode-task.mjs';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
@@ -117,6 +118,16 @@ async function main() {
   const payload = JSON.parse(raw || '{}');
   const { session_id, transcript_path, cwd } = payload;
   if (!session_id) throw new Error('Missing session_id in Stop payload');
+
+  // VSCode で開かれたプロジェクトに .vscode/tasks.json を自動プロビジョニングする。
+  // 2 回目以降は冪等性チェックで即 return するので毎ターン走っても安全。
+  // 失敗しても主処理は継続させるため try/catch でラップ。
+  try {
+    ensureMonitorTaskFile({ cwd, env: process.env });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[vscode-task] ${msg}\n`);
+  }
 
   // Stop hook 時点で state ファイルを更新 → token-monitor の「アクティブ行」判定が
   // アシスタント応答終了時刻まで追従する
