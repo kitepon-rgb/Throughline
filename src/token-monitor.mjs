@@ -18,9 +18,10 @@
  */
 
 import { basename } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
+import { statSync, existsSync } from 'node:fs';
 import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjectPath } from './state-file.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
-import { stripAnsi } from './transcript-reader.mjs';
 
 const REFRESH_MS = 1000;
 
@@ -45,38 +46,113 @@ function color(c, text) {
   return `${c}${text}${ANSI.reset}`;
 }
 
-/** ANSI エスケープシーケンスを除いた可視文字数を返す（サロゲートペア考慮はしない簡易版） */
-function visibleLength(s) {
-  return stripAnsi(s).length;
+// --- セル幅計算（ANSI / CJK / 絵文字対応、依存ゼロ） ---
+//
+// Node v22 には util.getStringWidth がないため、主要な East Asian Wide + 絵文字ブロックを
+// 自前の範囲判定で 2 セルとして扱う。East Asian Ambiguous は 1 セル（アラビア・タイ等は
+// 既存の char-count 実装と同じ扱いなので悪化しない）。
+// ZWJ / VS16 は幅 0 として扱う（絵文字シーケンスの微ズレは許容）。
+const ZERO_WIDTH_CODEPOINTS = new Set([0x200b, 0x200c, 0x200d, 0xfeff, 0xfe0e, 0xfe0f]);
+
+/**
+ * 単一コードポイントのセル幅を返す（0 / 1 / 2）
+ * @param {number} cp
+ */
+function codePointWidth(cp) {
+  if (cp < 0x20) return 0;                          // C0 制御
+  if (cp >= 0x7f && cp < 0xa0) return 0;            // DEL / C1 制御
+  if (ZERO_WIDTH_CODEPOINTS.has(cp)) return 0;
+  // Combining marks (簡易: Combining Diacritical Marks 主要ブロック)
+  if (cp >= 0x0300 && cp <= 0x036f) return 0;
+  // Wide ranges
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) ||               // Hangul Jamo
+    (cp >= 0x2e80 && cp <= 0x303e) ||               // CJK Radicals / Kangxi
+    (cp >= 0x3041 && cp <= 0x33ff) ||               // Hiragana/Katakana/Bopomofo/CJK Symbols
+    (cp >= 0x3400 && cp <= 0x4dbf) ||               // CJK Ext A
+    (cp >= 0x4e00 && cp <= 0x9fff) ||               // CJK Unified
+    (cp >= 0xa000 && cp <= 0xa4cf) ||               // Yi
+    (cp >= 0xac00 && cp <= 0xd7a3) ||               // Hangul Syllables
+    (cp >= 0xf900 && cp <= 0xfaff) ||               // CJK Compat Ideographs
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||               // CJK Compat Forms
+    (cp >= 0xff00 && cp <= 0xff60) ||               // Fullwidth
+    (cp >= 0xffe0 && cp <= 0xffe6) ||               // Fullwidth signs
+    (cp >= 0x1f300 && cp <= 0x1faff) ||             // 絵文字主要ブロック
+    (cp >= 0x20000 && cp <= 0x3134f)                // CJK Ext B-G
+  ) {
+    return 2;
+  }
+  return 1;
 }
 
 /**
- * 行をターミナル幅に収まるよう切り詰める。ANSI コードを壊さないため、
- * 可視文字だけを数えながらコピーし、上限に達したら reset を付けて返す。
- * @param {string} line
- * @param {number} maxWidth
+ * 文字列のセル幅合計（ANSI 剥ぎ取り済み前提ではない — 内部で剥ぐ）
+ * @param {string} s
  */
-function truncateToWidth(line, maxWidth) {
-  if (maxWidth <= 0) return '';
-  if (visibleLength(line) <= maxWidth) return line;
+function cellWidth(s) {
+  if (typeof s !== 'string') return 0;
+  const stripped = stripVTControlCharacters(s);
+  let total = 0;
+  for (const ch of stripped) {
+    total += codePointWidth(ch.codePointAt(0));
+  }
+  return total;
+}
+
+/**
+ * 行をセル幅で切り詰める。ANSI コードはそのまま通過させ（幅 0）、
+ * 可視セル幅が maxCells に達したら残りを捨てて reset を付けて返す。
+ * CJK 文字を跨ぐときは 1 セル余る場合があるので空白で埋める。
+ * @param {string} line
+ * @param {number} maxCells
+ */
+function truncateToCells(line, maxCells) {
+  if (maxCells <= 0) return '';
+  if (cellWidth(line) <= maxCells) return line;
   let out = '';
-  let visible = 0;
+  let cells = 0;
   let i = 0;
-  while (i < line.length && visible < maxWidth) {
-    const ch = line[i];
-    if (ch === '\x1b' && line[i + 1] === '[') {
-      // ANSI sequence: copy until final byte (a-zA-Z)
-      const end = line.slice(i).search(/[a-zA-Z]/);
-      if (end === -1) break;
-      out += line.slice(i, i + end + 1);
-      i += end + 1;
+  while (i < line.length) {
+    const code = line.charCodeAt(i);
+    // ANSI CSI: \x1b[ ... 終端 (0x40-0x7e)
+    if (code === 0x1b && line.charCodeAt(i + 1) === 0x5b) {
+      let j = i + 2;
+      while (j < line.length) {
+        const c = line.charCodeAt(j);
+        if (c >= 0x40 && c <= 0x7e) { j++; break; }
+        j++;
+      }
+      out += line.slice(i, j);
+      i = j;
       continue;
     }
+    // コードポイント単位で取得（サロゲートペア考慮）
+    const cp = line.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const w = codePointWidth(cp);
+    if (cells + w > maxCells) {
+      // CJK 1 セル余り
+      if (cells < maxCells) out += ' ';
+      break;
+    }
     out += ch;
-    visible++;
-    i++;
+    cells += w;
+    i += ch.length;
   }
   return out + ANSI.reset;
+}
+
+/**
+ * 文字列の末尾を半角スペースでパディングして targetCells に揃える。
+ * 既にはみ出している場合は truncateToCells で切り詰める。
+ * @param {string} s
+ * @param {number} targetCells
+ */
+function padCellsEnd(s, targetCells) {
+  const width = cellWidth(s);
+  if (width === targetCells) return s;
+  if (width > targetCells) return truncateToCells(s, targetCells);
+  return s + ' '.repeat(targetCells - width);
 }
 
 // --- CLI 引数 ---
@@ -104,14 +180,22 @@ function parseArgs(argv) {
 
 // --- 表示 ---
 function renderBar(ratio, width = 20) {
-  const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
+  // NaN は 0、+Infinity は 1（オーバーフロー = 満タン表示）、負値 / -Infinity は 0 にクランプ
+  let safe;
+  if (Number.isNaN(ratio)) safe = 0;
+  else if (ratio === Infinity) safe = 1;
+  else if (ratio === -Infinity) safe = 0;
+  else safe = Math.max(0, Math.min(1, ratio));
+  const filled = Math.round(safe * width);
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
 function formatNumber(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (!Number.isFinite(n) || n < 0) return '0';
+  // 999_950 以上は toFixed(1) で "1000.0k" になってしまうので M 表記に切り上げる
+  if (n >= 999_500) return (n / 1_000_000).toFixed(2) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
-  return String(n);
+  return String(Math.floor(n));
 }
 
 function formatLine({ state, usage, isActive }) {
@@ -135,7 +219,7 @@ function formatLine({ state, usage, isActive }) {
     '';
 
   const marker = isActive ? color(ANSI.bold + ANSI.cyan, '▶') : ' ';
-  const projectCol = project.padEnd(18).slice(0, 18);
+  const projectCol = padCellsEnd(project, 18);
   const idCol = color(ANSI.dim, shortId);
   const barCol = color(barColor, bar);
   const tokCol = `${formatNumber(tokens).padStart(6)} / ${pct.toString().padStart(3)}%`;
@@ -166,24 +250,55 @@ function filterStates(states, args, cwd) {
 
 // --- メインループ ---
 let lastRenderedLines = 0;
-let lastMtimes = new Map();
+let lastRenderKey = '';
 
+/**
+ * 再描画要否の判定キー。state ファイル群の mtime と transcript JSONL の size を
+ * 1 本の文字列にまとめてハッシュキーとする。キーが前回と同じなら描画スキップ。
+ *
+ * 注: transcript は JSONL append-only なので size 変化 = 新しい usage エントリ到来と
+ * 同義。mtime だけでは transcript 更新を検出できない（state-file の mtime は
+ * Stop hook のタイミングで更新され、transcript は Claude の stream 中に太る）。
+ */
+function computeRenderKey() {
+  const parts = [];
+  // state mtimes
+  const mtimes = snapshotStateMtimes();
+  const names = Array.from(mtimes.keys()).sort();
+  for (const name of names) parts.push(`s:${name}:${mtimes.get(name)}`);
+  // transcript sizes（state ファイルを読まずに直接 stat、IO 最小化）
+  try {
+    const states = readAllSessionStates();
+    for (const st of states) {
+      if (!st.transcriptPath || !existsSync(st.transcriptPath)) continue;
+      try {
+        const size = statSync(st.transcriptPath).size;
+        parts.push(`t:${st.sessionId}:${size}`);
+      } catch {
+        // stat 失敗は無視（次フレームで回復）
+      }
+    }
+  } catch {
+    // readAllSessionStates 自体の失敗も 1 フレームで回復
+  }
+  return parts.join('|');
+}
+
+/**
+ * 前回と比べてキーが変化していれば true。副作用として lastRenderKey を更新する。
+ */
 function needsRerender() {
-  const current = snapshotStateMtimes();
-  if (current.size !== lastMtimes.size) {
-    lastMtimes = current;
+  const key = computeRenderKey();
+  if (key !== lastRenderKey) {
+    lastRenderKey = key;
     return true;
   }
-  for (const [name, mtime] of current) {
-    if (lastMtimes.get(name) !== mtime) {
-      lastMtimes = current;
-      return true;
-    }
-  }
-  // mtime は同じでも transcript JSONL のサイズが変われば再描画したい
-  // → transcript-usage のキャッシュ判定に任せるため毎秒呼ぶ設計。
-  //    state ファイル変化なしでも再計算は走らせる（キャッシュヒット時は軽量）
-  return true;
+  return false;
+}
+
+/** テスト用リセット */
+function resetRenderKeyCache() {
+  lastRenderKey = '';
 }
 
 function renderFrame(args) {
@@ -211,13 +326,14 @@ function renderFrame(args) {
     }
   }
 
-  // ★ 折り返し対策: 各行を (columns - 1) 幅に切り詰めて物理 1 行に収める。
+  // ★ 折り返し対策: 各行を (columns - 1) セル幅に切り詰めて物理 1 行に収める。
   //   こうすれば ANSI.up(lines.length) と論理行数が物理行数と一致する。
   //   columns - 1 にしてるのはターミナル末尾列に書くと自動改行する端末があるため。
+  //   truncateToCells は CJK / 絵文字を 2 セルとして正しく数える。
   const columns = process.stdout.columns && process.stdout.columns > 10
     ? process.stdout.columns - 1
     : 120;
-  const clipped = lines.map((l) => truncateToWidth(l, columns));
+  const clipped = lines.map((l) => truncateToCells(l, columns));
 
   // 前フレームを消去してから再描画:
   //   1. カーソルを前フレームの先頭行へ戻す (CUU = 行移動のみ)
@@ -300,4 +416,12 @@ export function main() {
 export const _internal = {
   parseArgs,
   filterStates,
+  cellWidth,
+  truncateToCells,
+  padCellsEnd,
+  formatNumber,
+  renderBar,
+  computeRenderKey,
+  needsRerender,
+  resetRenderKeyCache,
 };

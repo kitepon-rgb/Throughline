@@ -72,20 +72,26 @@ function hasContextWindowHint(raw) {
   return /\[1m\]|1M context/i.test(raw);
 }
 
-/** @type {Map<string, {size: number, sample: UsageSample|null}>} */
+/** @type {Map<string, {size: number, mtimeMs: number, sample: UsageSample|null, stickyWindow: number}>} */
 const cache = new Map();
 
 /**
- * transcript JSONL から最新の assistant usage を抽出する
+ * transcript JSONL から最新の assistant usage を抽出する。
+ *
+ * キャッシュ無効化は size + mtimeMs の両方を比較する（同サイズで内容差し替えも検出）。
+ * sticky 1M: 一度でも 1M 文脈窓と判定した path は以後 1M のまま（200k→1M 境界での
+ * バー急変を防ぐ）。プロセス再起動でリセット、monitor 再起動時でも初回サンプルで
+ * 即復帰するので実害なし。
+ *
  * @param {string} transcriptPath
  * @returns {UsageSample | null}
  */
 export function readLatestUsage(transcriptPath) {
   if (!transcriptPath || !existsSync(transcriptPath)) return null;
 
-  const { size } = statSync(transcriptPath);
+  const stat = statSync(transcriptPath);
   const cached = cache.get(transcriptPath);
-  if (cached && cached.size === size) {
+  if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
     return cached.sample;
   }
 
@@ -110,15 +116,30 @@ export function readLatestUsage(transcriptPath) {
       (usage.cache_creation_input_tokens ?? 0) +
       (usage.cache_read_input_tokens ?? 0);
     const model = entry.message?.model ?? '';
+    const detected = inferContextWindowSize(model, tokens, rawHint);
     latest = {
       tokens,
       model,
-      contextWindowSize: inferContextWindowSize(model, tokens, rawHint),
+      contextWindowSize: detected,
       outputTokens: usage.output_tokens ?? 0,
     };
   }
 
-  cache.set(transcriptPath, { size, sample: latest });
+  // sticky 1M: 既に 1M を観測していたらその値を維持
+  const priorSticky = cached?.stickyWindow ?? 0;
+  const stickyWindow = latest
+    ? Math.max(latest.contextWindowSize, priorSticky)
+    : priorSticky;
+  if (latest && stickyWindow > latest.contextWindowSize) {
+    latest.contextWindowSize = stickyWindow;
+  }
+
+  cache.set(transcriptPath, {
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    sample: latest,
+    stickyWindow,
+  });
   return latest;
 }
 
