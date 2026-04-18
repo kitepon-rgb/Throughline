@@ -45,7 +45,7 @@ switch (cmd) {
     await (await import('../src/cli/save-inflight.mjs')).run();
     break;
   case 'doctor':
-    await (await import('../src/cli/doctor.mjs')).run();
+    await (await import('../src/cli/doctor.mjs')).run(rest);
     break;
   case 'status':
     await (await import('../src/cli/status.mjs')).run();

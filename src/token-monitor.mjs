@@ -24,6 +24,10 @@ import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjec
 import { readLatestUsage } from './transcript-usage.mjs';
 
 const REFRESH_MS = 1000;
+// データ変化が無くても N ms ごとに再描画して「(24m ago)」表示を進める。
+// 変化検知のほうが優先で、こちらはフォールバック的なタイマー。
+const TIME_AGO_REFRESH_MS = 10_000;
+let lastTimeAgoRefresh = Date.now();
 
 // --- ANSI ---
 const ANSI = {
@@ -198,7 +202,36 @@ function formatNumber(n) {
   return String(Math.floor(n));
 }
 
-function formatLine({ state, usage, isActive }) {
+/**
+ * ある時刻からの経過時間を短い人間可読形式で返す。
+ * 「止まって見える」瞬間に、それがどれだけ前の値なのかを一目で示すために使う。
+ * @param {number} ms - 経過ミリ秒
+ */
+export function formatTimeAgo(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return 'just now';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 10) return 'just now';
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
+/**
+ * columns の変化を検知して全画面再描画すべきかを返す。
+ * process.stdout.on('resize') イベントが VSCode 統合ターミナルで発火しないケースが
+ * あるため、1 秒 tick から呼び出して polling で検知する。
+ * @param {number} prevCols
+ * @param {number} currCols
+ */
+export function shouldForceFullRedraw(prevCols, currCols) {
+  return prevCols !== currCols && currCols > 0;
+}
+
+function formatLine({ state, usage, isActive, now = Date.now() }) {
   const project = basename(state.projectPath || '?');
   const shortId = state.sessionId.slice(0, 8);
   const tokens = usage?.tokens ?? 0;
@@ -228,8 +261,13 @@ function formatLine({ state, usage, isActive }) {
   const tokCol = `${formatNumber(tokens).padStart(6)} / ${pct.toString().padStart(3)}%`;
   const remCol = color(ANSI.dim, `残 ${formatNumber(remaining)}`);
   const modelCol = usage?.model ? color(ANSI.dim, usage.model) : color(ANSI.dim, '(未取得)');
+  // 最終更新からの経過: 表示が「止まって見える」とき、それが idle なのか障害なのかを
+  // 即座に判別できるようにする。updatedAt は state.writeSessionState 時の Date.now()。
+  const ago = typeof state.updatedAt === 'number'
+    ? color(ANSI.dim, `(${formatTimeAgo(now - state.updatedAt)})`)
+    : '';
 
-  return `${marker} ${projectCol} ${idCol} ${barCol} ${tokCol}  ${remCol}  ${modelCol}${warn}`;
+  return `${marker} ${projectCol} ${idCol} ${barCol} ${tokCol}  ${remCol}  ${modelCol} ${ago}${warn}`;
 }
 
 // --- フィルタ ---
@@ -328,10 +366,16 @@ function renderFrame(args) {
       `[Throughline] ${filtered.length} セッション${args.all ? ' (--all)' : ''}`,
     );
     lines.push(header);
+    const now = Date.now();
     for (let i = 0; i < filtered.length; i++) {
       const state = filtered[i];
-      const usage = state.transcriptPath ? readLatestUsage(state.transcriptPath) : null;
-      lines.push(formatLine({ state, usage, isActive: i === 0 }));
+      // Stop hook が state.usage に固定値を入れていればそれを使う（JSONL 再スキャン不要）。
+      // 旧バージョンが書いた state や usage スナップショットが取れなかったターンでは
+      // transcriptPath を直読してフォールバック。state 側の情報が 1 本化されると
+      // 「state が古い JSONL を指している」時の表示ブレが減る。
+      const usage = state.usage
+        ?? (state.transcriptPath ? readLatestUsage(state.transcriptPath) : null);
+      lines.push(formatLine({ state, usage, isActive: i === 0, now }));
     }
   }
 
@@ -393,18 +437,40 @@ export function main() {
   process.stdout.write(color(ANSI.dim, `[Throughline] モニター起動 (state: ${getStateDir()}, Ctrl+C で終了)\n`));
 
   safeRenderFrame(args);
+  // columns の最後に使った値。polling で resize 検知するために使う。
+  // VSCode 統合ターミナルは process.stdout.on('resize') が発火しないことがあり、
+  // 起動時に狭い幅だった場合に描画が崩れたまま固定される（実害ベースで確認済み）。
+  // 1 秒 tick のたびに currCols と比較してイベント不達を埋める。
+  let lastColumns = process.stdout.columns ?? 0;
   const timer = setInterval(() => {
+    const currCols = process.stdout.columns ?? 0;
+    if (shouldForceFullRedraw(lastColumns, currCols)) {
+      lastColumns = currCols;
+      lastRenderedLines = 0;
+      resetRenderKeyCache();
+      safeRenderFrame(args);
+      return;
+    }
+    // 状態が更新されていれば再描画。state mtime か transcript size のどちらかが
+    // 変わっていれば発火するので、Stop 完了・新 assistant エントリ追記の両方を捕捉する。
     if (needsRerender()) safeRenderFrame(args);
+    // 1 秒刻みの「経過時間」(24m ago など) を反映するため、データに変化が無くても
+    // 10 秒に 1 回は強制再描画する。コストは state 数本の JSONL パースのみで軽い。
+    if (Date.now() - lastTimeAgoRefresh > TIME_AGO_REFRESH_MS) {
+      lastTimeAgoRefresh = Date.now();
+      safeRenderFrame(args);
+    }
   }, REFRESH_MS);
 
-  // ターミナル幅が変わったら即座に全画面リフレッシュ（前フレームの ANSI 座標が無効化されるため）
-  // debounce 200ms でドラッグ中のジッタを吸収
+  // resize イベント経路は残す: polling 前に通知が来ればより速く反応できる。
+  // debounce 200ms でドラッグ中のジッタを吸収し、polling 側との二重再描画も防ぐ。
   let resizeTimer = null;
   const onResize = () => {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       resizeTimer = null;
       // 既存描画が新しい幅では崩れている可能性があるため座標情報を破棄して再描画
+      lastColumns = process.stdout.columns ?? 0;
       lastRenderedLines = 0;
       resetRenderKeyCache();
       safeRenderFrame(args);
@@ -452,6 +518,8 @@ export const _internal = {
   computeRenderKey,
   needsRerender,
   resetRenderKeyCache,
+  formatTimeAgo,
+  shouldForceFullRedraw,
 };
 
 // --- エントリポイント自動起動 ---

@@ -133,3 +133,52 @@ test('snapshotStateMtimes: ディレクトリ未作成なら空 Map', async () =
     assert.equal(snap.size, 0);
   });
 });
+
+test('writeSessionState: usage 付きで書くと JSON に含まれる', async () => {
+  await withIsolatedStateDir(async ({ stateDir, mod }) => {
+    mod.writeSessionState({
+      sessionId: 'sess-a',
+      projectPath: '/tmp/x',
+      transcriptPath: null,
+      pid: 1,
+      usage: { tokens: 123, model: 'claude-opus-4-6', contextWindowSize: 200000, outputTokens: 10 },
+    });
+    const results = mod.readAllSessionStates();
+    assert.equal(results.length, 1);
+    assert.ok(results[0].usage);
+    assert.equal(results[0].usage.tokens, 123);
+    assert.equal(results[0].usage.model, 'claude-opus-4-6');
+  });
+});
+
+test('writeSessionState: usage 無しで書いたらフィールド自体が無い (旧フォーマット互換)', async () => {
+  await withIsolatedStateDir(async ({ stateDir, mod }) => {
+    mod.writeSessionState({
+      sessionId: 'sess-b',
+      projectPath: '/tmp/x',
+      transcriptPath: null,
+      pid: 1,
+    });
+    const results = mod.readAllSessionStates();
+    assert.equal(results.length, 1);
+    assert.equal(results[0].usage, undefined);
+  });
+});
+
+test('readAllSessionStates: 旧バージョンが書いた usage 無しの state を読める', async () => {
+  await withIsolatedStateDir(async ({ stateDir, mod }) => {
+    // 旧フォーマット (usage フィールド無し) を直接書く
+    const file = join(stateDir, 'old-fmt.json');
+    writeFileSync(file, JSON.stringify({
+      sessionId: 'old-fmt',
+      projectPath: '/tmp/foo',
+      transcriptPath: null,
+      pid: 1,
+      updatedAt: Date.now(),
+    }));
+    const results = mod.readAllSessionStates();
+    assert.equal(results.length, 1);
+    assert.equal(results[0].usage, undefined);
+    // usage 無しで読めること自体が互換性の証明
+  });
+});

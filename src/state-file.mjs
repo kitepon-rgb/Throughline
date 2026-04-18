@@ -37,9 +37,14 @@ export function normalizeProjectPath(p) {
 
 /**
  * セッション状態ファイルを書く
- * @param {{sessionId: string, projectPath: string, transcriptPath: string, pid: number}} data
+ * @param {{sessionId: string, projectPath: string, transcriptPath: string, pid: number, usage?: object|null}} data
+ *
+ * usage: monitor が表示する tokens/model/contextWindowSize をここに固定保存する。
+ * Stop hook が readLatestUsage の結果を載せることで、monitor 側が毎フレーム JSONL を
+ * 再スキャンする必要がなくなる。旧バージョン互換のため optional (無ければ monitor が
+ * transcriptPath を読んでフォールバック)。
  */
-export function writeSessionState({ sessionId, projectPath, transcriptPath, pid }) {
+export function writeSessionState({ sessionId, projectPath, transcriptPath, pid, usage }) {
   if (!sessionId) throw new Error('writeSessionState: sessionId is required');
   if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
   const file = join(STATE_DIR, `${sessionId}.json`);
@@ -50,6 +55,7 @@ export function writeSessionState({ sessionId, projectPath, transcriptPath, pid 
     pid: pid ?? process.pid,
     updatedAt: Date.now(),
   };
+  if (usage) payload.usage = usage;
   writeFileSync(file, JSON.stringify(payload));
 }
 

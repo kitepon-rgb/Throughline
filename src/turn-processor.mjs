@@ -43,6 +43,7 @@ import { resolveMergeTarget } from './session-merger.mjs';
 import { writeSessionState } from './state-file.mjs';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
 import { ensureMonitorTaskFile } from './vscode-task.mjs';
+import { readLatestUsage } from './transcript-usage.mjs';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
@@ -271,6 +272,26 @@ async function main() {
       db.exec('ROLLBACK');
       throw err;
     }
+  }
+
+  // monitor が JSONL を毎フレーム再スキャンせずに済むよう、現在確定している usage を
+  // state ファイルに固定する。Stop 完了時点で assistant エントリは transcript に
+  // 書き出し済みなので readLatestUsage が最新値を返す。
+  // 取得失敗は致命ではないので try/catch で握る（stderr には出す）。
+  try {
+    const usage = transcript_path ? readLatestUsage(transcript_path) : null;
+    if (usage) {
+      writeSessionState({
+        sessionId: session_id,
+        projectPath: cwd ?? process.cwd(),
+        transcriptPath: transcript_path ?? null,
+        pid: process.ppid,
+        usage,
+      });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[turn-processor] usage snapshot failed: ${msg}\n`);
   }
 
   process.exit(0);

@@ -13,6 +13,8 @@ const {
   formatNumber,
   renderBar,
   formatLine,
+  formatTimeAgo,
+  shouldForceFullRedraw,
 } = _internal;
 
 // state-file は projectPath を resolve + lowercase 正規化する。
@@ -328,4 +330,77 @@ test('formatLine: プロジェクト名に CJK が含まれてもセル幅で整
   // padCellsEnd(..., 18) で 14 セル + 4 セル空白になる。セル幅を数える
   // のは難しいがクラッシュしないことと想定文字列が含まれることを最低限確認
   assert.ok(stripColors(out).includes('プロジェクト名'));
+});
+
+// ─── formatTimeAgo ─────────────────────────────────────────────────
+
+test('formatTimeAgo: 10 秒未満は "just now"', () => {
+  assert.equal(formatTimeAgo(0), 'just now');
+  assert.equal(formatTimeAgo(500), 'just now');
+  assert.equal(formatTimeAgo(9_500), 'just now');
+});
+
+test('formatTimeAgo: 60 秒未満は秒表示', () => {
+  assert.equal(formatTimeAgo(15_000), '15s ago');
+  assert.equal(formatTimeAgo(59_000), '59s ago');
+});
+
+test('formatTimeAgo: 60 分未満は分表示', () => {
+  assert.equal(formatTimeAgo(60_000), '1m ago');
+  assert.equal(formatTimeAgo(24 * 60 * 1000), '24m ago');
+});
+
+test('formatTimeAgo: 24 時間未満は時表示', () => {
+  assert.equal(formatTimeAgo(60 * 60 * 1000), '1h ago');
+  assert.equal(formatTimeAgo(23 * 60 * 60 * 1000), '23h ago');
+});
+
+test('formatTimeAgo: 24 時間以上は日表示', () => {
+  assert.equal(formatTimeAgo(24 * 60 * 60 * 1000), '1d ago');
+  assert.equal(formatTimeAgo(3 * 24 * 60 * 60 * 1000), '3d ago');
+});
+
+test('formatTimeAgo: 無効値は "just now"', () => {
+  assert.equal(formatTimeAgo(NaN), 'just now');
+  assert.equal(formatTimeAgo(-1), 'just now');
+  assert.equal(formatTimeAgo(Infinity), 'just now');
+});
+
+// ─── shouldForceFullRedraw ────────────────────────────────────────
+
+test('shouldForceFullRedraw: columns 変化なしは false', () => {
+  assert.equal(shouldForceFullRedraw(80, 80), false);
+});
+
+test('shouldForceFullRedraw: columns が増えたら true', () => {
+  assert.equal(shouldForceFullRedraw(40, 120), true);
+});
+
+test('shouldForceFullRedraw: columns が減ったら true', () => {
+  assert.equal(shouldForceFullRedraw(120, 40), true);
+});
+
+test('shouldForceFullRedraw: 片方 0 以下は false (未初期化 or 無効)', () => {
+  assert.equal(shouldForceFullRedraw(80, 0), false);
+  assert.equal(shouldForceFullRedraw(0, 80), true);
+});
+
+// ─── formatLine: time-ago 表示 ────────────────────────────────────
+
+test('formatLine: updatedAt から経過時間が表示される', () => {
+  const now = Date.now();
+  const args = {
+    ...makeLineArgs(0.5),
+    now,
+  };
+  args.state.updatedAt = now - 3 * 60 * 1000; // 3 分前
+  const out = stripColors(formatLine(args));
+  assert.ok(out.includes('(3m ago)'), `expected "(3m ago)" in output: ${out}`);
+});
+
+test('formatLine: updatedAt が無ければ ago 表示は出ない', () => {
+  const args = makeLineArgs(0.5);
+  delete args.state.updatedAt;
+  const out = stripColors(formatLine(args));
+  assert.ok(!out.includes('ago'));
 });

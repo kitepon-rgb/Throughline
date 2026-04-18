@@ -60,7 +60,7 @@
 | [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo`（`/tl` で書き、`save-inflight` で memo 付与、SessionStart で消費） |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
 | [src/resume-context.mjs](src/resume-context.mjs) | 「中断地点からの再開」注入テキスト組み立て（in-flight メモ → 最終ターン thinking → L1 → L2 の順） |
-| [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`) |
+| [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`)。`usage` フィールド (tokens/model/contextWindowSize) を Stop 完了時に固定保存 — monitor が JSONL を再スキャンせずに済むようにする。旧フォーマット (usage 無し) も読める |
 | [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | `claude -p --model claude-haiku-4-5-*` subprocess 呼び出し（再帰ガード 2 重） |
 | [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を初回 Stop で自動プロビジョニング（token-monitor の folderOpen 自動起動）。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内。冪等性ガード付き |
 
@@ -70,7 +70,7 @@
 |---|---|
 | [bin/throughline.mjs](bin/throughline.mjs) | ディスパッチャ |
 | [src/cli/install.mjs](src/cli/install.mjs) | `install` / `uninstall`（デフォルト global、`--project` でローカル） |
-| [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック |
+| [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断（「モニターが止まって見える」時の切り分け用） |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/save-inflight.mjs](src/cli/save-inflight.mjs) | `save-inflight` — stdin の Markdown を現行バトンの memo_text に書き込む (`/tl` 直後に Claude 自身が呼ぶ) |
 | [src/token-monitor.mjs](src/token-monitor.mjs) | `monitor` — マルチセッション対応トークンモニター |

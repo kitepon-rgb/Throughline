@@ -178,6 +178,19 @@ Example output (real values from a running 1M-context Opus session):
 - **Line-wrap safe.** Each line is truncated to `process.stdout.columns - 1`
   before drawing, preserving ANSI color codes. The redraw cursor math cannot
   desync on narrow terminals.
+- **Resize resilient.** Column width is polled every second, so pane drags that
+  don't fire a terminal `resize` event (common in VS Code's integrated
+  terminal) still trigger a full redraw.
+- **Per-row "last updated" stamp.** Each session row ends with `(24m ago)` so
+  you can tell a frozen display apart from an idle session at a glance. When
+  you need more detail, `throughline doctor --session <id-prefix>` compares the
+  state file against the actual transcript JSONL and flags drift, idle time,
+  and `/clear`-induced transcript path staleness.
+- **State-backed usage snapshot.** When the Stop hook finishes a turn it
+  persists the latest `tokens / model / contextWindowSize` back into the state
+  file. The monitor prefers this snapshot over re-reading the JSONL, which
+  removes a source of flicker when the transcript path in state drifts from
+  the one Claude Code is currently appending to.
 
 ### VS Code auto-start (automatic)
 
@@ -243,6 +256,7 @@ entry to the `tasks` array yourself:
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
 | `throughline save-inflight`                    | Called by `/tl` to attach an in-flight memo (stdin) to the current baton |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |
+| `throughline doctor --session <id-prefix>`     | Diagnose a specific session — detect state/transcript drift, idle vs. stuck |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
 
