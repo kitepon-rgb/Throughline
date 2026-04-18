@@ -453,3 +453,17 @@ export const _internal = {
   needsRerender,
   resetRenderKeyCache,
 };
+
+// --- エントリポイント自動起動 ---
+// `node src/token-monitor.mjs` 直接起動（VSCode タスク .vscode/tasks.json が使うパターン）
+// のとき main() を自動実行する。
+// dispatcher 経由（`throughline monitor`）は bin/throughline.mjs が明示的に main() を呼ぶ。
+// テスト import（`node --test src/token-monitor.test.mjs`）は argv[1] が `.test.mjs` で終わる。
+// argv[1] が 'token-monitor.mjs' で終わって '.test.mjs' でないケースだけ auto-run する。
+{
+  const argv1 = (process.argv[1] || '').replace(/\\/g, '/');
+  const isDirectEntry = argv1.endsWith('token-monitor.mjs') && !argv1.endsWith('.test.mjs');
+  if (isDirectEntry) {
+    main();
+  }
+}
