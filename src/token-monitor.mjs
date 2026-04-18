@@ -213,9 +213,12 @@ function formatLine({ state, usage, isActive }) {
     ratio >= 0.7 ? ANSI.yellow :
     ANSI.green;
 
+  // 色覚配慮: 色だけでなく記号 / テキスト接頭辞でも重要度を示す
+  //   90%超: !! + 強い文言 (赤)
+  //   70%超: !  + 弱い文言 (黄)
   const warn =
-    ratio >= 0.9 ? color(ANSI.red, '  ⚠ /clear 強く推奨') :
-    ratio >= 0.7 ? color(ANSI.yellow, '  ⚠ そろそろ /clear') :
+    ratio >= 0.9 ? color(ANSI.red + ANSI.bold, '  !! /clear 強く推奨') :
+    ratio >= 0.7 ? color(ANSI.yellow, '  !  そろそろ /clear') :
     '';
 
   const marker = isActive ? color(ANSI.bold + ANSI.cyan, '▶') : ' ';
@@ -309,9 +312,15 @@ function renderFrame(args) {
 
   const lines = [];
   if (filtered.length === 0) {
-    lines.push(color(ANSI.dim, '[Throughline] 待機中 — アクティブなセッションがありません'));
-    if (!args.all) {
-      lines.push(color(ANSI.dim, `  (${normalizeProjectPath(process.cwd())} に state 無し。--all で全プロジェクト表示)`));
+    if (args.session) {
+      // --session 指定で未ヒットは「存在しない」と明示（一般の "待機中" と区別）
+      lines.push(color(ANSI.yellow, `[Throughline] セッション "${args.session}" に一致する active セッションが見つかりません`));
+      lines.push(color(ANSI.dim, '  (プレフィックス指定も可。--all で stale を含めて再検索)'));
+    } else {
+      lines.push(color(ANSI.dim, '[Throughline] 待機中 — アクティブなセッションがありません'));
+      if (!args.all) {
+        lines.push(color(ANSI.dim, `  (${normalizeProjectPath(process.cwd())} に state 無し。--all で全プロジェクト表示)`));
+      }
     }
   } else {
     const header = color(
@@ -388,8 +397,26 @@ export function main() {
     if (needsRerender()) safeRenderFrame(args);
   }, REFRESH_MS);
 
+  // ターミナル幅が変わったら即座に全画面リフレッシュ（前フレームの ANSI 座標が無効化されるため）
+  // debounce 200ms でドラッグ中のジッタを吸収
+  let resizeTimer = null;
+  const onResize = () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resizeTimer = null;
+      // 既存描画が新しい幅では崩れている可能性があるため座標情報を破棄して再描画
+      lastRenderedLines = 0;
+      resetRenderKeyCache();
+      safeRenderFrame(args);
+    }, 200);
+  };
+  if (typeof process.stdout.on === 'function') {
+    process.stdout.on('resize', onResize);
+  }
+
   const shutdown = (code = 0) => {
     clearInterval(timer);
+    if (resizeTimer) clearTimeout(resizeTimer);
     restoreCursor();
     process.stdout.write('\n' + color(ANSI.dim, '[Throughline] モニター終了\n'));
     process.exit(code);
@@ -421,6 +448,7 @@ export const _internal = {
   padCellsEnd,
   formatNumber,
   renderBar,
+  formatLine,
   computeRenderKey,
   needsRerender,
   resetRenderKeyCache,

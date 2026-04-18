@@ -12,6 +12,7 @@ const {
   padCellsEnd,
   formatNumber,
   renderBar,
+  formatLine,
 } = _internal;
 
 // state-file は projectPath を resolve + lowercase 正規化する。
@@ -264,4 +265,67 @@ test('renderBar: Infinity / 負値は安全にクランプ', () => {
   assert.equal(renderBar(Infinity, 5), '█████');
   assert.equal(renderBar(-1, 5), '░░░░░');
   assert.equal(renderBar(1.5, 5), '█████');
+});
+
+// ─── formatLine 警告表示（色覚配慮） ────────────────────────────
+
+function stripColors(s) {
+  return s.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+function makeLineArgs(ratio) {
+  const max = 200_000;
+  const tokens = Math.round(ratio * max);
+  return {
+    state: {
+      sessionId: 'abc12345-xxxx',
+      projectPath: '/tmp/foo',
+      transcriptPath: null,
+      updatedAt: Date.now(),
+    },
+    usage: {
+      tokens,
+      model: 'test-model',
+      contextWindowSize: max,
+      outputTokens: 0,
+    },
+    isActive: true,
+  };
+}
+
+test('formatLine: 70% 未満は警告テキストなし', () => {
+  const out = stripColors(formatLine(makeLineArgs(0.5)));
+  assert.ok(!out.includes('!!'));
+  assert.ok(!out.includes('!  '));
+  assert.ok(!out.includes('/clear'));
+});
+
+test('formatLine: 70% 以上で "!" マーカーと弱めの文言', () => {
+  const out = stripColors(formatLine(makeLineArgs(0.75)));
+  assert.ok(out.includes('!'), 'should include ! marker');
+  assert.ok(out.includes('そろそろ /clear'), 'should show soft warning');
+  assert.ok(!out.includes('!!'), 'should not include critical marker yet');
+});
+
+test('formatLine: 90% 以上で "!!" マーカーと強い文言', () => {
+  const out = stripColors(formatLine(makeLineArgs(0.95)));
+  assert.ok(out.includes('!!'), 'should include !! critical marker');
+  assert.ok(out.includes('強く推奨'), 'should show strong warning');
+});
+
+test('formatLine: 色付きで警告が赤 / 黄になる（色覚配慮の裏付け）', () => {
+  const critical = formatLine(makeLineArgs(0.95));
+  assert.ok(critical.includes('\x1b[31m'), 'critical should use red');
+  const warning = formatLine(makeLineArgs(0.75));
+  assert.ok(warning.includes('\x1b[33m'), 'warning should use yellow');
+});
+
+test('formatLine: プロジェクト名に CJK が含まれてもセル幅で整形される', () => {
+  const args = makeLineArgs(0.5);
+  args.state.projectPath = '/tmp/プロジェクト名';
+  const out = formatLine(args);
+  // basename で "プロジェクト名" (7 文字, 14 セル) が project 欄に入る。
+  // padCellsEnd(..., 18) で 14 セル + 4 セル空白になる。セル幅を数える
+  // のは難しいがクラッシュしないことと想定文字列が含まれることを最低限確認
+  assert.ok(stripColors(out).includes('プロジェクト名'));
 });
