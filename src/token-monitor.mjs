@@ -23,6 +23,7 @@ import { statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjectPath } from './state-file.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
+import { startSizeQuery } from './terminal-size.mjs';
 
 const REFRESH_MS = 1000;
 // データ変化が無くても N ms ごとに再描画して「(24m ago)」表示を進める。
@@ -238,26 +239,43 @@ export function shouldForceFullRedraw(prevCols, currCols) {
   return prevCols !== currCols && currCols > 0;
 }
 
+// OSC 18t (startSizeQuery) で取得した最新の「端末実測幅」。
+// Windows ConPTY + VSCode task terminal では process.stdout.columns が起動時の値で
+// 凍結するため、resize に追従するにはこの ANSI クエリ経路が必要。
+// undefined = 未取得 / OSC 18t 非対応環境。その場合は process.stdout.columns にフォールバック。
+let measuredCols = undefined;
+
+/** テスト用: OSC 18t の測定値を手動でセット/リセット */
+export function setMeasuredColumns(v) {
+  measuredCols = v;
+}
+
 /**
  * 描画に使う列幅を解決する。
  *
  * 優先順:
- *   1. **stdout が TTY** かつ `process.stdout.columns` が 1 以上
- *       → その値から 1 引いたもの（末尾列での自動改行回避）
- *   2. `process.env.COLUMNS` が 1 以上 → その値 - 1
- *   3. それ以外 → 80 にフォールバック
+ *   1. OSC 18t で測った実測値 (measuredCols) が 1 以上 → それ - 1
+ *   2. stdout が TTY かつ `process.stdout.columns` が 1 以上 → それ - 1
+ *   3. `process.env.COLUMNS` が 1 以上 → それ - 1
+ *   4. それ以外 → 80 にフォールバック
  *
- * 歴史: 0.3.6〜0.3.12 までは `>= 40` の閾値を設けて「狂った小さい値は捨てる」挙動
- * だった。しかし実際の VSCode task panel は 30 cells 程度で起動することがあり (実測)、
- * 真の columns=30 なのに閾値に引っかかって 200 フォールバックに倒れ、30 cell 端末に
- * 200 cell の行を書いて 7 行に折り返し、`\x1b[NA` が 7 倍 under-count して
- * 描画が永遠に積み上がるバグの真因だった。
+ * OSC 18t を最優先にする理由:
+ *   Windows ConPTY + VSCode task terminal は panel resize が process.stdout.columns
+ *   に届かず凍結する。毎フレーム `\x1b[18t` を端末に投げて `\x1b[8;rows;cols t` を
+ *   stdin で受けると、真の現在幅が取れる (0.3.16 で導入、terminal-size.mjs 参照)。
  *
- * 正の columns はすべて信頼する。真の幅に合わせて truncate すれば物理行 = 論理行
- * が保証され、CUU 戻り先が正確になる。狭い terminal ではコンテンツが切り詰められるが、
- * 積み上がりに比べれば遥かにマシ (ユーザーが panel を広げれば full UI が見える)。
+ *   非対応端末 (古い VSCode、パイプ出力) では measuredCols が undefined のままで
+ *   自動的にフォールバック経路に倒れる。
+ *
+ * 歴史 (保管):
+ *   0.3.6〜0.3.12 は `>= 40` 閾値で狭い columns を「狂った値」として 200 に倒す
+ *   挙動だったが、30 cells の panel が実在するため 200 セルの行 →  物理 7 行 wrap →
+ *   CUU under-count → 積み上がり、という連鎖バグの起点だった。0.3.13 で閾値を撤廃。
  */
 export function resolveColumns() {
+  if (typeof measuredCols === 'number' && measuredCols > 0) {
+    return Math.max(1, measuredCols - 1);
+  }
   if (process.stdout.isTTY) {
     const reported = typeof process.stdout.columns === 'number' ? process.stdout.columns : 0;
     if (reported > 0) return Math.max(1, reported - 1);
@@ -401,11 +419,9 @@ function renderFrame(args) {
       }
     }
   } else {
-    // runtime cols を毎フレーム出してリサイズ追従状況を可視化する (診断目的、将来削除可)
-    const runtimeCols = process.stdout.columns ?? '?';
     const header = color(
       ANSI.bold,
-      `[Throughline] ${filtered.length} セッション cols=${runtimeCols}${args.all ? ' (--all)' : ''}`,
+      `[Throughline] ${filtered.length} セッション${args.all ? ' (--all)' : ''}`,
     );
     lines.push(header);
     const now = Date.now();
@@ -559,21 +575,40 @@ export function main() {
   }
 
   process.stdout.write(ANSI.hideCursor);
-  // 起動時に実 runtime での TTY/columns/resolveColumns を出す。
-  // diag と runtime で値がズレる (PTY allocation タイミング違い等) を直視できるようにするため。
-  const startupCols = resolveColumns();
-  const ttyFlag = process.stdout.isTTY ? 'T' : '-';
-  process.stdout.write(color(ANSI.dim,
-    `[Throughline] モニター起動 [${ttyFlag} cols=${process.stdout.columns ?? '?'} clip=${startupCols}] Ctrl+C で終了\n`,
-  ));
+  process.stdout.write(color(ANSI.dim, `[Throughline] モニター起動 (state: ${getStateDir()}, Ctrl+C で終了)\n`));
+
+  // OSC 18t で端末に直接「今の幅は？」を問い合わせる経路を立ち上げる。
+  // Windows ConPTY + VSCode task terminal では process.stdout.columns が凍結するため、
+  // これが無いと panel を広げても content が復活しない。
+  // 応答が来るたびに measuredCols を更新 → 次フレームで resolveColumns がそれを使う。
+  const sizeQuery = startSizeQuery({
+    onSize: ({ cols }) => {
+      const prev = resolveColumns();
+      setMeasuredColumns(cols);
+      const curr = resolveColumns();
+      if (prev !== curr) {
+        // 幅が実際に変わった時だけ全再描画。同値なら needsRerender の通常経路に任せる
+        lastRenderedLines = 0;
+        resetRenderKeyCache();
+        safeRenderFrame(args);
+      }
+    },
+    onInterrupt: () => process.kill(process.pid, 'SIGINT'),
+  });
 
   safeRenderFrame(args);
-  // columns の最後に使った値。polling で resize 検知するために使う。
-  // VSCode 統合ターミナルは process.stdout.on('resize') が発火しないことがあり、
-  // 起動時に狭い幅だった場合に描画が崩れたまま固定される（実害ベースで確認済み）。
-  // 1 秒 tick のたびに currCols と比較してイベント不達を埋める。
+  // 起動直後に 1 回クエリを飛ばして正しい初期幅を取る
+  if (sizeQuery.supported) sizeQuery.query();
+
+  // 1 秒 tick:
+  //   - OSC 18t に対応している端末なら毎回クエリを投げて resize 追従
+  //   - 対応していない端末では process.stdout.columns の変化を従来通り polling
+  //   - 更新が無くてもデータ変化 (needsRerender) があれば再描画
+  //   - 10 秒に 1 回は (Nm ago) 表示更新のために強制再描画
   let lastColumns = process.stdout.columns ?? 0;
   const timer = setInterval(() => {
+    if (sizeQuery.supported) sizeQuery.query();
+
     const currCols = process.stdout.columns ?? 0;
     if (shouldForceFullRedraw(lastColumns, currCols)) {
       lastColumns = currCols;
@@ -582,11 +617,7 @@ export function main() {
       safeRenderFrame(args);
       return;
     }
-    // 状態が更新されていれば再描画。state mtime か transcript size のどちらかが
-    // 変わっていれば発火するので、Stop 完了・新 assistant エントリ追記の両方を捕捉する。
     if (needsRerender()) safeRenderFrame(args);
-    // 1 秒刻みの「経過時間」(24m ago など) を反映するため、データに変化が無くても
-    // 10 秒に 1 回は強制再描画する。コストは state 数本の JSONL パースのみで軽い。
     if (Date.now() - lastTimeAgoRefresh > TIME_AGO_REFRESH_MS) {
       lastTimeAgoRefresh = Date.now();
       safeRenderFrame(args);
@@ -614,6 +645,7 @@ export function main() {
   const shutdown = (code = 0) => {
     clearInterval(timer);
     if (resizeTimer) clearTimeout(resizeTimer);
+    sizeQuery.stop(); // stdin raw mode を確実に解除 (残ると端末が壊れる)
     restoreCursor();
     process.stdout.write('\n' + color(ANSI.dim, '[Throughline] モニター終了\n'));
     process.exit(code);
@@ -621,16 +653,20 @@ export function main() {
   process.on('SIGINT', () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
 
-  // クラッシュ時もカーソルを必ず戻す
-  process.on('exit', restoreCursor);
-  process.on('uncaughtException', (err) => {
+  // クラッシュ時もカーソルと raw mode を必ず戻す
+  const cleanupOnCrash = () => {
+    sizeQuery.stop();
     restoreCursor();
+  };
+  process.on('exit', cleanupOnCrash);
+  process.on('uncaughtException', (err) => {
+    cleanupOnCrash();
     const msg = err instanceof Error ? (err.stack ?? err.message) : String(err);
     process.stderr.write(`[Throughline] uncaught exception:\n${msg}\n`);
     process.exit(1);
   });
   process.on('unhandledRejection', (reason) => {
-    restoreCursor();
+    cleanupOnCrash();
     process.stderr.write(`[Throughline] unhandled rejection: ${String(reason)}\n`);
     process.exit(1);
   });
@@ -652,6 +688,7 @@ export const _internal = {
   formatTimeAgo,
   shouldForceFullRedraw,
   resolveColumns,
+  setMeasuredColumns,
 };
 
 // --- エントリポイント自動起動 ---
