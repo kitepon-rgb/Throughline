@@ -17,9 +17,10 @@
  *   - トークン数は transcript JSONL の最新 assistant usage を直読
  */
 
-import { basename } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
-import { statSync, existsSync } from 'node:fs';
+import { statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjectPath } from './state-file.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
 
@@ -476,12 +477,22 @@ function safeRenderFrame(args) {
  * 変えてきたが、PTY が張られるかどうかは VSCode のバージョンや Windows の ConPTY
  * 実装に依存し、推測は外れ続けた。このコマンドで実測値を 1 ページに出すことで、
  * 「この環境では何が起きているか」を断定できるようにする。
+ *
+ * 出力は ~/.throughline/last-diag.txt にも保存する。task terminal のようにスクロール
+ * バックが分かりづらい環境でも後からファイルを読めば全情報を回収できる。
  */
 function runDiagnostic() {
-  const out = (k, v) => process.stdout.write(`${k.padEnd(28)}${v}\n`);
-  process.stdout.write('=== Throughline monitor diagnostic ===\n\n');
+  const lines = [];
+  const emit = (s) => {
+    process.stdout.write(s);
+    lines.push(s);
+  };
+  const out = (k, v) => emit(`${k.padEnd(28)}${v}\n`);
 
-  process.stdout.write('[process.stdout]\n');
+  emit('=== Throughline monitor diagnostic ===\n');
+  emit(`timestamp: ${new Date().toISOString()}\n\n`);
+
+  emit('[process.stdout]\n');
   out('  isTTY', String(Boolean(process.stdout.isTTY)));
   out('  columns', String(process.stdout.columns ?? '(undefined)'));
   out('  rows', String(process.stdout.rows ?? '(undefined)'));
@@ -490,46 +501,45 @@ function runDiagnostic() {
       ? String(process.stdout.hasColors())
       : '(n/a)',
   );
-  process.stdout.write('\n');
+  emit('\n');
 
-  process.stdout.write('[process.stderr]\n');
+  emit('[process.stderr]\n');
   out('  isTTY', String(Boolean(process.stderr.isTTY)));
-  process.stdout.write('\n');
+  emit('\n');
 
-  process.stdout.write('[env]\n');
-  for (const key of ['TERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION', 'COLUMNS', 'LINES', 'VSCODE_PID', 'VSCODE_IPC_HOOK_CLI', 'VSCODE_INJECTION', 'WT_SESSION', 'ConEmuPID']) {
+  emit('[env]\n');
+  for (const key of ['TERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION', 'COLORTERM', 'COLUMNS', 'LINES', 'VSCODE_PID', 'VSCODE_IPC_HOOK_CLI', 'VSCODE_INJECTION', 'VSCODE_SHELL_INTEGRATION', 'WT_SESSION', 'ConEmuPID', 'OSTYPE', 'MSYSTEM']) {
     out(`  ${key}`, process.env[key] ?? '(unset)');
   }
-  process.stdout.write('\n');
+  emit('\n');
 
-  process.stdout.write('[resolveColumns()]\n');
+  emit('[resolveColumns()]\n');
   out('  value', String(resolveColumns()));
-  process.stdout.write('\n');
+  emit('\n');
 
-  // ANSI 検証: 画面クリア系シーケンスが視覚的にどう動くかを判定する
-  // 小テスト。ユーザーには生出力を見て「積み上がっているか」報告してもらう。
-  process.stdout.write('[ANSI probe — 視認用]\n');
-  process.stdout.write('  直後に 3 回フレームを書きます。各フレームは clearScreen で上書きされるはず。\n');
-  process.stdout.write('  スクリーンショットを取って、フレーム A/B/C が「積み上がり」か「上書き」か教えてください。\n\n');
+  emit('[platform]\n');
+  out('  process.platform', process.platform);
+  out('  process.versions.node', process.versions.node);
+  emit('\n');
 
-  let frame = 0;
-  const labels = ['A', 'B', 'C'];
-  const probe = () => {
-    process.stdout.write(ANSI.clearScreen);
-    process.stdout.write(`=== frame ${labels[frame]} / 3 ===\n`);
-    process.stdout.write('この行より上に「=== frame X ===」が 2 つ以上見える場合、\n');
-    process.stdout.write(`\\x1b[2J\\x1b[3J\\x1b[H (現行の clearScreen) がこの端末で効いていません。\n`);
-    process.stdout.write(`現行 clearScreen = 0x1b[2J 0x1b[3J 0x1b[H\n`);
-    frame++;
-    if (frame >= labels.length) {
-      process.stdout.write('\n=== diag 終了 ===\n');
-      process.stdout.write('上記の値と、この 3 フレームが積み上がったかどうかを報告してください。\n');
-      process.exit(0);
-    } else {
-      setTimeout(probe, 1500);
-    }
-  };
-  setTimeout(probe, 500);
+  emit('=== end of diag ===\n');
+  emit('\nこの出力を全文コピーするか、~/.throughline/last-diag.txt を開いて内容を共有してください。\n');
+  emit('task terminal でスクロールして読めない場合は PowerShell で\n');
+  emit('  cat ~/.throughline/last-diag.txt\n');
+  emit('を実行すれば同じ内容が読めます。\n');
+
+  // ログファイルに保存 (task terminal のようにスクロール不能な環境向け)
+  try {
+    const logPath = join(homedir(), '.throughline', 'last-diag.txt');
+    mkdirSync(dirname(logPath), { recursive: true });
+    writeFileSync(logPath, lines.join(''));
+    emit(`\n[ログ保存] ${logPath}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    emit(`\n[ログ保存失敗] ${msg}\n`);
+  }
+
+  process.exit(0);
 }
 
 export function main() {
