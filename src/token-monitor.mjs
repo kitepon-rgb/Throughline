@@ -557,7 +557,13 @@ export function main() {
   }
 
   process.stdout.write(ANSI.hideCursor);
-  process.stdout.write(color(ANSI.dim, `[Throughline] モニター起動 (state: ${getStateDir()}, Ctrl+C で終了)\n`));
+  // 起動時に実 runtime での TTY/columns/resolveColumns を出す。
+  // diag と runtime で値がズレる (PTY allocation タイミング違い等) を直視できるようにするため。
+  const startupCols = resolveColumns();
+  const ttyFlag = process.stdout.isTTY ? 'T' : '-';
+  process.stdout.write(color(ANSI.dim,
+    `[Throughline] モニター起動 [${ttyFlag} cols=${process.stdout.columns ?? '?'} clip=${startupCols}] Ctrl+C で終了\n`,
+  ));
 
   safeRenderFrame(args);
   // columns の最後に使った値。polling で resize 検知するために使う。
