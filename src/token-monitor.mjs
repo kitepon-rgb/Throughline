@@ -587,7 +587,10 @@ export function main() {
       setMeasuredColumns(cols);
       const curr = resolveColumns();
       if (prev !== curr) {
-        // 幅が実際に変わった時だけ全再描画。同値なら needsRerender の通常経路に任せる
+        // 幅が変わると前フレームは別幅で wrap している可能性があり、CUU ベースの
+        // 部分再描画では消し残る。全画面クリアで確実にリセットしてから描き直す。
+        // greeting も消えるが、resize の瞬間だけの一時的コスト。
+        process.stdout.write(ANSI.clearScreen);
         lastRenderedLines = 0;
         resetRenderKeyCache();
         safeRenderFrame(args);
@@ -612,6 +615,7 @@ export function main() {
     const currCols = process.stdout.columns ?? 0;
     if (shouldForceFullRedraw(lastColumns, currCols)) {
       lastColumns = currCols;
+      process.stdout.write(ANSI.clearScreen);
       lastRenderedLines = 0;
       resetRenderKeyCache();
       safeRenderFrame(args);
@@ -631,8 +635,9 @@ export function main() {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       resizeTimer = null;
-      // 既存描画が新しい幅では崩れている可能性があるため座標情報を破棄して再描画
+      // 既存描画が新しい幅では崩れている可能性があるため全画面クリアで描き直す
       lastColumns = process.stdout.columns ?? 0;
+      process.stdout.write(ANSI.clearScreen);
       lastRenderedLines = 0;
       resetRenderKeyCache();
       safeRenderFrame(args);
