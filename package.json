@@ -1,6 +1,6 @@
 {
   "name": "throughline",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "type": "module",
   "description": "Claude Code hooks plugin for structured context compression (/clear-safe persistent memory)",
   "keywords": [
