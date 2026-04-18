@@ -388,54 +388,60 @@ test('shouldForceFullRedraw: 片方 0 以下は false (未初期化 or 無効)',
 
 // ─── resolveColumns ───────────────────────────────────────────────
 
-test('resolveColumns: process.stdout.columns が 40 以上ならそれ - 1 を返す', () => {
-  const orig = process.stdout.columns;
-  try {
-    Object.defineProperty(process.stdout, 'columns', { value: 120, configurable: true, writable: true });
-    assert.equal(resolveColumns(), 119);
-  } finally {
-    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
-  }
-});
-
-test('resolveColumns: columns が小さすぎる値 (12 等) ならフォールバック 200', () => {
-  const orig = process.stdout.columns;
+function withStdoutState({ isTTY, columns, envColumns }, fn) {
+  const origIsTTY = process.stdout.isTTY;
+  const origColumns = process.stdout.columns;
   const origEnv = process.env.COLUMNS;
   try {
-    Object.defineProperty(process.stdout, 'columns', { value: 12, configurable: true, writable: true });
-    delete process.env.COLUMNS;
-    assert.equal(resolveColumns(), 200);
+    Object.defineProperty(process.stdout, 'isTTY', { value: isTTY, configurable: true, writable: true });
+    Object.defineProperty(process.stdout, 'columns', { value: columns, configurable: true, writable: true });
+    if (envColumns === undefined) delete process.env.COLUMNS;
+    else process.env.COLUMNS = envColumns;
+    return fn();
   } finally {
-    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
-    if (origEnv !== undefined) process.env.COLUMNS = origEnv;
-  }
-});
-
-test('resolveColumns: columns が undefined でも env.COLUMNS >= 40 があればそれを使う', () => {
-  const orig = process.stdout.columns;
-  const origEnv = process.env.COLUMNS;
-  try {
-    Object.defineProperty(process.stdout, 'columns', { value: undefined, configurable: true, writable: true });
-    process.env.COLUMNS = '150';
-    assert.equal(resolveColumns(), 149);
-  } finally {
-    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: origIsTTY, configurable: true, writable: true });
+    Object.defineProperty(process.stdout, 'columns', { value: origColumns, configurable: true, writable: true });
     if (origEnv === undefined) delete process.env.COLUMNS;
     else process.env.COLUMNS = origEnv;
   }
+}
+
+test('resolveColumns: TTY かつ columns が 40 以上 → その値 - 1', () => {
+  withStdoutState({ isTTY: true, columns: 120, envColumns: undefined }, () => {
+    assert.equal(resolveColumns(), 119);
+  });
+});
+
+test('resolveColumns: 非 TTY なら columns が大きくても信用しない (env も 200 も使う)', () => {
+  // type: process タスクで columns が 120 にセットされたが実際の幅とは連動しない、という状況。
+  // env.COLUMNS も無ければ 200 フォールバック。
+  withStdoutState({ isTTY: false, columns: 120, envColumns: undefined }, () => {
+    assert.equal(resolveColumns(), 200);
+  });
+});
+
+test('resolveColumns: TTY でも columns が小さすぎる値 (12 等) ならフォールバック 200', () => {
+  withStdoutState({ isTTY: true, columns: 12, envColumns: undefined }, () => {
+    assert.equal(resolveColumns(), 200);
+  });
+});
+
+test('resolveColumns: 非 TTY でも env.COLUMNS >= 40 があればそれを使う', () => {
+  withStdoutState({ isTTY: false, columns: undefined, envColumns: '150' }, () => {
+    assert.equal(resolveColumns(), 149);
+  });
+});
+
+test('resolveColumns: TTY で columns 未設定、env も無ければフォールバック 200', () => {
+  withStdoutState({ isTTY: true, columns: undefined, envColumns: undefined }, () => {
+    assert.equal(resolveColumns(), 200);
+  });
 });
 
 test('resolveColumns: 全てのソースが無効ならフォールバック 200', () => {
-  const orig = process.stdout.columns;
-  const origEnv = process.env.COLUMNS;
-  try {
-    Object.defineProperty(process.stdout, 'columns', { value: undefined, configurable: true, writable: true });
-    delete process.env.COLUMNS;
+  withStdoutState({ isTTY: false, columns: undefined, envColumns: undefined }, () => {
     assert.equal(resolveColumns(), 200);
-  } finally {
-    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
-    if (origEnv !== undefined) process.env.COLUMNS = origEnv;
-  }
+  });
 });
 
 // ─── formatLine: time-ago 表示 ────────────────────────────────────

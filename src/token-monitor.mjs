@@ -235,21 +235,27 @@ export function shouldForceFullRedraw(prevCols, currCols) {
  * 描画に使う列幅を解決する。
  *
  * 優先順:
- *   1. `process.stdout.columns` が 40 以上 → その値から 1 引いたもの (末尾列での自動改行回避)
- *   2. `process.env.COLUMNS` が 40 以上 → その値
- *   3. それ以外 → 200 にフォールバック（VSCode の `type: process` タスクで stdout が
- *      TTY でない場合、columns が undefined または 0/12 のような極端に小さい値を
- *      返すことがあり、そのまま使うと描画が「openclaw」で切れるなどの視覚崩れが出る）
+ *   1. **stdout が TTY** かつ `process.stdout.columns` が 40 以上
+ *       → その値から 1 引いたもの（末尾列での自動改行回避）
+ *   2. `process.env.COLUMNS` が 40 以上 → その値 - 1
+ *   3. それ以外 → 200 にフォールバック
  *
- * 「40 未満は無視」閾値は、現行 formatLine の最小構成（marker + project(18) + id(8) +
- * ago(8) + bar(20) + ...）が実用上 40 セル未満になり得ないため。
+ * 非 TTY のとき columns を信用しない理由:
+ *   VSCode の `type: process` タスクは stdout を PTY ではなくパイプとして渡すため、
+ *   - 起動時の columns が undefined / 0 / 12 のような極端な値になることがある
+ *   - ターミナル panel をドラッグで広げても SIGWINCH が届かず columns が更新されない
+ *   - 結果として起動時に狭かった幅のまま永久に truncate され続ける
+ *   `isTTY` が false の時点で columns 値は信頼できない契約だと割り切り、env.COLUMNS か
+ *   固定 200 にフォールバックする。
  *
- * 固定 200 フォールバックは、truncateToCells が 200 セルより短い実内容を
- * そのまま通す (伸長しない) ので過大でも副作用なし。
+ * 200 固定フォールバックは、truncateToCells が 200 セル以下の実内容をそのまま通す
+ * （伸長しない）ので過大でも副作用なし。
  */
 export function resolveColumns() {
-  const reported = typeof process.stdout.columns === 'number' ? process.stdout.columns : 0;
-  if (reported >= 40) return reported - 1;
+  if (process.stdout.isTTY) {
+    const reported = typeof process.stdout.columns === 'number' ? process.stdout.columns : 0;
+    if (reported >= 40) return reported - 1;
+  }
   const fromEnv = Number(process.env.COLUMNS);
   if (Number.isFinite(fromEnv) && fromEnv >= 40) return fromEnv - 1;
   return 200;
