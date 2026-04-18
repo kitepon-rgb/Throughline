@@ -401,9 +401,11 @@ function renderFrame(args) {
       }
     }
   } else {
+    // runtime cols を毎フレーム出してリサイズ追従状況を可視化する (診断目的、将来削除可)
+    const runtimeCols = process.stdout.columns ?? '?';
     const header = color(
       ANSI.bold,
-      `[Throughline] ${filtered.length} セッション${args.all ? ' (--all)' : ''}`,
+      `[Throughline] ${filtered.length} セッション cols=${runtimeCols}${args.all ? ' (--all)' : ''}`,
     );
     lines.push(header);
     const now = Date.now();
