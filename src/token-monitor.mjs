@@ -263,11 +263,15 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
   const modelCol = usage?.model ? color(ANSI.dim, usage.model) : color(ANSI.dim, '(未取得)');
   // 最終更新からの経過: 表示が「止まって見える」とき、それが idle なのか障害なのかを
   // 即座に判別できるようにする。updatedAt は state.writeSessionState 時の Date.now()。
-  const ago = typeof state.updatedAt === 'number'
-    ? color(ANSI.dim, `(${formatTimeAgo(now - state.updatedAt)})`)
+  // 位置は session id の直後（左寄せ固定幅）。狭いターミナルでもモデル名より先に
+  // 切れない位置に置くのと、縦の視線移動で「どれが最新更新か」を把握しやすくするため。
+  const agoText = typeof state.updatedAt === 'number'
+    ? formatTimeAgo(now - state.updatedAt)
     : '';
+  // 8 セル固定: "just now" が最長 (8 セル)、"99d ago" は 7 セル。括弧なしで OK
+  const agoCol = color(ANSI.dim, padCellsEnd(agoText, 8));
 
-  return `${marker} ${projectCol} ${idCol} ${barCol} ${tokCol}  ${remCol}  ${modelCol} ${ago}${warn}`;
+  return `${marker} ${projectCol} ${idCol} ${agoCol} ${barCol} ${tokCol}  ${remCol}  ${modelCol}${warn}`;
 }
 
 // --- フィルタ ---

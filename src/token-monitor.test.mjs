@@ -395,12 +395,30 @@ test('formatLine: updatedAt から経過時間が表示される', () => {
   };
   args.state.updatedAt = now - 3 * 60 * 1000; // 3 分前
   const out = stripColors(formatLine(args));
-  assert.ok(out.includes('(3m ago)'), `expected "(3m ago)" in output: ${out}`);
+  assert.ok(out.includes('3m ago'), `expected "3m ago" in output: ${out}`);
 });
 
-test('formatLine: updatedAt が無ければ ago 表示は出ない', () => {
+test('formatLine: updatedAt が無ければ ago テキストは空', () => {
   const args = makeLineArgs(0.5);
   delete args.state.updatedAt;
   const out = stripColors(formatLine(args));
   assert.ok(!out.includes('ago'));
+  assert.ok(!out.includes('just now'));
+});
+
+test('formatLine: ago は session id のすぐ右に配置される（狭幅でも切れない位置）', () => {
+  const now = Date.now();
+  const args = {
+    ...makeLineArgs(0.5),
+    now,
+  };
+  args.state.updatedAt = now - 5 * 60 * 1000; // 5m
+  const out = stripColors(formatLine(args));
+  // shortId と 5m ago の位置関係: shortId が先、ago がその後、bar (█ or ░) がさらに後
+  const idPos = out.indexOf('abc12345');
+  const agoPos = out.indexOf('5m ago');
+  const barPos = out.search(/[█░]/);
+  assert.ok(idPos >= 0 && agoPos >= 0 && barPos >= 0, 'all fields present');
+  assert.ok(idPos < agoPos, 'shortId before ago');
+  assert.ok(agoPos < barPos, 'ago before bar');
 });
