@@ -420,13 +420,20 @@ function renderFrame(args) {
   const columns = resolveColumns();
   const clipped = lines.map((l) => truncateToCells(l, columns));
 
-  // 前フレームを消去してから再描画:
-  //   1. カーソルを前フレームの先頭行へ戻す (CUU = 行移動のみ)
-  //   2. 列 1 へ戻す (CR)
-  //   3. 現在位置から画面末尾までを一括消去 (ED 0)
-  // CPL (\x1b[nF) は VSCode 統合ターミナルで挙動が不安定だったため使わない
-  if (lastRenderedLines > 0) {
-    process.stdout.write(ANSI.up(lastRenderedLines) + '\r' + ANSI.clearBelow);
+  // 再描画戦略:
+  //   - TTY: 真の columns が分かるので CUU + clearBelow で部分再描画（省フリッカ）
+  //   - 非 TTY (VSCode の type:process タスク等): columns を信用できないので 200 で
+  //     truncate しているが、実ターミナル幅が 200 未満なら自動改行が起き、論理行数と
+  //     物理行数がズレて CUU が誤作動する（「1 セッション」行が毎フレーム積み上がる
+  //     バグを実機で確認）。非 TTY では画面全クリアで愚直に描き直す方が確実。
+  //   どちらも差分検知 (needsRerender) を通過したフレームのみ書き込むので、
+  //   フリッカ量はデータ変化頻度に比例するだけで爆発しない。
+  if (process.stdout.isTTY) {
+    if (lastRenderedLines > 0) {
+      process.stdout.write(ANSI.up(lastRenderedLines) + '\r' + ANSI.clearBelow);
+    }
+  } else {
+    process.stdout.write(ANSI.clearScreen);
   }
 
   process.stdout.write(clipped.join('\n') + '\n');
