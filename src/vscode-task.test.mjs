@@ -138,21 +138,14 @@ test('hasMonitorTask: handles missing tasks array', () => {
 
 // --- buildMonitorTask ---
 
-test('buildMonitorTask: uses type=process with provided bin as args[0]', () => {
+test('buildMonitorTask: uses type=shell with provided bin as args[0] for PTY allocation', () => {
   const task = buildMonitorTask('/abs/bin/throughline.mjs');
   assert.equal(task.label, 'Throughline Monitor');
-  assert.equal(task.type, 'process');
+  assert.equal(task.type, 'shell');
   assert.equal(task.args[0], '/abs/bin/throughline.mjs');
   assert.deepEqual(task.args.slice(1), ['monitor']);
   assert.equal(task.runOptions.runOn, 'folderOpen');
   assert.equal(task.isBackground, true);
-});
-
-test('buildMonitorTask: sets COLUMNS=200 env to work around type:process non-TTY stdout', () => {
-  const task = buildMonitorTask('/abs/bin/throughline.mjs');
-  assert.ok(task.options, 'task should carry options');
-  assert.ok(task.options.env, 'options should carry env');
-  assert.equal(task.options.env.COLUMNS, '200');
 });
 
 // --- ensureMonitorTaskFile: skip conditions ---
@@ -239,7 +232,7 @@ test('ensureMonitorTaskFile: created when .vscode/ missing', () => {
     assert.equal(obj.version, '2.0.0');
     assert.equal(obj.tasks.length, 1);
     assert.equal(obj.tasks[0].label, 'Throughline Monitor');
-    assert.equal(obj.tasks[0].type, 'process');
+    assert.equal(obj.tasks[0].type, 'shell');
     assert.equal(obj.tasks[0].args[0], FAKE_BIN);
   } finally {
     cleanup();

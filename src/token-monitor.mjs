@@ -33,12 +33,6 @@ let lastTimeAgoRefresh = Date.now();
 const ANSI = {
   hideCursor: '\x1b[?25l',
   showCursor: '\x1b[?25h',
-  // オルタネートスクリーンバッファ (htop / vim / less が使うやつ)。
-  // プライマリバッファでの `\x1b[2J` は xterm.js だと「描画済み行をスクロール履歴に
-  // 押し上げる」挙動になり、狭い VSCode task terminal で描画が永遠に積み上がる
-  // 症状を引き起こす。alt バッファならスクロール履歴に残らず真にクリアできる。
-  enterAltScreen: '\x1b[?1049h',
-  leaveAltScreen: '\x1b[?1049l',
   clearLine: '\x1b[2K',
   clearScreen: '\x1b[2J\x1b[H',
   clearBelow: '\x1b[0J',        // 現在位置から画面末尾までをクリア
@@ -447,18 +441,12 @@ function renderFrame(args) {
 }
 
 // --- 起動 ---
-let terminalRestored = false;
-/**
- * 終了時に端末状態を元に戻す:
- *   - オルタネートスクリーンバッファから抜ける (起動前の画面に戻る)
- *   - カーソル表示を復活
- * 2 回以上呼ばれても安全 (冪等)。
- */
+let cursorRestored = false;
 function restoreCursor() {
-  if (terminalRestored) return;
-  terminalRestored = true;
+  if (cursorRestored) return;
+  cursorRestored = true;
   try {
-    process.stdout.write(ANSI.leaveAltScreen + ANSI.showCursor);
+    process.stdout.write(ANSI.showCursor);
   } catch {
     // stdout がすでに閉じていても無視
   }
@@ -484,9 +472,7 @@ export function main() {
     process.exit(2);
   }
 
-  // オルタネートスクリーンバッファに入る → プライマリ画面を保存、クリア時に履歴に残らない。
-  // これにより「1 セッション」ヘッダが再描画のたびに積み上がる不具合を根絶できる。
-  process.stdout.write(ANSI.enterAltScreen + ANSI.hideCursor);
+  process.stdout.write(ANSI.hideCursor);
   process.stdout.write(color(ANSI.dim, `[Throughline] モニター起動 (state: ${getStateDir()}, Ctrl+C で終了)\n`));
 
   safeRenderFrame(args);
