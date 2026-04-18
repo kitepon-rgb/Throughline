@@ -32,6 +32,9 @@ switch (cmd) {
   case 'session-start':
     await import('../src/session-start.mjs');
     break;
+  case 'prompt-submit':
+    await import('../src/prompt-submit.mjs');
+    break;
   case 'monitor':
     await import('../src/token-monitor.mjs');
     break;
@@ -74,5 +77,6 @@ Usage:
 Hook subcommands (called by Claude Code):
   throughline session-start   SessionStart hook
   throughline process-turn    Stop hook
+  throughline prompt-submit   UserPromptSubmit hook (/tl baton writer)
 `);
 }

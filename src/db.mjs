@@ -9,7 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-const CURRENT_VERSION = 5;
+const CURRENT_VERSION = 6;
 
 let _db = null;
 
@@ -174,6 +174,20 @@ function initSchema(db) {
         WHERE source_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_details_session_kind
         ON details(session_id, kind, created_at);
+    `);
+  }
+
+  // v5 → v6: handoff_batons テーブル追加（/tl スラッシュコマンドによる明示的引き継ぎ指名用）
+  // - project_path ごとに最新 1 件のみ (PRIMARY KEY)
+  // - SessionStart で読み出し、TTL 以内なら merge して DELETE
+  // - docs/INHERITANCE_ON_CLEAR_ONLY.md 参照: 案 D (時間差) 撤去、バトン方式へ移行
+  if (version < 6) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS handoff_batons (
+        project_path TEXT    PRIMARY KEY,
+        session_id   TEXT    NOT NULL,
+        created_at   INTEGER NOT NULL
+      );
     `);
   }
 

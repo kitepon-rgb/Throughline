@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { resolveMergeTarget, mergePredecessorInto } from './session-merger.mjs';
+import { resolveMergeTarget, mergeSpecificPredecessor } from './session-merger.mjs';
 
 function makeDb() {
   const db = new DatabaseSync(':memory:');
@@ -81,7 +81,7 @@ test('resolveMergeTarget: detects cycle and throws', () => {
   assert.throws(() => resolveMergeTarget(db, 'A'), /cycle detected/);
 });
 
-test('mergePredecessorInto: picks older predecessor and moves rows', () => {
+test('mergeSpecificPredecessor: moves rows from named predecessor to new session', () => {
   const db = makeDb();
   insertSession(db, 'old', 100);
   db.prepare(
@@ -90,7 +90,12 @@ test('mergePredecessorInto: picks older predecessor and moves rows', () => {
   ).run();
   insertSession(db, 'new', 200);
 
-  const result = mergePredecessorInto(db, { newSessionId: 'new', projectPath: '/proj' });
+  const result = mergeSpecificPredecessor(db, {
+    newSessionId: 'new',
+    predecessorId: 'old',
+    now: 200,
+  });
+
   assert.equal(result.merged, true);
   assert.equal(result.predecessorId, 'old');
   assert.equal(result.rowCounts.sk, 1);
@@ -102,50 +107,76 @@ test('mergePredecessorInto: picks older predecessor and moves rows', () => {
   assert.equal(oldRow.merged_into, 'new');
 });
 
-test('mergePredecessorInto: does NOT pick a session newer than self (cycle prevention)', () => {
+test('mergeSpecificPredecessor: self-handoff is refused', () => {
   const db = makeDb();
-  // new session created at t=100
-  insertSession(db, 'new', 100);
-  // another session was created LATER at t=200 (e.g. a parallel window that started after)
-  insertSession(db, 'newer', 200);
+  insertSession(db, 'A', 100);
 
-  const result = mergePredecessorInto(db, { newSessionId: 'new', projectPath: '/proj' });
-  assert.equal(result.merged, false, 'should not merge a newer session into an older one');
+  const result = mergeSpecificPredecessor(db, {
+    newSessionId: 'A',
+    predecessorId: 'A',
+    now: 100,
+  });
 
-  const newerRow = db
-    .prepare('SELECT merged_into FROM sessions WHERE session_id = ?')
-    .get('newer');
-  assert.equal(newerRow.merged_into, null);
+  assert.equal(result.merged, false);
+  assert.equal(result.skipReason, 'self_handoff');
 });
 
-test('mergePredecessorInto: chronological monotonicity prevents cycles across 3 sessions', () => {
+test('mergeSpecificPredecessor: predecessor not in sessions table', () => {
   const db = makeDb();
-  // Sessions created in order: A (t=100), B (t=200), C (t=300)
-  insertSession(db, 'A', 100);
-  insertSession(db, 'B', 200);
-  insertSession(db, 'C', 300);
+  insertSession(db, 'new', 200);
 
-  // Simulate SessionStart firing for B first, then C, then (accidentally) A again
-  mergePredecessorInto(db, { newSessionId: 'B', projectPath: '/proj' });
-  // B should have absorbed A
-  assert.equal(
-    db.prepare('SELECT merged_into FROM sessions WHERE session_id = ?').get('A').merged_into,
-    'B',
-  );
+  const result = mergeSpecificPredecessor(db, {
+    newSessionId: 'new',
+    predecessorId: 'nonexistent',
+    now: 200,
+  });
 
-  mergePredecessorInto(db, { newSessionId: 'C', projectPath: '/proj' });
-  // C should have absorbed B (A is already merged, so not a candidate)
-  assert.equal(
-    db.prepare('SELECT merged_into FROM sessions WHERE session_id = ?').get('B').merged_into,
-    'C',
-  );
+  assert.equal(result.merged, false);
+  assert.equal(result.skipReason, 'predecessor_not_found');
+});
 
-  // Re-firing SessionStart for A must not create a cycle (A cannot absorb newer B or C)
-  const redundant = mergePredecessorInto(db, { newSessionId: 'A', projectPath: '/proj' });
-  assert.equal(redundant.merged, false);
+test('mergeSpecificPredecessor: predecessor already merged into third session', () => {
+  const db = makeDb();
+  insertSession(db, 'old', 100, 'middle');
+  insertSession(db, 'middle', 150);
+  insertSession(db, 'new', 200);
 
-  // Verify no cycle: resolveMergeTarget from any node terminates at C
-  assert.equal(resolveMergeTarget(db, 'A').target, 'C');
-  assert.equal(resolveMergeTarget(db, 'B').target, 'C');
-  assert.equal(resolveMergeTarget(db, 'C').target, 'C');
+  const result = mergeSpecificPredecessor(db, {
+    newSessionId: 'new',
+    predecessorId: 'old',
+    now: 200,
+  });
+
+  assert.equal(result.merged, false);
+  assert.equal(result.skipReason, 'already_merged');
+});
+
+test('mergeSpecificPredecessor: refuses predecessor with created_at >= self', () => {
+  const db = makeDb();
+  insertSession(db, 'new', 100);
+  insertSession(db, 'newer', 200);
+
+  const result = mergeSpecificPredecessor(db, {
+    newSessionId: 'new',
+    predecessorId: 'newer',
+    now: 100,
+  });
+
+  assert.equal(result.merged, false);
+  assert.equal(result.skipReason, 'predecessor_not_older');
+});
+
+test('mergeSpecificPredecessor: updates new session updated_at to provided now', () => {
+  const db = makeDb();
+  insertSession(db, 'old', 100);
+  insertSession(db, 'new', 200);
+
+  mergeSpecificPredecessor(db, {
+    newSessionId: 'new',
+    predecessorId: 'old',
+    now: 500,
+  });
+
+  const newRow = db.prepare('SELECT updated_at FROM sessions WHERE session_id = ?').get('new');
+  assert.equal(newRow.updated_at, 500);
 });

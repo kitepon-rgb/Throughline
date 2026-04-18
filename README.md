@@ -51,7 +51,7 @@ Start any Claude Code session and your turns will begin flowing into
 
 ---
 
-## Three-layer memory model (schema v5)
+## Three-layer memory model (schema v6)
 
 | Layer | Name       | Where it lives        | Content                                                    | Cost per turn |
 | ----- | ---------- | --------------------- | ---------------------------------------------------------- | ------------- |
@@ -81,29 +81,49 @@ of tool inputs, tool outputs, and hook output captured at L3 for that turn.
 
 ---
 
-## `/clear`-safe with memory rebonding
+## Explicit handoff via `/tl`
 
-When you run `/clear`, the conversation transcript is discarded, but the SQLite
-database is untouched. On the next session start:
+Inheritance is **opt-in**, not automatic. When you want the next session to
+pick up where this one left off, type `/tl` in the current session before you
+`/clear` or open a new chat. Without `/tl`, new sessions start fresh — no
+memory is carried over.
 
-1. `SessionStart` hook fires with a new `session_id`
-2. Throughline finds the previous session in the same project
-3. It **rebonds** all `skeletons` / `bodies` / `details` rows from the previous
-   session into the new session (via `UPDATE session_id = ?`) inside a
-   `BEGIN IMMEDIATE` transaction
-4. A handover banner is injected:
-   `## Throughline: セッション記憶（N ターン引き継ぎ）`
-
-Each row keeps its **origin_session_id**, so memories accumulate through chains
-of `/clear` rather than being lost or overwritten:
+The `/tl` slash command writes a **handoff baton** (the current `session_id`)
+into the `handoff_batons` table. On the next `SessionStart`, the hook reads the
+baton, and if it is less than **1 hour old**, merges that session's memory
+into the new session using a deterministic `UPDATE session_id = ?` inside a
+`BEGIN IMMEDIATE` transaction. The baton is consumed (deleted) atomically with
+the merge, so it cannot fire twice.
 
 ```
-S1 (4 turns) -- /clear --> S2 (merges S1, adds 3 turns) -- /clear --> S3 (merges S2, adds 5 turns)
-                           origin=S1×4                                origin=S1×4, S2×3, S3×5
+Session A (type /tl)  -----------> baton written
+                                       |
+                      /clear           |
+                         |             ▼
+                      Session B  ---- reads baton, merges A into B, deletes baton ---->
+                         |
+                      (type /tl again to hand off further)
 ```
 
-No time-window heuristic, no PID guessing, no ancestor walking. Just a
-deterministic UPDATE inside a SQLite transaction.
+Why explicit baton instead of auto-inherit:
+
+- **Zero false positives.** A parallel window, a VSCode restart, or a genuine
+  new task in the same repo won't accidentally inherit the previous session's
+  memory. Only an explicit `/tl` triggers inheritance.
+- **VSCode extension compatibility.** The `SessionStart` hook's `source` field
+  is rewritten to `"startup"` by the Claude Code VSCode extension even after
+  `/clear` (see [issue #49937](https://github.com/anthropics/claude-code/issues/49937)),
+  so source-based detection is unreliable. A user-driven baton sidesteps this.
+- **Deterministic.** No time-window heuristic, no PID guessing, no ancestor
+  walking. The user declares intent; the hook carries it out.
+
+Each merged row keeps its `origin_session_id`, so repeated `/tl` handoffs
+accumulate memory through chains:
+
+```
+S1 (4 turns) --/tl,/clear--> S2 (merges S1, adds 3 turns) --/tl,/clear--> S3 (merges S2, adds 5 turns)
+                             origin=S1×4                                  origin=S1×4, S2×3, S3×5
+```
 
 ---
 
@@ -165,8 +185,16 @@ you open the folder. Drop an equivalent config into your own project's
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
 
+Slash commands (invoked by the user in Claude Code):
+
+| Command       | What it does                                                      |
+| ------------- | ----------------------------------------------------------------- |
+| `/tl`         | Write a handoff baton so the next session inherits this one       |
+| `/sc-detail <time>` | Retrieve L2 body text and L3 tool I/O for a past turn       |
+
 Hook subcommands (invoked by Claude Code, not by humans):
-`session-start` (SessionStart), `process-turn` (Stop).
+`session-start` (SessionStart), `process-turn` (Stop),
+`prompt-submit` (UserPromptSubmit — detects `/tl` and writes baton).
 
 ### `throughline detail` — for AI, not humans
 
@@ -210,16 +238,17 @@ plain `.mjs` files.
     └── <session_id>.json     Per-session activity state for the monitor
 ```
 
-Schema v5:
+Schema v6:
 
 - `sessions` — one row per `session_id`, with `project_path` and `merged_into`
 - `skeletons` — L1 one-liners, keyed by `(session_id, origin_session_id, turn, role)`
 - `bodies` — L2 verbatim text (user + assistant), same key shape
 - `details` — L3 records with `kind` column (`tool_input` / `tool_output` / `system` / `image`) and `source_id` for idempotent re-processing
+- `handoff_batons` — one row per `project_path`, holding the `session_id` that `/tl` has nominated to hand off. Consumed and deleted by the next `SessionStart` if within the 1-hour TTL.
 - `injection_log` — audit trail of injection events
 
-All tables carry an `origin_session_id` so rebonded rows keep their lineage
-after a `/clear` chain.
+All memory tables carry an `origin_session_id` so rebonded rows keep their
+lineage across a chain of `/tl` handoffs.
 
 ---
 
@@ -287,8 +316,14 @@ unchanged here.
 
 **Database got corrupted / want a clean slate**
 Delete `~/.throughline/throughline.db` (and the `-shm` / `-wal` companion files)
-and `~/.throughline/state/*.json`. A fresh database with schema v5 is created on
+and `~/.throughline/state/*.json`. A fresh database with schema v6 is created on
 the next hook fire.
+
+**New session didn't inherit memory from the previous one**
+This is the designed behavior — inheritance requires an explicit `/tl` in the
+previous session. If you forgot to type it before `/clear`, the memory is still
+in SQLite but won't auto-inject. You can still retrieve specific turns with
+`/sc-detail <time>`.
 
 ---
 

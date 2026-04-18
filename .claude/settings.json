@@ -67,13 +67,26 @@
       "Bash(npm ls *)",
       "Bash(npm view *)",
       "Bash(npm whoami *)",
-      "Bash(rtk ls *)"
+      "Bash(rtk ls *)",
+      "Bash(npm publish *)",
+      "Bash(npm pkg *)",
+      "Bash(throughline install *)",
+      "Bash(node --input-type=module -e \"import {readFileSync} from 'node:fs'; import {homedir} from 'node:os'; import {join} from 'node:path'; const s = JSON.parse\\(readFileSync\\(join\\(homedir\\(\\), '.claude', 'settings.json'\\), 'utf8'\\)\\); console.log\\(JSON.stringify\\(s.hooks, null, 2\\)\\);\")",
+      "Bash(gh api *)",
+      "Bash(python -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"{f['type']:5} {f['name']}\\\\\"\\) for f in data]\")",
+      "Bash(throughline --version)",
+      "Bash(xargs grep *)",
+      "Bash(sqlite3 /c/Users/kite_/.throughline/throughline.db \"SELECT session_id, created_at, updated_at, merged_into FROM sessions ORDER BY created_at DESC LIMIT 10;\")",
+      "Bash(awk '/source.*clear/{found=1} found && /session_id|transcript_path/{print; count++} count==2{found=0; count=0}' /c/Users/kite_/.throughline/spike/session-start.log)",
+      "Bash(awk '/SessionStart/{ *)",
+      "Bash(npm root *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",
       "C:\\Users\\kite_\\.smart-compact",
       "C:\\Users\\kite_\\.throughline",
-      "\\tmp"
+      "\\tmp",
+      "C:\\Users\\kite_\\.claude"
     ]
   },
   "enabledPlugins": {

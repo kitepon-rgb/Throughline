@@ -19,6 +19,7 @@ import { homedir } from 'node:os';
 const SC_COMMANDS = [
   'throughline process-turn',
   'throughline session-start',
+  'throughline prompt-submit',
   // 旧コマンド（アンインストール時に除去する）
   'throughline inject-context',
   'throughline capture-tool',
@@ -34,6 +35,9 @@ const SC_HOOKS = {
   },
   Stop: {
     hooks: [{ type: 'command', command: 'throughline process-turn' }],
+  },
+  UserPromptSubmit: {
+    hooks: [{ type: 'command', command: 'throughline prompt-submit' }],
   },
 };
 
@@ -102,8 +106,9 @@ export async function run(args = []) {
   console.log(`  ${settingsPath}`);
   console.log('');
   console.log('有効な hooks:');
-  console.log('  SessionStart → throughline session-start  (セッション記録・記憶張り替え・L1/L2 注入)');
-  console.log('  Stop         → throughline process-turn   (L1 要約 + L2 本文保存 + L3 詳細保存)');
+  console.log('  SessionStart     → throughline session-start  (セッション記録・バトン消費・引き継ぎ注入)');
+  console.log('  Stop             → throughline process-turn   (L1 要約 + L2 本文保存 + L3 詳細保存)');
+  console.log('  UserPromptSubmit → throughline prompt-submit  (/tl バトン書き込み)');
   console.log('');
   console.log('  アンインストール: throughline uninstall');
 }
