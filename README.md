@@ -178,9 +178,16 @@ Example output (real values from a running 1M-context Opus session):
 - **Line-wrap safe.** Each line is truncated to `process.stdout.columns - 1`
   before drawing, preserving ANSI color codes. The redraw cursor math cannot
   desync on narrow terminals.
-- **Resize resilient.** Column width is polled every second, so pane drags that
-  don't fire a terminal `resize` event (common in VS Code's integrated
-  terminal) still trigger a full redraw.
+- **Resize resilient via OSC 18t.** Windows ConPTY + VS Code task terminals
+  freeze `process.stdout.columns` at the PTY's initial size and never
+  propagate panel resizes into Node, so polling or `resize` events can't
+  catch them. Throughline queries the terminal itself with the CSI `18 t`
+  escape (`\x1b[18t`) every tick, parses the `\x1b[8;rows;cols t` reply off
+  stdin in raw mode, and uses the real current width for truncation. On
+  terminals that don't answer the query, the renderer falls back to
+  `process.stdout.columns → env.COLUMNS → 80`. When the width changes the
+  viewport is cleared in full (`\x1b[2J\x1b[3J\x1b[H`) before the next
+  frame so the previous, wrongly-sized frame can't stack beneath it.
 - **Per-row "last updated" stamp.** Each session row carries an 8-cell
   `just now` / `24m ago` stamp right after the session id, placed before the
   bar so narrow terminals don't truncate it. It resets to `just now` on every
@@ -256,6 +263,7 @@ entry to the `tasks` array yourself:
 | `throughline install --project`                | Register hooks in `.claude/settings.json` for this repo only |
 | `throughline uninstall`                        | Remove Throughline hooks from the settings file              |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
+| `throughline monitor --diag`                   | Dump TTY/columns/env diagnostics (for debugging monitor render bugs) |
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
 | `throughline save-inflight`                    | Called by `/tl` to attach an in-flight memo (stdin) to the current baton |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |
