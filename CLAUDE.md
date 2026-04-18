@@ -96,7 +96,7 @@
 | [src/token-monitor.test.mjs](src/token-monitor.test.mjs) | CLI 引数、cell 幅、bar/色覚マーカー、`formatTimeAgo`、`shouldForceFullRedraw`、`formatLine` の ago 配置 |
 | [src/transcript-reader.test.mjs](src/transcript-reader.test.mjs) | transcript JSONL パーサー、`extractDetailBlocks` の全 kind 分類 |
 | [src/transcript-usage.test.mjs](src/transcript-usage.test.mjs) | `readLatestUsage` / `inferContextWindowSize` / 1M sticky / size+mtime キャッシュ |
-| [src/vscode-task.test.mjs](src/vscode-task.test.mjs) | `ensureMonitorTaskFile` の全分岐 (created / merged / already_present / skipped×複数 reason)、JSONC 検出、インデント保持、冪等性 |
+| [src/vscode-task.test.mjs](src/vscode-task.test.mjs) | `ensureMonitorTaskFile` の全分岐 (created / merged / already_present / skipped×複数 reason)、JSONC 検出、インデント保持、冪等性、`buildSetupNotice` と created/merged 時の stdout 通知（v0.3.19+） |
 | [src/terminal-size.test.mjs](src/terminal-size.test.mjs) | `parseSizeResponse` / `startSizeQuery` — OSC 18t 応答パース、raw mode 遷移、分割到着、Ctrl+C 捕捉、stop() 冪等性 |
 | [src/cli/doctor.test.mjs](src/cli/doctor.test.mjs) | `doctor --session` 用の `parseArgs` / `formatAgo` / `formatBytes` / `isPidAlive` / `findLatestJsonlInSameDir` |
 
@@ -127,7 +127,7 @@ node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.m
 }
 ```
 
-- **UserPromptSubmit** は `/tl` バトン書き込み専用。注入は一切しない（SessionStart 側との重複注入回避のため）
+- **UserPromptSubmit** は `/tl` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 2 役 (v0.3.18+)。Claude への注入は一切しない（SessionStart 側との重複注入回避のため）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **PostToolUse** は登録しない（schema v4 で廃止）
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
 - dev 時に spike 系 hook（`spike/hook-logger.mjs` 等）が並行登録されている場合があるが、動作ログ採取用で実害なし

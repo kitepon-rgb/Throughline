@@ -205,24 +205,31 @@ Example output (real values from a running 1M-context Opus session):
 ### VS Code auto-start (automatic)
 
 After `throughline install`, any VS Code / Cursor / VSCodium project you work in
-gets `.vscode/tasks.json` provisioned automatically on the next assistant turn.
+gets `.vscode/tasks.json` provisioned automatically on the first session event.
 The file configures `runOn: folderOpen` so the monitor appears in a dedicated
 terminal panel the next time you open that folder.
 
-**How it works.** The Stop hook runs at the end of every assistant response.
+**How it works.** `ensureMonitorTaskFile` is called from **all three hooks
+(SessionStart, UserPromptSubmit, Stop)** as of v0.3.18. Whichever one fires
+first in your environment creates the file; the rest are idempotent no-ops.
 Once per project it inspects `.vscode/tasks.json`:
 
-- **No file yet** → creates one with a single `Throughline Monitor` task.
+- **No file yet** → creates one with a single `Throughline Monitor` task, and
+  emits a one-time `<system-reminder>` to stdout so Claude tells you a
+  **Developer: Reload Window** is needed to activate the `folderOpen` task once
+  (v0.3.19+).
 - **Plain JSON with other tasks** → appends the monitor task, preserves your
-  existing entries, `version`, and indentation.
+  existing entries, `version`, and indentation (same notice fires once).
 - **JSONC (comments or trailing commas)** → does not touch the file. Prints a
   one-time notice to stderr asking you to paste the snippet below.
 - **Already contains a Throughline Monitor task** → does nothing (idempotent;
-  this is the common path on every subsequent turn).
+  this is the common path on every subsequent turn; notice is silent).
 
-The generated task uses `type: 'process'` with the absolute path to Node and
-`bin/throughline.mjs` so Windows `.cmd` shims and missing PATH entries cannot
-break it.
+The generated task uses `type: 'shell'` with the absolute path to Node and
+`bin/throughline.mjs`. VS Code wraps shell tasks in a PTY (xterm.js) so the
+monitor sees `isTTY=true`, real `columns`, and resize events. Windows `.cmd`
+shims and missing PATH entries cannot break it because the command is already
+an absolute Node binary path.
 
 **Opt out:** set `THROUGHLINE_NO_VSCODE=1` in the environment used by Claude
 Code. Delete `.vscode/tasks.json` (or just the monitor entry) if you want to
