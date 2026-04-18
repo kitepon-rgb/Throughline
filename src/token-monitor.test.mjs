@@ -305,13 +305,13 @@ test('formatLine: 70% 未満は警告テキストなし', () => {
   const out = stripColors(formatLine(makeLineArgs(0.5)));
   assert.ok(!out.includes('!!'));
   assert.ok(!out.includes('!  '));
-  assert.ok(!out.includes('/clear'));
+  assert.ok(!out.includes('/tl'));
 });
 
 test('formatLine: 70% 以上で "!" マーカーと弱めの文言', () => {
   const out = stripColors(formatLine(makeLineArgs(0.75)));
   assert.ok(out.includes('!'), 'should include ! marker');
-  assert.ok(out.includes('そろそろ /clear'), 'should show soft warning');
+  assert.ok(out.includes('そろそろ /tl'), 'should show soft warning');
   assert.ok(!out.includes('!!'), 'should not include critical marker yet');
 });
 

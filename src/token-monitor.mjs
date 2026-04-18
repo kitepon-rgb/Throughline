@@ -304,8 +304,8 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
   //   90%超: !! + 強い文言 (赤)
   //   70%超: !  + 弱い文言 (黄)
   const warn =
-    ratio >= 0.9 ? color(ANSI.red + ANSI.bold, '  !! /clear 強く推奨') :
-    ratio >= 0.7 ? color(ANSI.yellow, '  !  そろそろ /clear') :
+    ratio >= 0.9 ? color(ANSI.red + ANSI.bold, '  !! /tl 強く推奨') :
+    ratio >= 0.7 ? color(ANSI.yellow, '  !  そろそろ /tl') :
     '';
 
   const marker = isActive ? color(ANSI.bold + ANSI.cyan, '▶') : ' ';
