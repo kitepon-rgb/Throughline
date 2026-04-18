@@ -10,6 +10,7 @@ import {
   detectIndent,
   hasMonitorTask,
   buildMonitorTask,
+  buildSetupNotice,
 } from './vscode-task.mjs';
 
 const VSCODE_ENV = { TERM_PROGRAM: 'vscode' };
@@ -517,4 +518,61 @@ test('ensureMonitorTaskFile: parse_error for malformed JSON', () => {
   } finally {
     cleanup();
   }
+});
+
+// --- buildSetupNotice ---
+
+test('buildSetupNotice: returns notice text for created', () => {
+  const text = buildSetupNotice('created');
+  assert.ok(text && text.includes('<system-reminder>'));
+  assert.ok(text.includes('Reload Window'));
+  assert.ok(text.includes('tasks.json'));
+  assert.ok(text.includes('ユーザー'));
+});
+
+test('buildSetupNotice: returns notice text for merged', () => {
+  const text = buildSetupNotice('merged');
+  assert.ok(text && text.includes('<system-reminder>'));
+  assert.ok(text.includes('Reload Window'));
+});
+
+test('buildSetupNotice: returns null for already_present (silent idempotency)', () => {
+  assert.equal(buildSetupNotice('already_present'), null);
+});
+
+test('buildSetupNotice: returns null for skipped', () => {
+  assert.equal(buildSetupNotice('skipped'), null);
+});
+
+test('buildSetupNotice: ensureMonitorTaskFile writes notice to stdout on first creation', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  const captured = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    captured.push(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+    return true;
+  };
+  try {
+    const r1 = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(r1.action, 'created');
+    const r2 = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(r2.action, 'already_present');
+  } finally {
+    process.stdout.write = origWrite;
+    cleanup();
+  }
+  const joined = captured.join('');
+  assert.ok(joined.includes('<system-reminder>'), 'notice should be written on created');
+  assert.ok(joined.includes('Reload Window'));
+  // 2 回目 (already_present) では notice は出ない = created 分の 1 回のみ
+  const count = (joined.match(/<system-reminder>/g) ?? []).length;
+  assert.equal(count, 1, 'notice should be emitted exactly once (idempotency)');
 });

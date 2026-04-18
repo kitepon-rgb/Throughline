@@ -161,6 +161,37 @@ function atomicWrite(targetPath, contents) {
   renameSync(tmp, targetPath);
 }
 
+/**
+ * tasks.json を「今まさに作成/マージした」瞬間にユーザー向けへ送る通知テキスト。
+ *
+ * SessionStart / UserPromptSubmit の stdout は Claude Code に additional context として
+ * 取り込まれる。<system-reminder> で包んで Claude に「これをユーザーに伝える」ことを
+ * 明示しておくことで、新規プロジェクト初回セットアップ直後にユーザーへ
+ * 「Reload Window が必要」を即時通知できる。
+ *
+ * 通知するのは action が 'created' か 'merged' の場合のみ。既に存在した場合は
+ * セットアップ済みのため沈黙する（冪等性）。
+ */
+export function buildSetupNotice(action) {
+  if (action !== 'created' && action !== 'merged') return null;
+  return (
+    '<system-reminder>\n' +
+    'Throughline: このプロジェクトに token-monitor の自動起動設定を追加しました (.vscode/tasks.json)。\n' +
+    '今すぐ monitor を起動するには、VSCode のコマンドパレット (Ctrl+Shift+P) から\n' +
+    '  Developer: Reload Window\n' +
+    'を実行してください。次回以降はフォルダを開いた瞬間に自動起動します。\n' +
+    '\n' +
+    'このお知らせは今このプロジェクトで初回セットアップが完了したためだけに 1 度だけ流れています。\n' +
+    '必ずユーザー（あなたの対話相手）に日本語でそのまま伝えてください。\n' +
+    '</system-reminder>\n'
+  );
+}
+
+function emitSetupNotice(action) {
+  const text = buildSetupNotice(action);
+  if (text) process.stdout.write(text);
+}
+
 function emitJsoncGuidanceOnce(vscodeDir) {
   const markerPath = join(vscodeDir, JSONC_MARKER_FILENAME);
   if (existsSync(markerPath)) return;
@@ -215,6 +246,7 @@ export function ensureMonitorTaskFile(opts = {}) {
     if (!existsSync(vscodeDir)) mkdirSync(vscodeDir, { recursive: true });
     const obj = { version: '2.0.0', tasks: [buildMonitorTask(bin)] };
     atomicWrite(tasksPath, JSON.stringify(obj, null, 2) + '\n');
+    emitSetupNotice('created');
     return { action: 'created', path: tasksPath };
   }
 
@@ -243,5 +275,6 @@ export function ensureMonitorTaskFile(opts = {}) {
     tasks: [...(Array.isArray(obj.tasks) ? obj.tasks : []), buildMonitorTask(bin)],
   };
   atomicWrite(tasksPath, JSON.stringify(nextObj, null, indent) + '\n');
+  emitSetupNotice('merged');
   return { action: 'merged', path: tasksPath };
 }
