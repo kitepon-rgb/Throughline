@@ -41,6 +41,9 @@ switch (cmd) {
   case 'detail':
     (await import('../src/sc-detail.mjs')).run(rest);
     break;
+  case 'save-inflight':
+    await (await import('../src/cli/save-inflight.mjs')).run();
+    break;
   case 'doctor':
     await (await import('../src/cli/doctor.mjs')).run();
     break;
@@ -66,13 +69,14 @@ async function showHelp() {
   console.log(`throughline v${version}
 
 Usage:
-  throughline install         Register hooks in ~/.claude/settings.json
-  throughline uninstall       Remove hooks
-  throughline monitor         Multi-session token monitor (use --all, --session <id>)
-  throughline detail <time>   Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
-  throughline doctor          Check environment
-  throughline status          Show DB statistics
-  throughline --version       Show version
+  throughline install           Register hooks in ~/.claude/settings.json
+  throughline uninstall         Remove hooks
+  throughline monitor           Multi-session token monitor (use --all, --session <id>)
+  throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
+  throughline save-inflight     Save in-flight memo (stdin) to the current /tl baton
+  throughline doctor            Check environment
+  throughline status            Show DB statistics
+  throughline --version         Show version
 
 Hook subcommands (called by Claude Code):
   throughline session-start   SessionStart hook

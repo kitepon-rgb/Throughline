@@ -197,7 +197,7 @@ export function sliceCurrentTurnEntries(entries) {
  * 分類ルール:
  *   - assistant の tool_use ブロック → tool_input (name, input を JSON 化して input_text に)
  *   - user の tool_result ブロック → tool_output (content を output_text に、ANSI 剥離)
- *   - assistant/user の thinking ブロック → 破棄
+ *   - assistant の thinking ブロック → thinking (b.thinking を output_text に)
  *   - assistant/user の text ブロック → 扱わない（L2 bodies 側の責務）
  *   - attachment entry (hook_success) → system (hookName + content を出力に)
  *   - system entry (stop_hook_summary) → skip（hook タイミング情報で意味なし）
@@ -215,7 +215,8 @@ export function extractDetailBlocks(turnEntries) {
     if (e.type === 'assistant') {
       const blocks = e.message?.content;
       if (!Array.isArray(blocks)) continue;
-      for (const b of blocks) {
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
         if (!b || !b.type) continue;
         if (b.type === 'tool_use' && typeof b.id === 'string') {
           toolNameById.set(b.id, b.name ?? 'unknown');
@@ -226,6 +227,16 @@ export function extractDetailBlocks(turnEntries) {
             input_text: JSON.stringify(b.input ?? null),
             output_text: null,
           });
+        } else if (b.type === 'thinking' && typeof b.thinking === 'string') {
+          // 固有 id が無いため entry uuid + block index で冪等キーを合成
+          const sourceId = e.uuid ? `${e.uuid}:thinking:${i}` : null;
+          out.push({
+            kind: DETAIL_KIND.THINKING,
+            tool_name: 'thinking',
+            source_id: sourceId,
+            input_text: null,
+            output_text: b.thinking,
+          });
         } else if (b.type === 'image') {
           out.push({
             kind: DETAIL_KIND.IMAGE,
@@ -235,7 +246,7 @@ export function extractDetailBlocks(turnEntries) {
             output_text: '[image]',
           });
         }
-        // text / thinking は扱わない
+        // text は扱わない
       }
     } else if (e.type === 'user') {
       const blocks = e.message?.content;

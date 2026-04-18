@@ -9,7 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-const CURRENT_VERSION = 6;
+const CURRENT_VERSION = 7;
 
 let _db = null;
 
@@ -189,6 +189,17 @@ function initSchema(db) {
         created_at   INTEGER NOT NULL
       );
     `);
+  }
+
+  // v6 → v7: handoff_batons に memo_text 列追加（/tl 発動時に現行 Claude 自身が
+  // 書き込む in-flight メモ。「次の一手」「現在の方針」「未解決」「進行中 TODO」
+  // の短い Markdown テキスト。次セッションの SessionStart が resume-context の
+  // 先頭に注入して「中断地点からの再開」感を復元する）
+  if (version < 7) {
+    const batonCols = db.prepare('PRAGMA table_info(handoff_batons)').all();
+    if (!batonCols.some((c) => c.name === 'memo_text')) {
+      db.exec('ALTER TABLE handoff_batons ADD COLUMN memo_text TEXT');
+    }
   }
 
   if (version < CURRENT_VERSION) {

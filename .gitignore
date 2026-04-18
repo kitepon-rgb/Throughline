@@ -4,3 +4,6 @@ node_modules/
 
 # Per-machine local Claude Code permissions
 .claude/settings.local.json
+
+# Claude Code scheduled tasks lockfile (runtime state)
+.claude/scheduled_tasks.lock

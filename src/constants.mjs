@@ -10,6 +10,7 @@ export const DETAIL_KIND = Object.freeze({
   TOOL_OUTPUT: 'tool_output',
   SYSTEM: 'system',
   IMAGE: 'image',
+  THINKING: 'thinking',
 });
 
 /** 上記の値すべての Set（未知値判定に使う） */

@@ -10,6 +10,8 @@
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
 - **引き継ぎ発火条件はユーザー明示のバトンのみ**。旧セッションで `/tl` スラッシュコマンドを打つと UserPromptSubmit hook が `handoff_batons` テーブルに session_id を書き込み、次の新規セッションがそれを TTL 1 時間以内に限り消費して merge する。バトンが無ければ一切引き継がない
+- **in-flight メモ** (v7): `/tl` を打った後、旧セッションの Claude 自身が `throughline save-inflight` CLI 経由で「次の一手 / 現在の方針 / 未解決 / 進行中 TODO」を Markdown で `handoff_batons.memo_text` に書き込む。次セッションの resume-context 先頭にそのメモと最終ターンの thinking を注入することで「中断地点からの再開」感を復元する
+- **thinking の L3 保存**: assistant の extended thinking ブロックを `details` テーブルに `kind='thinking'` で全ターン保存。最新ターンの thinking は SessionStart 注入に含まれ、古い thinking は `throughline detail <時刻>` で取り出せる
 - バトン方式の背景: VSCode 拡張では SessionStart の `source` が /clear 後も `startup` に潰されるため source 判定では /clear を識別できない（[GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937)）。時間差ヒューリスティック（案 D）は誤爆リスクがあり撤回。詳細は [docs/INHERITANCE_ON_CLEAR_ONLY.md](docs/INHERITANCE_ON_CLEAR_ONLY.md)
 - 各レコードは `origin_session_id` を保持するため、複数回の `/tl` 経由引き継ぎでも記憶がチェーン状に蓄積する（ホップ制限なし）
 - `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` は **使わない**（自動コンパクト依存の設計は放棄済み）
@@ -25,7 +27,7 @@
 |---|---|
 | [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **現行設計の仕様書**。L1/L2/L3 の定義、ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表、途中で発覚した課題。schema v4 基盤 + v5 の L3 分類拡張を記載 |
 | [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、実装ステータス、E2E 検証手順、npm publish 完了状況） |
-| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v5、トラブルシュート） |
+| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v7、中断地点からの再開、トラブルシュート） |
 | [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録など）。歴史記述用 |
 
 ---
@@ -38,7 +40,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v6 migration。`node:sqlite` 組み込み、依存ゼロ |
+| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v7 migration。`node:sqlite` 組み込み、依存ゼロ |
 | [src/transcript-reader.mjs](src/transcript-reader.mjs) | transcript JSONL パーサー |
 | [src/transcript-usage.mjs](src/transcript-usage.mjs) | 最新 assistant の `message.usage` から実測トークン数を抽出、1M context 検出 |
 | [src/token-estimator.mjs](src/token-estimator.mjs) | 補助的なトークン数推定 (length/4) |
@@ -55,9 +57,9 @@
 
 | ファイル | 役割 |
 |---|---|
-| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` で書き SessionStart で消費） |
+| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo`（`/tl` で書き、`save-inflight` で memo 付与、SessionStart で消費） |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
-| [src/resume-context.mjs](src/resume-context.mjs) | L1+L2 注入テキスト組み立て（直近 20 = bodies、それ以前 = skeletons） |
+| [src/resume-context.mjs](src/resume-context.mjs) | 「中断地点からの再開」注入テキスト組み立て（in-flight メモ → 最終ターン thinking → L1 → L2 の順） |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`) |
 | [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | `claude -p --model claude-haiku-4-5-*` subprocess 呼び出し（再帰ガード 2 重） |
 
@@ -69,6 +71,7 @@
 | [src/cli/install.mjs](src/cli/install.mjs) | `install` / `uninstall`（デフォルト global、`--project` でローカル） |
 | [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
+| [src/cli/save-inflight.mjs](src/cli/save-inflight.mjs) | `save-inflight` — stdin の Markdown を現行バトンの memo_text に書き込む (`/tl` 直後に Claude 自身が呼ぶ) |
 | [src/token-monitor.mjs](src/token-monitor.mjs) | `monitor` — マルチセッション対応トークンモニター |
 | [src/sc-detail.mjs](src/sc-detail.mjs) | `/sc-detail <時刻>` スラッシュコマンド（[.claude/commands/sc-detail.md](.claude/commands/sc-detail.md) 経由） |
 
@@ -76,14 +79,14 @@
 
 | ファイル | 用途 |
 |---|---|
-| [.claude/commands/tl.md](.claude/commands/tl.md) | `/tl` — 現セッションを次の新規セッションに引き継ぐバトンを置く |
+| [.claude/commands/tl.md](.claude/commands/tl.md) | `/tl` — バトン設置 + Claude 自身に in-flight メモを `save-inflight` で書かせる |
 | [.claude/commands/sc-detail.md](.claude/commands/sc-detail.md) | `/sc-detail <時刻>` — L2+L3 詳細取得 |
 
 ### テスト
 
 | ファイル | 対象 |
 |---|---|
-| [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / TTL 動作 |
+| [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo` / TTL 動作 / memo_text 永続化 |
 | [src/session-merger.test.mjs](src/session-merger.test.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor` |
 | [src/turn-processor.test.mjs](src/turn-processor.test.mjs) | `countDistinctBodyTurns` / `pickOldestUnsummarizedTurn` / 20 ターン境界 |
 
@@ -118,7 +121,7 @@ node --test src/*.test.mjs
 
 ---
 
-## SQLite スキーマ (v6)
+## SQLite スキーマ (v7)
 
 `~/.throughline/throughline.db`（WAL モード）。schema migration の定義は [src/db.mjs](src/db.mjs) にあるので **スキーマを知りたい時は必ずそこを見る**。
 
@@ -127,10 +130,10 @@ node --test src/*.test.mjs
 - `sessions` — `session_id`, `project_path`, `status`, `created_at`, `updated_at`, `merged_into`
 - `skeletons` (L1) — `session_id`, `origin_session_id`, `turn_number`, `role`, `summary`, `created_at`
 - `bodies` (L2) — `session_id`, `origin_session_id`, `turn_number`, `role`, `text`, `token_count`, `created_at`
-- `details` (L3, schema v5) — `session_id`, `origin_session_id`, `turn_number`, `tool_name`, `input_text`, `output_text`, `token_count`, `created_at`, `kind`, `source_id`
-  - `kind`: `'tool_input' | 'tool_output' | 'system' | 'image'`
-  - `source_id`: `tool_use.id` / `attachment.uuid` 等の一意キー。`INSERT OR IGNORE` の冪等性を保証
-- `handoff_batons` (v6) — `project_path (PK)`, `session_id`, `created_at` — `/tl` スラッシュコマンドで書き込み、SessionStart が TTL 1h 以内なら消費して merge
+- `details` (L3) — `session_id`, `origin_session_id`, `turn_number`, `tool_name`, `input_text`, `output_text`, `token_count`, `created_at`, `kind`, `source_id`
+  - `kind`: `'tool_input' | 'tool_output' | 'system' | 'image' | 'thinking'`
+  - `source_id`: `tool_use.id` / `attachment.uuid` / `${entry_uuid}:thinking:${idx}` 等の一意キー。`INSERT OR IGNORE` の冪等性を保証
+- `handoff_batons` (v7) — `project_path (PK)`, `session_id`, `created_at`, `memo_text` — `/tl` で書き込み、直後に `save-inflight` で memo_text が付与される。SessionStart が TTL 1h 以内なら消費して merge
 - `injection_log` — 監査用（未活用）
 
 `judgments` テーブルは v4 で DROP 済み。`classifier.mjs` による抽出は精度が低く廃止。

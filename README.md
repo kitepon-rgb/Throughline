@@ -51,17 +51,20 @@ Start any Claude Code session and your turns will begin flowing into
 
 ---
 
-## Three-layer memory model (schema v6)
+## Three-layer memory model (schema v7)
 
-| Layer | Name       | Where it lives        | Content                                                    | Cost per turn |
-| ----- | ---------- | --------------------- | ---------------------------------------------------------- | ------------- |
-| **L1** | Skeleton  | injected when old     | one-line Haiku-generated summary of the turn               | ~10 tok       |
-| **L2** | Body      | injected when recent  | user text + assistant reply, verbatim                      | full natural  |
-| **L3** | Detail    | SQLite only           | tool I/O, system messages, images (on-demand via command)  | heavy, retired |
+| Layer | Name       | Where it lives        | Content                                                               | Cost per turn |
+| ----- | ---------- | --------------------- | --------------------------------------------------------------------- | ------------- |
+| **L1** | Skeleton  | injected when old     | one-line Haiku-generated summary of the turn                          | ~10 tok       |
+| **L2** | Body      | injected when recent  | user text + assistant reply, verbatim                                 | full natural  |
+| **L3** | Detail    | SQLite only           | tool I/O, system messages, images, **extended thinking** (on-demand)  | heavy, retired |
 
 The layers are **complementary and disjoint** — nothing is duplicated across
-them. Thinking blocks are discarded entirely (not stored at either layer) to
-match the stock Claude Code behavior.
+them. Extended thinking blocks are stored at L3 (`kind='thinking'`) so the
+next session can see *what the previous Claude was thinking* at the moment it
+was interrupted, not just what it said aloud. On `SessionStart` the thinking
+of the **final turn** is injected inline above the L2 history; older thinking
+remains retrievable via `throughline detail <time>`.
 
 On `SessionStart`, Throughline rebuilds the context from SQLite and
 injects it as plain text:
@@ -81,19 +84,32 @@ of tool inputs, tool outputs, and hook output captured at L3 for that turn.
 
 ---
 
-## Explicit handoff via `/tl`
+## Explicit handoff via `/tl` (with in-flight memo)
 
 Inheritance is **opt-in**, not automatic. When you want the next session to
 pick up where this one left off, type `/tl` in the current session before you
 `/clear` or open a new chat. Without `/tl`, new sessions start fresh — no
 memory is carried over.
 
-The `/tl` slash command writes a **handoff baton** (the current `session_id`)
-into the `handoff_batons` table. On the next `SessionStart`, the hook reads the
-baton, and if it is less than **1 hour old**, merges that session's memory
-into the new session using a deterministic `UPDATE session_id = ?` inside a
-`BEGIN IMMEDIATE` transaction. The baton is consumed (deleted) atomically with
-the merge, so it cannot fire twice.
+The `/tl` slash command does two things:
+
+1. **Writes a handoff baton** (the current `session_id`) into the
+   `handoff_batons` table via the `UserPromptSubmit` hook.
+2. **Asks the current Claude to write an in-flight memo.** `/tl` instructs
+   Claude to summarize *what it was about to do next, its current hypothesis,
+   open questions, and in-progress TODOs*, then pipe that Markdown into
+   `throughline save-inflight`, which attaches it to the baton's `memo_text`
+   column. This captures the "currently thinking" state that plain transcript
+   replay cannot preserve.
+
+On the next `SessionStart`, the hook reads the baton, and if it is less than
+**1 hour old**, merges that session's memory into the new session using a
+deterministic `UPDATE session_id = ?` inside a `BEGIN IMMEDIATE` transaction.
+The baton is consumed (deleted) atomically with the merge, so it cannot fire
+twice. The injected resume context is reframed as **"resuming an interrupted
+task"** rather than *"reading past logs"*, and the in-flight memo plus the
+final turn's extended thinking appear at the top so the new Claude picks up
+mid-thought.
 
 ```
 Session A (type /tl)  -----------> baton written
@@ -181,6 +197,7 @@ you open the folder. Drop an equivalent config into your own project's
 | `throughline uninstall`                        | Remove Throughline hooks from the settings file              |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
+| `throughline save-inflight`                    | Called by `/tl` to attach an in-flight memo (stdin) to the current baton |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
@@ -189,8 +206,13 @@ Slash commands (invoked by the user in Claude Code):
 
 | Command       | What it does                                                      |
 | ------------- | ----------------------------------------------------------------- |
-| `/tl`         | Write a handoff baton so the next session inherits this one       |
+| `/tl`         | Write a handoff baton + ask Claude to save an in-flight memo for the next session |
 | `/sc-detail <time>` | Retrieve L2 body text and L3 tool I/O for a past turn       |
+
+> When `/tl` triggers, Claude will call `throughline save-inflight` via its
+> Bash tool. Claude Code will prompt for permission the first time; add
+> `Bash(throughline save-inflight:*)` to your allowlist to skip the prompt on
+> subsequent `/tl` invocations.
 
 Hook subcommands (invoked by Claude Code, not by humans):
 `session-start` (SessionStart), `process-turn` (Stop),
@@ -238,13 +260,13 @@ plain `.mjs` files.
     └── <session_id>.json     Per-session activity state for the monitor
 ```
 
-Schema v6:
+Schema v7:
 
 - `sessions` — one row per `session_id`, with `project_path` and `merged_into`
 - `skeletons` — L1 one-liners, keyed by `(session_id, origin_session_id, turn, role)`
 - `bodies` — L2 verbatim text (user + assistant), same key shape
-- `details` — L3 records with `kind` column (`tool_input` / `tool_output` / `system` / `image`) and `source_id` for idempotent re-processing
-- `handoff_batons` — one row per `project_path`, holding the `session_id` that `/tl` has nominated to hand off. Consumed and deleted by the next `SessionStart` if within the 1-hour TTL.
+- `details` — L3 records with `kind` column (`tool_input` / `tool_output` / `system` / `image` / `thinking`) and `source_id` for idempotent re-processing
+- `handoff_batons` — one row per `project_path`, with `session_id`, `created_at`, and `memo_text` (the in-flight memo written by `save-inflight` after `/tl`). Consumed and deleted by the next `SessionStart` if within the 1-hour TTL.
 - `injection_log` — audit trail of injection events
 
 All memory tables carry an `origin_session_id` so rebonded rows keep their
@@ -316,7 +338,7 @@ unchanged here.
 
 **Database got corrupted / want a clean slate**
 Delete `~/.throughline/throughline.db` (and the `-shm` / `-wal` companion files)
-and `~/.throughline/state/*.json`. A fresh database with schema v6 is created on
+and `~/.throughline/state/*.json`. A fresh database with schema v7 is created on
 the next hook fire.
 
 **New session didn't inherit memory from the previous one**

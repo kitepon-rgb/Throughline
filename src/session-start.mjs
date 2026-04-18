@@ -83,14 +83,20 @@ async function main() {
     baton_session_id: baton.sessionId ?? null,
     baton_age_ms: baton.ageMs ?? null,
     baton_skip_reason: baton.skipReason ?? null,
+    baton_has_memo: Boolean(baton.memoText),
     merged: mergeResult.merged,
     merge_skip_reason: mergeResult.skipReason ?? null,
     predecessor_id: mergeResult.predecessorId ?? null,
   });
 
   // 3. 合流成立なら引き継ぎヘッダ付きで注入
+  //    バトンに付いていた in-flight メモも併せて先頭セクションに注入する
   if (mergeResult.merged) {
-    const text = buildResumeContext(db, { sessionId: session_id, isInheritance: true });
+    const text = buildResumeContext(db, {
+      sessionId: session_id,
+      isInheritance: true,
+      inflightMemo: baton.memoText ?? null,
+    });
     if (text) {
       process.stdout.write(text + '\n');
     }

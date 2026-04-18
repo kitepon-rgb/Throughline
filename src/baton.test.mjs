@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { writeBaton, consumeBaton, BATON_TTL_MS } from './baton.mjs';
+import { writeBaton, consumeBaton, updateBatonMemo, BATON_TTL_MS } from './baton.mjs';
 
 function makeDb() {
   const db = new DatabaseSync(':memory:');
@@ -9,7 +9,8 @@ function makeDb() {
     CREATE TABLE handoff_batons (
       project_path TEXT    PRIMARY KEY,
       session_id   TEXT    NOT NULL,
-      created_at   INTEGER NOT NULL
+      created_at   INTEGER NOT NULL,
+      memo_text    TEXT
     );
   `);
   return db;
@@ -96,4 +97,48 @@ test('consumeBaton: scopes per project_path (does not cross-consume)', () => {
   // /a のバトンは残っているはず
   const rows = db.prepare("SELECT * FROM handoff_batons WHERE project_path = '/a'").all();
   assert.equal(rows.length, 1);
+});
+
+test('updateBatonMemo: writes memo_text into existing baton', () => {
+  const db = makeDb();
+  writeBaton(db, { projectPath: '/proj', sessionId: 'S1', now: 1000 });
+  const result = updateBatonMemo(db, { projectPath: '/proj', memoText: '次の一手: X' });
+  assert.equal(result.updated, true);
+  const row = db.prepare('SELECT memo_text FROM handoff_batons').get();
+  assert.equal(row.memo_text, '次の一手: X');
+});
+
+test('updateBatonMemo: is a NOOP when no baton exists (no throw)', () => {
+  const db = makeDb();
+  const result = updateBatonMemo(db, { projectPath: '/missing', memoText: 'hello' });
+  assert.equal(result.updated, false);
+});
+
+test('writeBaton: preserves memo_text when same project_path is re-batoned', () => {
+  const db = makeDb();
+  writeBaton(db, { projectPath: '/proj', sessionId: 'S1', now: 1000 });
+  updateBatonMemo(db, { projectPath: '/proj', memoText: 'preserved memo' });
+  // 同じ project_path に再度 /tl を打っても memo は残る
+  writeBaton(db, { projectPath: '/proj', sessionId: 'S2', now: 2000 });
+  const row = db.prepare('SELECT * FROM handoff_batons').get();
+  assert.equal(row.session_id, 'S2');
+  assert.equal(row.created_at, 2000);
+  assert.equal(row.memo_text, 'preserved memo');
+});
+
+test('consumeBaton: returns memoText when set', () => {
+  const db = makeDb();
+  writeBaton(db, { projectPath: '/proj', sessionId: 'S1', now: 1000 });
+  updateBatonMemo(db, { projectPath: '/proj', memoText: '中断メモ' });
+  const result = consumeBaton(db, { projectPath: '/proj', now: 1000 + 1000 });
+  assert.equal(result.sessionId, 'S1');
+  assert.equal(result.memoText, '中断メモ');
+});
+
+test('consumeBaton: returns memoText=null when not set', () => {
+  const db = makeDb();
+  writeBaton(db, { projectPath: '/proj', sessionId: 'S1', now: 1000 });
+  const result = consumeBaton(db, { projectPath: '/proj', now: 1000 + 1000 });
+  assert.equal(result.sessionId, 'S1');
+  assert.equal(result.memoText, null);
 });

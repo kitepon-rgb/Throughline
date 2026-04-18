@@ -114,22 +114,80 @@ test('extractDetailBlocks: tool_use と tool_result をペアで抽出', () => {
   assert.equal(output.output_text, 'hi\n');
 });
 
-test('extractDetailBlocks: thinking / text ブロックは L3 に入れない', () => {
+test('extractDetailBlocks: assistant の thinking ブロックを kind=thinking で抽出、text は無視', () => {
   const entries = [
     userEntry('prompt'),
     {
       type: 'assistant',
+      uuid: 'asst-1',
       message: {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: 'internal thoughts' },
+          { type: 'thinking', thinking: 'internal thoughts', signature: 'sig' },
           { type: 'text', text: 'response' },
         ],
       },
     },
   ];
   const details = extractDetailBlocks(entries);
-  assert.equal(details.length, 0);
+  assert.equal(details.length, 1);
+  assert.equal(details[0].kind, DETAIL_KIND.THINKING);
+  assert.equal(details[0].tool_name, 'thinking');
+  assert.equal(details[0].source_id, 'asst-1:thinking:0');
+  assert.equal(details[0].input_text, null);
+  assert.equal(details[0].output_text, 'internal thoughts');
+});
+
+test('extractDetailBlocks: 同 entry 内で thinking + tool_use + image が混在しても全て抽出', () => {
+  const entries = [
+    userEntry('prompt'),
+    {
+      type: 'assistant',
+      uuid: 'asst-2',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'first thought' },
+          { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { path: '/x' } },
+          { type: 'thinking', thinking: 'second thought' },
+          { type: 'image', source: {} },
+          { type: 'text', text: 'done' },
+        ],
+      },
+    },
+    asstTextEntry('wrap'),
+  ];
+  const details = extractDetailBlocks(entries);
+  // thinking x2, tool_input x1, image x1 = 4
+  assert.equal(details.length, 4);
+  const thinkings = details.filter((d) => d.kind === DETAIL_KIND.THINKING);
+  assert.equal(thinkings.length, 2);
+  assert.equal(thinkings[0].source_id, 'asst-2:thinking:0');
+  assert.equal(thinkings[1].source_id, 'asst-2:thinking:2');
+  assert.equal(thinkings[0].output_text, 'first thought');
+  assert.equal(thinkings[1].output_text, 'second thought');
+});
+
+test('extractDetailBlocks: thinking エントリに uuid が無くても source_id=null で通過する', () => {
+  const entries = [
+    userEntry('prompt'),
+    {
+      type: 'assistant',
+      // uuid 欠損
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'thought without uuid' },
+          { type: 'text', text: 'reply' },
+        ],
+      },
+    },
+  ];
+  const details = extractDetailBlocks(entries);
+  const thinking = details.find((d) => d.kind === DETAIL_KIND.THINKING);
+  assert.ok(thinking);
+  assert.equal(thinking.source_id, null);
+  assert.equal(thinking.output_text, 'thought without uuid');
 });
 
 test('extractDetailBlocks: attachment (hook_success) を system として抽出', () => {
