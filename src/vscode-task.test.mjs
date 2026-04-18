@@ -148,6 +148,13 @@ test('buildMonitorTask: uses type=process with provided bin as args[0]', () => {
   assert.equal(task.isBackground, true);
 });
 
+test('buildMonitorTask: sets COLUMNS=200 env to work around type:process non-TTY stdout', () => {
+  const task = buildMonitorTask('/abs/bin/throughline.mjs');
+  assert.ok(task.options, 'task should carry options');
+  assert.ok(task.options.env, 'options should carry env');
+  assert.equal(task.options.env.COLUMNS, '200');
+});
+
 // --- ensureMonitorTaskFile: skip conditions ---
 
 test('ensureMonitorTaskFile: opt_out via THROUGHLINE_NO_VSCODE=1', () => {

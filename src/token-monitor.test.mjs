@@ -15,6 +15,7 @@ const {
   formatLine,
   formatTimeAgo,
   shouldForceFullRedraw,
+  resolveColumns,
 } = _internal;
 
 // state-file は projectPath を resolve + lowercase 正規化する。
@@ -383,6 +384,58 @@ test('shouldForceFullRedraw: columns が減ったら true', () => {
 test('shouldForceFullRedraw: 片方 0 以下は false (未初期化 or 無効)', () => {
   assert.equal(shouldForceFullRedraw(80, 0), false);
   assert.equal(shouldForceFullRedraw(0, 80), true);
+});
+
+// ─── resolveColumns ───────────────────────────────────────────────
+
+test('resolveColumns: process.stdout.columns が 40 以上ならそれ - 1 を返す', () => {
+  const orig = process.stdout.columns;
+  try {
+    Object.defineProperty(process.stdout, 'columns', { value: 120, configurable: true, writable: true });
+    assert.equal(resolveColumns(), 119);
+  } finally {
+    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
+  }
+});
+
+test('resolveColumns: columns が小さすぎる値 (12 等) ならフォールバック 200', () => {
+  const orig = process.stdout.columns;
+  const origEnv = process.env.COLUMNS;
+  try {
+    Object.defineProperty(process.stdout, 'columns', { value: 12, configurable: true, writable: true });
+    delete process.env.COLUMNS;
+    assert.equal(resolveColumns(), 200);
+  } finally {
+    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
+    if (origEnv !== undefined) process.env.COLUMNS = origEnv;
+  }
+});
+
+test('resolveColumns: columns が undefined でも env.COLUMNS >= 40 があればそれを使う', () => {
+  const orig = process.stdout.columns;
+  const origEnv = process.env.COLUMNS;
+  try {
+    Object.defineProperty(process.stdout, 'columns', { value: undefined, configurable: true, writable: true });
+    process.env.COLUMNS = '150';
+    assert.equal(resolveColumns(), 149);
+  } finally {
+    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
+    if (origEnv === undefined) delete process.env.COLUMNS;
+    else process.env.COLUMNS = origEnv;
+  }
+});
+
+test('resolveColumns: 全てのソースが無効ならフォールバック 200', () => {
+  const orig = process.stdout.columns;
+  const origEnv = process.env.COLUMNS;
+  try {
+    Object.defineProperty(process.stdout, 'columns', { value: undefined, configurable: true, writable: true });
+    delete process.env.COLUMNS;
+    assert.equal(resolveColumns(), 200);
+  } finally {
+    Object.defineProperty(process.stdout, 'columns', { value: orig, configurable: true, writable: true });
+    if (origEnv !== undefined) process.env.COLUMNS = origEnv;
+  }
 });
 
 // ─── formatLine: time-ago 表示 ────────────────────────────────────

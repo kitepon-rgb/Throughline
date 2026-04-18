@@ -231,6 +231,30 @@ export function shouldForceFullRedraw(prevCols, currCols) {
   return prevCols !== currCols && currCols > 0;
 }
 
+/**
+ * 描画に使う列幅を解決する。
+ *
+ * 優先順:
+ *   1. `process.stdout.columns` が 40 以上 → その値から 1 引いたもの (末尾列での自動改行回避)
+ *   2. `process.env.COLUMNS` が 40 以上 → その値
+ *   3. それ以外 → 200 にフォールバック（VSCode の `type: process` タスクで stdout が
+ *      TTY でない場合、columns が undefined または 0/12 のような極端に小さい値を
+ *      返すことがあり、そのまま使うと描画が「openclaw」で切れるなどの視覚崩れが出る）
+ *
+ * 「40 未満は無視」閾値は、現行 formatLine の最小構成（marker + project(18) + id(8) +
+ * ago(8) + bar(20) + ...）が実用上 40 セル未満になり得ないため。
+ *
+ * 固定 200 フォールバックは、truncateToCells が 200 セルより短い実内容を
+ * そのまま通す (伸長しない) ので過大でも副作用なし。
+ */
+export function resolveColumns() {
+  const reported = typeof process.stdout.columns === 'number' ? process.stdout.columns : 0;
+  if (reported >= 40) return reported - 1;
+  const fromEnv = Number(process.env.COLUMNS);
+  if (Number.isFinite(fromEnv) && fromEnv >= 40) return fromEnv - 1;
+  return 200;
+}
+
 function formatLine({ state, usage, isActive, now = Date.now() }) {
   const project = basename(state.projectPath || '?');
   const shortId = state.sessionId.slice(0, 8);
@@ -387,9 +411,7 @@ function renderFrame(args) {
   //   こうすれば ANSI.up(lines.length) と論理行数が物理行数と一致する。
   //   columns - 1 にしてるのはターミナル末尾列に書くと自動改行する端末があるため。
   //   truncateToCells は CJK / 絵文字を 2 セルとして正しく数える。
-  const columns = process.stdout.columns && process.stdout.columns > 10
-    ? process.stdout.columns - 1
-    : 120;
+  const columns = resolveColumns();
   const clipped = lines.map((l) => truncateToCells(l, columns));
 
   // 前フレームを消去してから再描画:
@@ -524,6 +546,7 @@ export const _internal = {
   resetRenderKeyCache,
   formatTimeAgo,
   shouldForceFullRedraw,
+  resolveColumns,
 };
 
 // --- エントリポイント自動起動 ---

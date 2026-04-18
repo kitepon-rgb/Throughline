@@ -109,6 +109,12 @@ export function hasMonitorTask(obj) {
  * 依存して失敗しうる。process は command を直接起動するため堅い。
  * command には Node 実行ファイルの絶対パスを入れ、args に throughline.mjs の
  * 絶対パスと 'monitor' サブコマンドを渡す。
+ *
+ * options.env.COLUMNS=200 を渡す理由:
+ *   type: 'process' では VSCode は PTY を張らず stdout をパイプするため、
+ *   子プロセスの `process.stdout.columns` が undefined か極端に小さい値になり、
+ *   モニターの幅計算が破綻する。COLUMNS env を明示しておけば token-monitor の
+ *   resolveColumns() が 200 を採用して行が「openclaw」で切れる不具合を避けられる。
  */
 export function buildMonitorTask(throughlineBin) {
   return {
@@ -117,6 +123,9 @@ export function buildMonitorTask(throughlineBin) {
     type: 'process',
     command: process.execPath,
     args: [throughlineBin, 'monitor'],
+    options: {
+      env: { COLUMNS: '200' },
+    },
     isBackground: true,
     presentation: {
       reveal: 'always',
