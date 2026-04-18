@@ -80,11 +80,24 @@ function truncateToWidth(line, maxWidth) {
 }
 
 // --- CLI 引数 ---
+/**
+ * @param {string[]} argv
+ * @returns {{all: boolean, session: string|null}}
+ * @throws {Error} --session に値が欠落している場合
+ */
 function parseArgs(argv) {
   const args = { all: false, session: null };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--all') args.all = true;
-    else if (argv[i] === '--session') args.session = argv[++i];
+    if (argv[i] === '--all') {
+      args.all = true;
+    } else if (argv[i] === '--session') {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('--')) {
+        throw new Error('--session requires a session id (or prefix) as next argument');
+      }
+      args.session = value;
+      i++;
+    }
   }
   return args;
 }
@@ -133,11 +146,18 @@ function formatLine({ state, usage, isActive }) {
 }
 
 // --- フィルタ ---
+/**
+ * セッション一覧に表示フィルタを適用する。
+ * ルール:
+ *   - stale (15 分無活動) は基本非表示。--all のときのみ stale も含める
+ *   - --session が指定されればプレフィックス一致、ただし base (stale フィルタ通過済み) 上で絞る
+ *   - --session 無し & --all 無しのときは cwd 一致のみ残す
+ */
 function filterStates(states, args, cwd) {
-  // stale (15 分無活動) は基本非表示。--all のときだけ stale も含める
-  let base = args.all ? states : states.filter((s) => !s.stale);
+  const base = args.all ? states : states.filter((s) => !s.stale);
   if (args.session) {
-    return states.filter((s) => s.sessionId === args.session || s.sessionId.startsWith(args.session));
+    // startsWith が完全一致も含むので === は冗長
+    return base.filter((s) => s.sessionId.startsWith(args.session));
   }
   if (args.all) return base;
   const normalizedCwd = normalizeProjectPath(cwd);
@@ -213,25 +233,71 @@ function renderFrame(args) {
 }
 
 // --- 起動 ---
-function main() {
-  const args = parseArgs(process.argv.slice(2));
+let cursorRestored = false;
+function restoreCursor() {
+  if (cursorRestored) return;
+  cursorRestored = true;
+  try {
+    process.stdout.write(ANSI.showCursor);
+  } catch {
+    // stdout がすでに閉じていても無視
+  }
+}
+
+function safeRenderFrame(args) {
+  try {
+    renderFrame(args);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown error';
+    process.stderr.write(`[Throughline] render error: ${msg}\n`);
+    // 1 フレームの失敗で常駐を落とさない。次フレームで回復を試す
+  }
+}
+
+export function main() {
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'invalid args';
+    process.stderr.write(`[Throughline] ${msg}\n`);
+    process.exit(2);
+  }
 
   process.stdout.write(ANSI.hideCursor);
   process.stdout.write(color(ANSI.dim, `[Throughline] モニター起動 (state: ${getStateDir()}, Ctrl+C で終了)\n`));
 
-  renderFrame(args);
+  safeRenderFrame(args);
   const timer = setInterval(() => {
-    if (needsRerender()) renderFrame(args);
+    if (needsRerender()) safeRenderFrame(args);
   }, REFRESH_MS);
 
-  const shutdown = () => {
+  const shutdown = (code = 0) => {
     clearInterval(timer);
-    process.stdout.write('\n' + ANSI.showCursor);
-    process.stdout.write(color(ANSI.dim, '[Throughline] モニター終了\n'));
-    process.exit(0);
+    restoreCursor();
+    process.stdout.write('\n' + color(ANSI.dim, '[Throughline] モニター終了\n'));
+    process.exit(code);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown(0));
+  process.on('SIGTERM', () => shutdown(0));
+
+  // クラッシュ時もカーソルを必ず戻す
+  process.on('exit', restoreCursor);
+  process.on('uncaughtException', (err) => {
+    restoreCursor();
+    const msg = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    process.stderr.write(`[Throughline] uncaught exception:\n${msg}\n`);
+    process.exit(1);
+  });
+  process.on('unhandledRejection', (reason) => {
+    restoreCursor();
+    process.stderr.write(`[Throughline] unhandled rejection: ${String(reason)}\n`);
+    process.exit(1);
+  });
 }
 
-main();
+// --- テスト用エクスポート（本番コードからは参照しない） ---
+export const _internal = {
+  parseArgs,
+  filterStates,
+};

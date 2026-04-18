@@ -36,7 +36,7 @@ switch (cmd) {
     await import('../src/prompt-submit.mjs');
     break;
   case 'monitor':
-    await import('../src/token-monitor.mjs');
+    (await import('../src/token-monitor.mjs')).main();
     break;
   case 'detail':
     (await import('../src/sc-detail.mjs')).run(rest);
