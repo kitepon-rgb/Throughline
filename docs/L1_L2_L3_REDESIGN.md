@@ -1,6 +1,6 @@
 # 新 L1/L2/L3 設計（再定義）
 
-> **Status**: 実装完了（2026-04-16 時点）
+> **Status**: 実装完了（2026-04-16 時点）。この文書は **L1/L2/L3 再定義の設計記録**であり、schema v4-v5 相当の変更までを扱う。以後の `handoff_batons` (v6)・`memo_text` (v7)・state.usage スナップショット・VSCode 自動起動・monitor 診断機能は本仕様と独立で、[CLAUDE.md](../CLAUDE.md) と [PUBLIC_RELEASE_PLAN.md](PUBLIC_RELEASE_PLAN.md) に索引あり。
 > 全ステップ (1〜8) 実装済み。L1/L2/L3 すべて書き込みパスが稼働。schema v5 で details に `kind` / `source_id` 列追加済み。
 > 進捗の詳細は「実装順序」セクション末尾の進捗表を参照。
 

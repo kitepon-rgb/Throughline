@@ -181,11 +181,14 @@ Example output (real values from a running 1M-context Opus session):
 - **Resize resilient.** Column width is polled every second, so pane drags that
   don't fire a terminal `resize` event (common in VS Code's integrated
   terminal) still trigger a full redraw.
-- **Per-row "last updated" stamp.** Each session row ends with `(24m ago)` so
-  you can tell a frozen display apart from an idle session at a glance. When
-  you need more detail, `throughline doctor --session <id-prefix>` compares the
-  state file against the actual transcript JSONL and flags drift, idle time,
-  and `/clear`-induced transcript path staleness.
+- **Per-row "last updated" stamp.** Each session row carries an 8-cell
+  `just now` / `24m ago` stamp right after the session id, placed before the
+  bar so narrow terminals don't truncate it. It resets to `just now` on every
+  Stop hook, so a growing stamp means the session is truly idle — not the
+  monitor stuck. When you need more detail,
+  `throughline doctor --session <id-prefix>` compares the state file against
+  the actual transcript JSONL and flags drift, idle time, and
+  `/clear`-induced transcript path staleness.
 - **State-backed usage snapshot.** When the Stop hook finishes a turn it
   persists the latest `tokens / model / contextWindowSize` back into the state
   file. The monitor prefers this snapshot over re-reading the JSONL, which
@@ -379,6 +382,13 @@ No session has touched its state file in the last 15 minutes. Send a message in
 Claude Code and the monitor should pick it up within 1 second. If it still does
 not, run `throughline doctor`.
 
+**Monitor seems stuck on the same value**
+Each session row ends with a `(Nm ago)` stamp. If it keeps growing, the session
+is idle — no assistant turn has finished. For a deeper look, run
+`throughline doctor --session <id-prefix>` to compare the state file against
+the actual transcript JSONL and flag drift, idle time, or `/clear`-induced
+transcript path staleness.
+
 **`throughline install` wrote to the wrong settings file**
 By default, Throughline installs to `~/.claude/settings.json` (user scope, applies
 to all projects). Use `--project` to scope it to the current directory's
@@ -430,13 +440,18 @@ the folder in VS Code.
 
 ## Design docs
 
-- [`docs/L1_L2_L3_REDESIGN.md`](docs/L1_L2_L3_REDESIGN.md) — **current design
+- [`docs/L1_L2_L3_REDESIGN.md`](docs/L1_L2_L3_REDESIGN.md) — **core design
   spec** for the L1/L2/L3 differential layer model (schema v4 base + v5 L3
-  classification extension). Authoritative.
-- [`docs/PUBLIC_RELEASE_PLAN.md`](docs/PUBLIC_RELEASE_PLAN.md) — public release
-  plan (CLI surface, package.json layout, § 0 fallback rule)
+  classification extension). Authoritative for the memory layering rules.
+- [`docs/INHERITANCE_ON_CLEAR_ONLY.md`](docs/INHERITANCE_ON_CLEAR_ONLY.md) —
+  design record for the `/tl` baton handoff system (schema v6–v7). Explains
+  why the current inheritance is opt-in rather than heuristic.
+- [`docs/PUBLIC_RELEASE_PLAN.md`](docs/PUBLIC_RELEASE_PLAN.md) — public
+  release plan, implementation status by version, § 0 fallback rule, and
+  remaining tasks.
 - [`docs/archive/`](docs/archive/) — superseded design documents kept for
-  historical reference (original CONCEPT, session-linking experiments, etc.)
+  historical reference (original CONCEPT, session-linking experiments,
+  pre-publish action list).
 
 ---
 

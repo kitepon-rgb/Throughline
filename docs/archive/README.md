@@ -11,6 +11,7 @@
 | CONCEPT.md | Throughline の初期コンセプト文書。L2 = 判断 (judgment) 抽出という構造化方式を想定していた | schema v4 で judgments テーブル廃止、L2 は「会話本文そのまま」に再定義。本文書の L2 節以降は実装と乖離している |
 | EXPERIMENT.md | `/clear` 跨ぎで旧/新 session_id を紐づけるための命題 A〜X と実機検証の記録 | 結論として記憶張り替え方式 (merged_into + origin_session_id) が採用され、本実験結果は歴史記録としてのみ価値がある |
 | SESSION_LINKING_DESIGN.md | 命題 X（ファイルベース紐付け）の実装設計書。時間窓＋ state ファイル方式 | 同上。最終的に記憶張り替え方式に置き換えられ、spike コードも破棄済み |
+| THROUGHLINE_NEXT_STEPS.md | 2026-04-17、npm publish 直前の優先順位メモ（publish 済ませろ / awesome-claude-code 登録 / HN 投稿）| npm publish は v0.1.0 〜 v0.3.x まで複数回実施、awesome-claude-code は未提出。現在の未完タスクは [../PUBLIC_RELEASE_PLAN.md](../PUBLIC_RELEASE_PLAN.md) に集約 |
 
 ## なぜアーカイブするか
 

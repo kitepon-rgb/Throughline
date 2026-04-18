@@ -25,10 +25,11 @@
 
 | ドキュメント | 内容 |
 |---|---|
-| [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **現行設計の仕様書**。L1/L2/L3 の定義、ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表、途中で発覚した課題。schema v4 基盤 + v5 の L3 分類拡張を記載 |
-| [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、実装ステータス、E2E 検証手順、npm publish 完了状況） |
-| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v7、中断地点からの再開、トラブルシュート） |
-| [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録など）。歴史記述用 |
+| [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **L1/L2/L3 記憶レイヤーの設計仕様**。ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表。schema v4 基盤 + v5 L3 分類拡張まで。以後の v6/v7 追加は本文書とは独立 |
+| [docs/INHERITANCE_ON_CLEAR_ONLY.md](docs/INHERITANCE_ON_CLEAR_ONLY.md) | `/tl` バトン引き継ぎ方式の設計判断記録（schema v6/v7）。ヒューリスティック方式を却下した理由と、現行の明示指名方式の経緯 |
+| [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、バージョン別実装ステータス、E2E 検証手順、未完タスク） |
+| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v7、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
+| [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録、npm publish 前のアクションメモ等）。歴史記述用 |
 
 ---
 
@@ -89,11 +90,19 @@
 |---|---|
 | [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo` / TTL 動作 / memo_text 永続化 |
 | [src/session-merger.test.mjs](src/session-merger.test.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor` |
-| [src/turn-processor.test.mjs](src/turn-processor.test.mjs) | `countDistinctBodyTurns` / `pickOldestUnsummarizedTurn` / 20 ターン境界 |
+| [src/state-file.test.mjs](src/state-file.test.mjs) | `writeSessionState` / `readAllSessionStates` / `snapshotStateMtimes` / stale 閾値 / `usage` スナップショット / 旧フォーマット互換 |
+| [src/turn-processor.test.mjs](src/turn-processor.test.mjs) | `countDistinctBodyTurns` / `pickOldestUnsummarizedTurn` / 20 ターン境界。※ `main()` が stdin 待ちでテストファイル自体は 10s タイムアウトする（既存の既知問題、個別ケース 9/9 は pass）|
+| [src/token-monitor.test.mjs](src/token-monitor.test.mjs) | CLI 引数、cell 幅、bar/色覚マーカー、`formatTimeAgo`、`shouldForceFullRedraw`、`formatLine` の ago 配置 |
+| [src/transcript-reader.test.mjs](src/transcript-reader.test.mjs) | transcript JSONL パーサー、`extractDetailBlocks` の全 kind 分類 |
+| [src/transcript-usage.test.mjs](src/transcript-usage.test.mjs) | `readLatestUsage` / `inferContextWindowSize` / 1M sticky / size+mtime キャッシュ |
 | [src/vscode-task.test.mjs](src/vscode-task.test.mjs) | `ensureMonitorTaskFile` の全分岐 (created / merged / already_present / skipped×複数 reason)、JSONC 検出、インデント保持、冪等性 |
+| [src/cli/doctor.test.mjs](src/cli/doctor.test.mjs) | `doctor --session` 用の `parseArgs` / `formatAgo` / `formatBytes` / `isPidAlive` / `findLatestJsonlInSameDir` |
 
 ```bash
-node --test src/*.test.mjs
+# 個別ファイル推奨（turn-processor.test.mjs を含める場合 10 秒待つ）
+node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.mjs \
+            src/token-monitor.test.mjs src/transcript-reader.test.mjs src/transcript-usage.test.mjs \
+            src/vscode-task.test.mjs src/cli/doctor.test.mjs
 ```
 
 ### 削除済み
@@ -151,11 +160,16 @@ node bin/throughline.mjs install --project
 # hooks 削除
 node bin/throughline.mjs uninstall --project
 
-# テスト
-node --test src/*.test.mjs
+# テスト（turn-processor.test.mjs は main() stdin 待ちで 10s タイムアウトする既知問題のため除外）
+node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.mjs \
+            src/token-monitor.test.mjs src/transcript-reader.test.mjs src/transcript-usage.test.mjs \
+            src/vscode-task.test.mjs src/cli/doctor.test.mjs
 
-# モニター（別ターミナルで常駐）
+# モニター（別ターミナルで常駐、VSCode タスクが自動起動するので通常は手動不要）
 node src/token-monitor.mjs
+
+# 特定セッションの診断（モニターが止まって見える時の切り分け）
+node bin/throughline.mjs doctor --session <id-prefix>
 
 # DB 統計
 node bin/throughline.mjs status
