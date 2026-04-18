@@ -10,9 +10,14 @@
  * node のインストール先や OS が変わっても PATH さえ通れば動く。
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const SLASH_COMMANDS_SRC = join(PACKAGE_ROOT, '.claude', 'commands');
+const SC_SLASH_COMMAND_FILES = ['tl.md', 'sc-detail.md'];
 
 // Throughline が管理する hook コマンド一覧
 // schema v4 以降: PostToolUse (capture-tool) は廃止。Stop 内で L2/L3 を一括処理する。
@@ -48,6 +53,42 @@ function resolveSettingsPath(args) {
   return join(homedir(), '.claude', 'settings.json');
 }
 
+function resolveCommandsDir(args) {
+  if (args.includes('--project')) {
+    return join(process.cwd(), '.claude', 'commands');
+  }
+  return join(homedir(), '.claude', 'commands');
+}
+
+function installSlashCommands(commandsDir) {
+  if (!existsSync(SLASH_COMMANDS_SRC)) {
+    return { installed: [], skipped: 'source-missing' };
+  }
+  if (!existsSync(commandsDir)) mkdirSync(commandsDir, { recursive: true });
+  const installed = [];
+  for (const name of SC_SLASH_COMMAND_FILES) {
+    const src = join(SLASH_COMMANDS_SRC, name);
+    if (!existsSync(src)) continue;
+    const dest = join(commandsDir, name);
+    copyFileSync(src, dest);
+    installed.push(name);
+  }
+  return { installed, skipped: null };
+}
+
+function uninstallSlashCommands(commandsDir) {
+  const removed = [];
+  if (!existsSync(commandsDir)) return removed;
+  for (const name of SC_SLASH_COMMAND_FILES) {
+    const dest = join(commandsDir, name);
+    if (existsSync(dest)) {
+      unlinkSync(dest);
+      removed.push(name);
+    }
+  }
+  return removed;
+}
+
 function readSettings(settingsPath) {
   if (!existsSync(settingsPath)) return {};
   return JSON.parse(readFileSync(settingsPath, 'utf8'));
@@ -62,6 +103,7 @@ function writeSettings(settingsPath, obj) {
 export async function run(args = []) {
   const uninstall = args.includes('--uninstall');
   const settingsPath = resolveSettingsPath(args);
+  const commandsDir = resolveCommandsDir(args);
   const current = readSettings(settingsPath);
   const existingHooks = current.hooks ?? {};
   const scSet = new Set(SC_COMMANDS);
@@ -81,8 +123,12 @@ export async function run(args = []) {
     }
 
     writeSettings(settingsPath, current);
+    const removedCommands = uninstallSlashCommands(commandsDir);
     console.log('Throughline hooks を削除しました。');
     console.log(`  ${settingsPath}`);
+    if (removedCommands.length > 0) {
+      console.log(`  slash commands 削除: ${removedCommands.join(', ')} (${commandsDir})`);
+    }
     return;
   }
 
@@ -100,6 +146,7 @@ export async function run(args = []) {
 
   current.hooks = existingHooks;
   writeSettings(settingsPath, current);
+  const { installed: installedCommands, skipped } = installSlashCommands(commandsDir);
 
   const scope = args.includes('--project') ? 'プロジェクトローカル' : 'グローバル（全プロジェクト）';
   console.log(`Throughline hooks をインストールしました [${scope}]`);
@@ -110,5 +157,13 @@ export async function run(args = []) {
   console.log('  Stop             → throughline process-turn   (L1 要約 + L2 本文保存 + L3 詳細保存)');
   console.log('  UserPromptSubmit → throughline prompt-submit  (/tl バトン書き込み)');
   console.log('');
+  if (installedCommands.length > 0) {
+    console.log(`slash commands を配置しました: ${installedCommands.map(n => '/' + n.replace(/\.md$/, '')).join(', ')}`);
+    console.log(`  ${commandsDir}`);
+    console.log('');
+  } else if (skipped === 'source-missing') {
+    console.log('注意: パッケージ内に slash commands のソースが見つからないためスキップしました。');
+    console.log('');
+  }
   console.log('  アンインストール: throughline uninstall');
 }
