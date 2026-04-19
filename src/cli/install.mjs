@@ -39,7 +39,7 @@ const SC_HOOKS = {
     hooks: [{ type: 'command', command: 'throughline session-start' }],
   },
   Stop: {
-    hooks: [{ type: 'command', command: 'throughline process-turn' }],
+    hooks: [{ type: 'command', command: 'throughline process-turn', async: true }],
   },
   UserPromptSubmit: {
     hooks: [{ type: 'command', command: 'throughline prompt-submit' }],

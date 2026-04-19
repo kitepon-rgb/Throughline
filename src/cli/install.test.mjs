@@ -124,6 +124,35 @@ test('uninstall preserves unrelated slash commands in the same dir', async () =>
   }
 });
 
+test('Stop hook is registered with async:true so it does not block ターン完了 UX', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  const unsilence = silence();
+  try {
+    await run([]);
+    const settings = JSON.parse(readFileSync(join(home.dir, '.claude', 'settings.json'), 'utf8'));
+    const processTurnHook = settings.hooks.Stop
+      .flatMap(g => g.hooks ?? [])
+      .find(h => h.command === 'throughline process-turn');
+    assert.ok(processTurnHook, 'Stop should have throughline process-turn');
+    assert.equal(processTurnHook.async, true, 'Stop hook must be async to avoid blocking ターン完了');
+    const sessionStartHook = settings.hooks.SessionStart
+      .flatMap(g => g.hooks ?? [])
+      .find(h => h.command === 'throughline session-start');
+    assert.notEqual(sessionStartHook.async, true, 'SessionStart stays synchronous (needs to inject context before turn)');
+    const promptSubmitHook = settings.hooks.UserPromptSubmit
+      .flatMap(g => g.hooks ?? [])
+      .find(h => h.command === 'throughline prompt-submit');
+    assert.notEqual(promptSubmitHook.async, true, 'UserPromptSubmit stays synchronous (needs baton write committed before turn)');
+  } finally {
+    unsilence();
+    home.restore();
+  }
+});
+
 test('install is idempotent: second run keeps exactly one tl.md and one hook entry', async () => {
   const home = makeTempHome();
   if (home.resolved !== home.dir) {
