@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }} · node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: ['22.x', '24.x']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Print versions
+        run: |
+          node --version
+          npm --version
+
+      # turn-processor.test.mjs is intentionally excluded — it has a known
+      # 10-second hang because main() blocks on stdin (the production hook
+      # entry point). Individual cases inside it pass; running the file
+      # itself would only stall CI without adding signal. See CLAUDE.md.
+      - name: Run unit tests
+        run: |
+          node --test \
+            src/baton.test.mjs \
+            src/session-merger.test.mjs \
+            src/state-file.test.mjs \
+            src/token-monitor.test.mjs \
+            src/transcript-reader.test.mjs \
+            src/transcript-usage.test.mjs \
+            src/vscode-task.test.mjs \
+            src/terminal-size.test.mjs \
+            src/cli/doctor.test.mjs
+        shell: bash
+
+      - name: Verify CLI smoke (--version)
+        run: node bin/throughline.mjs --version

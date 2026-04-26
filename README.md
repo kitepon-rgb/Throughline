@@ -1,6 +1,45 @@
+<p align="center">
+  <img src=".github/og.svg" alt="Throughline — cut ~90% of Claude Code's context usage while keeping nearly all the memory" width="100%">
+</p>
+
 # Throughline
 
-**Cut ~90% of Claude Code's context usage while keeping nearly all the memory.**
+[![npm version](https://img.shields.io/npm/v/throughline.svg?color=cb3837&logo=npm)](https://www.npmjs.com/package/throughline)
+[![license](https://img.shields.io/npm/l/throughline.svg?color=blue)](LICENSE)
+[![node](https://img.shields.io/node/v/throughline.svg?color=339933&logo=node.js&logoColor=white)](https://nodejs.org)
+[![CI](https://github.com/kitepon-rgb/Throughline/actions/workflows/test.yml/badge.svg)](https://github.com/kitepon-rgb/Throughline/actions/workflows/test.yml)
+
+**English** · [日本語](README.ja.md)
+
+> **Cut ~90% of Claude Code's context usage while keeping nearly all the memory.**
+> Throughline separates conversation by **type, not time** — humans-readable text stays, machine-generated tool output retires to SQLite. Same decisions, same context, 90% lighter.
+
+## In 30 seconds
+
+```bash
+npm install -g throughline
+throughline install     # registers hooks in ~/.claude/settings.json
+```
+
+That's it. Open any Claude Code session and your turns flow into
+`~/.throughline/throughline.db` automatically. After 50 turns of work, type
+`/clear` (or just open a new chat), then `/tl` first if you want the next
+session to inherit the memory — the new session resumes mid-thought instead
+of starting from zero.
+
+## How it compares
+
+| | Throughline | MemGPT / SummaryBufferMemory | Plain Claude Code |
+|---|---|---|---|
+| **Compression axis** | content **type** (text vs tool I/O) | **recency** (old → summarized) | none |
+| **Coding-assistant fit** | high — tool I/O is the heavy 80% | medium — also compresses what you want to keep | — |
+| **`/clear` survival** | ✅ via SQLite + `/tl` baton | depends on host | ❌ |
+| **Auto-inheritance risk** | zero (explicit `/tl`) | high | — |
+| **Runtime deps** | **zero** (Node 22.5+ built-in `node:sqlite`) | many | — |
+| **Multi-session token monitor** | ✅ real `message.usage`, no `len/4` | — | — |
+
+<details>
+<summary><b>Why this matters — the 80% tool-I/O problem</b></summary>
 
 In a typical Claude Code session, **80% of the context window is tool I/O** —
 file reads, Bash output, grep results. This data is consumed the moment Claude
@@ -33,21 +72,7 @@ again.
 Throughline also ships a multi-session **token monitor** that reads real
 Anthropic API usage from the transcript JSONL (no `length / 4` heuristics).
 
----
-
-## Quick Start
-
-```bash
-npm install -g throughline
-throughline install
-```
-
-That's it. `install` registers Throughline's hooks in `~/.claude/settings.json`
-(user scope), so every Claude Code project on your machine picks it up
-automatically. No per-project wiring required.
-
-Start any Claude Code session and your turns will begin flowing into
-`~/.throughline/throughline.db` in the background.
+</details>
 
 ---
 
@@ -201,6 +226,15 @@ Example output (real values from a running 1M-context Opus session):
   file. The monitor prefers this snapshot over re-reading the JSONL, which
   removes a source of flicker when the transcript path in state drifts from
   the one Claude Code is currently appending to.
+- **Non-blocking Stop hook (v0.3.22+).** The Stop hook is registered with
+  `"async": true` so `throughline process-turn` runs in the background and
+  does not delay Claude's reply from reaching you. L1 Haiku summarization
+  (`claude -p` subprocess + inference, seconds to tens of seconds) would
+  otherwise stall the user-facing response of every turn; since L1 is only
+  needed for the *next* session's SessionStart injection, there is no reason
+  to block the current turn on it. Existing installs need
+  `throughline uninstall && throughline install` to promote the flag (the
+  dedup logic skips entries that match by command string).
 
 ### VS Code auto-start (automatic)
 

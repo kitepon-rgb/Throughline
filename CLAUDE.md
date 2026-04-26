@@ -121,12 +121,14 @@ node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.m
 {
   "hooks": {
     "SessionStart":     [{ "hooks": [{ "command": "throughline session-start" }] }],
-    "Stop":             [{ "hooks": [{ "command": "throughline process-turn" }] }],
+    "Stop":             [{ "hooks": [{ "command": "throughline process-turn", "async": true } ] }],
     "UserPromptSubmit": [{ "hooks": [{ "command": "throughline prompt-submit" }] }]
   }
 }
 ```
 
+- **Stop は `async: true` で登録される (v0.3.22+)**。`throughline process-turn` は内部で `claude -p --model haiku` subprocess を起動するため同期実行だとターン完了 → ユーザー表示を数秒〜数十秒ブロックしていた。L1 要約は**次** SessionStart 注入用なので今ターンをブロックする必要がない → async 化。Claude Code 公式 hooks schema の正式フィールド（[公式 docs 確認済み](https://code.claude.com/docs/en/hooks.md)）。SessionStart / UserPromptSubmit は同期のまま（前者は resume-context 注入が次ターン本体に間に合う必要、後者は `/tl` バトン commit が次ターン開始前に必要）
+- 既存ユーザーの async フラグ昇格は `throughline uninstall && throughline install` 経由でしか起きない。install の dedup は command 文字列一致で判定するため、既存の async 無しエントリが残っていると再 install でも skip される
 - **UserPromptSubmit** は `/tl` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 2 役 (v0.3.18+)。Claude への注入は一切しない（SessionStart 側との重複注入回避のため）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **PostToolUse** は登録しない（schema v4 で廃止）
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
