@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/og.svg" alt="Throughline — cut ~90% of Claude Code's context usage while keeping nearly all the memory" width="100%">
+  <img src=".github/og.png" alt="Throughline — cut ~90% of Claude Code's context usage while keeping nearly all the memory" width="100%">
 </p>
 
 # Throughline
@@ -77,6 +77,26 @@ Anthropic API usage from the transcript JSONL (no `length / 4` heuristics).
 ---
 
 ## Three-layer memory model (schema v7)
+
+```mermaid
+flowchart LR
+    T["Live turn<br/>user · assistant · tools · thinking"]
+    T --> H["Stop hook"]
+    H --> L2[("L2 · bodies<br/>verbatim text")]
+    H --> L3[("L3 · details<br/>tool I/O · thinking")]
+    H -. "async<br/>Haiku" .-> L1[("L1 · skeletons<br/>one-liners")]
+
+    L2 -- "recent 20 turns" --> S["Next SessionStart<br/>injection"]
+    L1 -- "older turns" --> S
+    L3 -. "on demand · throughline detail" .-> S
+
+    classDef l1 fill:#3aa0ff,stroke:#1a1f2e,color:#fff
+    classDef l2 fill:#7c5cff,stroke:#1a1f2e,color:#fff
+    classDef l3 fill:#4a5568,stroke:#1a1f2e,color:#fff
+    class L1 l1
+    class L2 l2
+    class L3 l3
+```
 
 | Layer | Name       | Where it lives        | Content                                                               | Cost per turn |
 | ----- | ---------- | --------------------- | --------------------------------------------------------------------- | ------------- |
