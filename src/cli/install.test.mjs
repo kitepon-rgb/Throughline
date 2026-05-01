@@ -177,11 +177,15 @@ test('resolveThroughlineOnPath: finds throughline binary in PATH directory', () 
   const dir = mkdtempSync(join(tmpdir(), 'tl-path-found-'));
   try {
     if (process.platform === 'win32') {
+      // PATHEXT は通常大文字 (.EXE;.CMD;.BAT) だが、resolveThroughlineOnPath が
+      // 返すパスはその ext をそのまま join するため、書き込んだ実ファイル名 (小文字)
+      // と厳密一致するよう小文字を渡す。Windows FS は case-insensitive で
+      // existsSync は通る。
       const binPath = join(dir, 'throughline.cmd');
       writeFileSync(binPath, '@echo off\n');
       const result = resolveThroughlineOnPath({
         PATH: dir,
-        PATHEXT: '.CMD',
+        PATHEXT: '.cmd',
       });
       assert.equal(result, binPath);
     } else {
