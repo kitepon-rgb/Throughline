@@ -46,7 +46,8 @@ jobs:
             src/transcript-usage.test.mjs \
             src/vscode-task.test.mjs \
             src/terminal-size.test.mjs \
-            src/cli/doctor.test.mjs
+            src/cli/doctor.test.mjs \
+            src/cli/install.test.mjs
         shell: bash
 
       - name: Verify CLI smoke (--version)

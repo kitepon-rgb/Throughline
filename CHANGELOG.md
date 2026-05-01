@@ -8,6 +8,48 @@ Pre-`0.3.18` iteration history is preserved as a rollup section near the bottom
 since most of those releases were rapid-fire monitor render bug fixes that
 shipped to npm but were not individually tagged on GitHub.
 
+## [0.3.24] — 2026-05-02
+
+### Added
+- `shouldRecommendGitignore` in [src/vscode-task.mjs](src/vscode-task.mjs):
+  when `ensureMonitorTaskFile` transitions to `created` / `merged` / `repaired`
+  inside a git repository whose `.gitignore` lacks a `.vscode/tasks.json`-
+  matching entry, emit a one-time `<system-reminder>` to stdout recommending
+  `.gitignore` registration. Suppressed by a `.throughline-gitignore-noted`
+  marker so it does not repeat. Negation patterns (`!.vscode/tasks.json`) are
+  treated as explicit-track intent and still trigger the recommendation.
+
+### Why
+- `.vscode/tasks.json` always contains environment-specific absolute paths
+  (`process.execPath`, the install location of `throughline.mjs`). Even though
+  v0.3.23 auto-repairs stale paths after the fact, the right answer is to not
+  commit it in the first place. The published npm tarball was already clean of
+  absolute paths (`files` field excludes `.vscode/`, no hardcoded paths in
+  source); this release strengthens runtime advice for the consumer side.
+
+## [0.3.23] — 2026-05-02
+
+### Added
+- Cross-environment `.vscode/tasks.json` repair: when an existing Monitor task
+  references absolute paths that don't exist on the current machine
+  (e.g. a Windows path on a WSL2 clone), `ensureMonitorTaskFile` now rewrites
+  just `command` / `args` while preserving any `label` / `presentation` /
+  `isBackground` customization. New helpers `findMonitorTaskIndex` and
+  `isMonitorTaskBroken` (absolute-path + non-existent test) drive the new
+  `action: 'repaired'` branch, and `buildSetupNotice('repaired')` returns a
+  one-time `Reload Window` notice.
+- `resolveThroughlineOnPath` in [src/cli/install.mjs](src/cli/install.mjs):
+  after `throughline install` completes, walk PATH to confirm `throughline`
+  resolves. If not, print a stderr fix recipe (`npm prefix -g` → add to
+  `~/.bashrc` → re-run `doctor`). Catches the silent-fail case where
+  `~/.npm-global/bin` is exported in `~/.profile` but not `~/.bashrc` (VSCode's
+  interactive non-login bash skips `.profile`).
+
+### Documentation
+- README Troubleshooting now covers PATH resolution, WSL2 ↔ Windows PATH
+  crossover, cross-OS DB separation (each `os.homedir()` is its own DB), and
+  the auto-repair behavior for stale tasks.
+
 ## [0.3.22] — 2026-04-19
 
 ### Changed

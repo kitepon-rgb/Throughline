@@ -436,7 +436,11 @@ test('ensureMonitorTaskFile: already_present when command references throughline
         {
           label: 'My Custom Monitor',
           type: 'process',
-          command: '/usr/bin/node',
+          // 実在する絶対パスを使う。`/usr/bin/node` は WSL2 では実在するが
+          // CI runner (Linux/macOS は /opt/hostedtoolcache, Windows は別) では
+          // 存在しないので isMonitorTaskBroken が true になり repaired ブランチに落ちる。
+          // process.execPath なら「いま走らせている node 自身の絶対パス」なので必ず実在する。
+          command: process.execPath,
           // 相対パスにして broken 判定を避ける（このテストは「label renamed でも検出できるか」だけが論点）
           args: ['./throughline.mjs', 'monitor'],
         },
