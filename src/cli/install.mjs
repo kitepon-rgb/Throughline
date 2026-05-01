@@ -11,7 +11,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 
@@ -87,6 +87,54 @@ function uninstallSlashCommands(commandsDir) {
     }
   }
   return removed;
+}
+
+/**
+ * PATH 上で 'throughline' (Windows なら .cmd / .ps1 / .exe) が解決できるかを確認する。
+ *
+ * 解決できない場合 hook (`throughline session-start` 等) は command not found で
+ * silent fail する。npm の global prefix bin が PATH に通っていない (Linux/WSL2 の
+ * `~/.npm-global` 設定派が `.profile` だけに PATH を書いて `.bashrc` に書き忘れる
+ * パターンなど) と、ユーザーは「入れたのに何も起きない」状態に陥る。
+ *
+ * 戻り値: 解決できた絶対パス、見つからなければ null。
+ */
+export function resolveThroughlineOnPath(env = process.env) {
+  const pathEnv = env.PATH || env.Path || '';
+  const dirs = pathEnv.split(delimiter).filter(Boolean);
+  const exts = process.platform === 'win32'
+    ? (env.PATHEXT || '.EXE;.CMD;.BAT').split(';').filter(Boolean)
+    : [''];
+  for (const dir of dirs) {
+    for (const ext of exts) {
+      const candidate = join(dir, `throughline${ext}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function emitPathWarning() {
+  const lines = [
+    '',
+    '警告: PATH 上で `throughline` コマンドが解決できません。',
+    '      hooks は PATH 経由で `throughline` を呼び出すため、このままでは静かに失敗します。',
+    '',
+    '対処:',
+    '  1) npm の global prefix を確認:  npm prefix -g',
+    '  2) その bin ディレクトリを PATH に追加',
+    '',
+  ];
+  if (process.platform === 'win32') {
+    lines.push('     Windows: 環境変数 PATH に %APPDATA%\\npm を追加');
+  } else {
+    lines.push('     bash:   ~/.bashrc に  export PATH="$(npm prefix -g)/bin:$PATH"  を追記');
+    lines.push('     zsh:    ~/.zshrc に同じ行を追記');
+  }
+  lines.push('');
+  lines.push('  3) シェルを開き直して `throughline doctor` で確認');
+  lines.push('');
+  process.stderr.write(lines.join('\n'));
 }
 
 function readSettings(settingsPath) {
@@ -166,4 +214,8 @@ export async function run(args = []) {
     console.log('');
   }
   console.log('  アンインストール: throughline uninstall');
+
+  if (!resolveThroughlineOnPath()) {
+    emitPathWarning();
+  }
 }

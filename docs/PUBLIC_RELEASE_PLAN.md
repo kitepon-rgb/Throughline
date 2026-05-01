@@ -114,6 +114,7 @@ schema v4 で PostToolUse (`capture-tool`) は廃止、L2/L3 は Stop 内で一�
 | **npm 公開 (v0.3.20)** | 2026-04-19 monitor の context 枯渇警告を `/clear` ではなく `/tl` 推奨に修正（引き継ぎを壊さない案内へ統一） |
 | **npm 公開 (v0.3.21)** | 2026-04-19 `throughline install` が `/tl` と `/sc-detail` スラッシュコマンド定義 (`~/.claude/commands/*.md`) をグローバル配置するように変更。プロジェクト個別の `.claude/commands/` 依存を廃止 |
 | **npm 公開 (v0.3.22)** | 2026-04-19 Stop hook を `"async": true` で登録。`throughline process-turn`（内部で Haiku subprocess 起動）がターン完了 → ユーザー表示をブロックしていた症状を解消。L1 要約は次 SessionStart 注入用なので今ターンをブロックする理由が無い。既存ユーザーは `throughline uninstall && throughline install` で再登録が必要（dedup が command 一致で skip するため async フラグ昇格は起きない）。Claude Code 公式 hooks schema の正式フィールドであることを docs で確認済み |
+| **npm 公開 (v0.3.23)** | 2026-05-02 クロス環境ユーザビリティの 2 件: (1) `.vscode/tasks.json` の **絶対パス自動修復** — Windows ↔ WSL2 / Linux ↔ macOS 間でリポジトリを共有したとき、別環境の絶対パスが焼き込まれた既存タスクを検出して `command` / `args` だけを差し替え、`label` / `presentation` 等のユーザーカスタマイズは保持。`isMonitorTaskBroken` (絶対パス + 非存在で判定) と `findMonitorTaskIndex` を [src/vscode-task.mjs](../src/vscode-task.mjs) に新設。`action: 'repaired'` を追加して Reload Window 通知を 1 回出す。(2) `throughline install` 完了時に **PATH 解決チェック** — `resolveThroughlineOnPath` が PATH を走査して `throughline` が見つからない場合、stderr に修復手順 (npm prefix → `~/.bashrc` 編集 → `doctor` 確認) を出力。`~/.npm-global/bin` を `.profile` だけに書いて `.bashrc` に書き忘れる sudoless prefix 派の silent fail を防ぐ。あわせて [README.md](../README.md) Troubleshooting に WSL2 ↔ Windows 交差 / OS 別 DB / tasks.json 自動修復の各節を追加 |
 | **グローバル E2E 検証** | 2026-04-17 別ディレクトリから `throughline doctor` 全緑を確認 |
 
 ### ❌ 未完タスク

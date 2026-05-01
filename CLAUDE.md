@@ -63,7 +63,7 @@
 | [src/resume-context.mjs](src/resume-context.mjs) | 「中断地点からの再開」注入テキスト組み立て（in-flight メモ → 最終ターン thinking → L1 → L2 の順） |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`)。`usage` フィールド (tokens/model/contextWindowSize) を Stop 完了時に固定保存 — monitor が JSONL を再スキャンせずに済むようにする。旧フォーマット (usage 無し) も読める |
 | [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | `claude -p --model claude-haiku-4-5-*` subprocess 呼び出し（再帰ガード 2 重） |
-| [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を自動プロビジョニング（token-monitor の folderOpen 自動起動）。`ensureMonitorTaskFile` は **SessionStart / Stop / UserPromptSubmit の 3 hook すべてから呼ばれる**（v0.3.18 以降）。冪等性ガード付きなので重複呼び出し安全。1 つの hook が発火しない環境でも残り 2 つのどれかが発火すれば tasks.json が生える。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内 |
+| [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を自動プロビジョニング（token-monitor の folderOpen 自動起動）。`ensureMonitorTaskFile` は **SessionStart / Stop / UserPromptSubmit の 3 hook すべてから呼ばれる**（v0.3.18 以降）。冪等性ガード付きなので重複呼び出し安全。1 つの hook が発火しない環境でも残り 2 つのどれかが発火すれば tasks.json が生える。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内。**v0.3.23 以降**: `findMonitorTaskIndex` + `isMonitorTaskBroken` で「既存タスクの絶対パスが現環境に存在しない」を検知して `command` / `args` だけを差し替え修復する (`action: 'repaired'`)。クロス環境 (Windows ↔ WSL2 / Linux ↔ macOS) で commit された tasks.json が壊れる問題を解消。`label` / `presentation` 等のユーザーカスタマイズは保持する |
 | [src/terminal-size.mjs](src/terminal-size.mjs) | OSC 18t (`\x1b[18t`) で端末に実幅を問い合わせるユーティリティ。Windows ConPTY + VSCode task terminal では `process.stdout.columns` が凍結するので、stdin を raw mode で listen して `\x1b[8;rows;cols t` 応答を parse する。Ctrl+C 検知 (0x03) と stop() での raw mode 解除も担当 |
 
 ### CLI
@@ -71,7 +71,7 @@
 | ファイル | サブコマンド |
 |---|---|
 | [bin/throughline.mjs](bin/throughline.mjs) | ディスパッチャ |
-| [src/cli/install.mjs](src/cli/install.mjs) | `install` / `uninstall`（デフォルト global、`--project` でローカル） |
+| [src/cli/install.mjs](src/cli/install.mjs) | `install` / `uninstall`（デフォルト global、`--project` でローカル）。**v0.3.23 以降**: `resolveThroughlineOnPath` で install 完了時に PATH 上の `throughline` 解決を確認し、見つからなければ stderr に修復手順 (npm prefix → `~/.bashrc` 編集 → `doctor` 確認) を出す。`~/.npm-global/bin` を `.profile` だけに書いて bashrc に書き忘れる sudoless prefix 派の silent fail を防ぐ |
 | [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断（「モニターが止まって見える」時の切り分け用） |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/save-inflight.mjs](src/cli/save-inflight.mjs) | `save-inflight` — stdin の Markdown を現行バトンの memo_text に書き込む (`/tl` 直後に Claude 自身が呼ぶ) |
@@ -96,15 +96,17 @@
 | [src/token-monitor.test.mjs](src/token-monitor.test.mjs) | CLI 引数、cell 幅、bar/色覚マーカー、`formatTimeAgo`、`shouldForceFullRedraw`、`formatLine` の ago 配置 |
 | [src/transcript-reader.test.mjs](src/transcript-reader.test.mjs) | transcript JSONL パーサー、`extractDetailBlocks` の全 kind 分類 |
 | [src/transcript-usage.test.mjs](src/transcript-usage.test.mjs) | `readLatestUsage` / `inferContextWindowSize` / 1M sticky / size+mtime キャッシュ |
-| [src/vscode-task.test.mjs](src/vscode-task.test.mjs) | `ensureMonitorTaskFile` の全分岐 (created / merged / already_present / skipped×複数 reason)、JSONC 検出、インデント保持、冪等性、`buildSetupNotice` と created/merged 時の stdout 通知（v0.3.19+） |
+| [src/vscode-task.test.mjs](src/vscode-task.test.mjs) | `ensureMonitorTaskFile` の全分岐 (created / merged / repaired / already_present / skipped×複数 reason)、JSONC 検出、インデント保持、冪等性、`buildSetupNotice` と created/merged/repaired 時の stdout 通知。`findMonitorTaskIndex` / `isMonitorTaskBroken` の単体テスト (v0.3.23+) |
 | [src/terminal-size.test.mjs](src/terminal-size.test.mjs) | `parseSizeResponse` / `startSizeQuery` — OSC 18t 応答パース、raw mode 遷移、分割到着、Ctrl+C 捕捉、stop() 冪等性 |
 | [src/cli/doctor.test.mjs](src/cli/doctor.test.mjs) | `doctor --session` 用の `parseArgs` / `formatAgo` / `formatBytes` / `isPidAlive` / `findLatestJsonlInSameDir` |
+| [src/cli/install.test.mjs](src/cli/install.test.mjs) | `run` (install / uninstall) の冪等性、`--project` スコープ、Stop hook の `async: true` 登録、slash command 配置、`resolveThroughlineOnPath` の PATH 解決テスト (v0.3.23+) |
 
 ```bash
 # 個別ファイル推奨（turn-processor.test.mjs を含める場合 10 秒待つ）
 node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.mjs \
             src/token-monitor.test.mjs src/transcript-reader.test.mjs src/transcript-usage.test.mjs \
-            src/vscode-task.test.mjs src/terminal-size.test.mjs src/cli/doctor.test.mjs
+            src/vscode-task.test.mjs src/terminal-size.test.mjs \
+            src/cli/doctor.test.mjs src/cli/install.test.mjs
 ```
 
 ### 削除済み
@@ -167,7 +169,8 @@ node bin/throughline.mjs uninstall --project
 # テスト（turn-processor.test.mjs は main() stdin 待ちで 10s タイムアウトする既知問題のため除外）
 node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.mjs \
             src/token-monitor.test.mjs src/transcript-reader.test.mjs src/transcript-usage.test.mjs \
-            src/vscode-task.test.mjs src/terminal-size.test.mjs src/cli/doctor.test.mjs
+            src/vscode-task.test.mjs src/terminal-size.test.mjs \
+            src/cli/doctor.test.mjs src/cli/install.test.mjs
 
 # モニター（別ターミナルで常駐、VSCode タスクが自動起動するので通常は手動不要）
 node src/token-monitor.mjs

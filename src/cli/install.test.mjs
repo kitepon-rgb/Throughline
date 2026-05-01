@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { run } from './install.mjs';
+import { run, resolveThroughlineOnPath } from './install.mjs';
 
 function makeTempHome() {
   const dir = mkdtempSync(join(tmpdir(), 'tl-install-test-'));
@@ -29,11 +29,14 @@ function makeTempHome() {
 function silence() {
   const origLog = console.log;
   const origErr = console.error;
+  const origStderrWrite = process.stderr.write.bind(process.stderr);
   console.log = () => {};
   console.error = () => {};
+  process.stderr.write = () => true;
   return () => {
     console.log = origLog;
     console.error = origErr;
+    process.stderr.write = origStderrWrite;
   };
 }
 
@@ -150,6 +153,45 @@ test('Stop hook is registered with async:true so it does not block ターン完�
   } finally {
     unsilence();
     home.restore();
+  }
+});
+
+// --- resolveThroughlineOnPath (地雷 1: PATH 解決チェック) ---
+
+test('resolveThroughlineOnPath: returns null when PATH is empty', () => {
+  assert.equal(resolveThroughlineOnPath({ PATH: '' }), null);
+  assert.equal(resolveThroughlineOnPath({}), null);
+});
+
+test('resolveThroughlineOnPath: returns null when not in any PATH directory', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tl-path-empty-'));
+  try {
+    assert.equal(resolveThroughlineOnPath({ PATH: dir }), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveThroughlineOnPath: finds throughline binary in PATH directory', () => {
+  // Windows は PATHEXT 経由でしか見つからないので分岐
+  const dir = mkdtempSync(join(tmpdir(), 'tl-path-found-'));
+  try {
+    if (process.platform === 'win32') {
+      const binPath = join(dir, 'throughline.cmd');
+      writeFileSync(binPath, '@echo off\n');
+      const result = resolveThroughlineOnPath({
+        PATH: dir,
+        PATHEXT: '.CMD',
+      });
+      assert.equal(result, binPath);
+    } else {
+      const binPath = join(dir, 'throughline');
+      writeFileSync(binPath, '#!/bin/sh\n');
+      const result = resolveThroughlineOnPath({ PATH: dir });
+      assert.equal(result, binPath);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

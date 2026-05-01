@@ -15,7 +15,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
+import { join, dirname, isAbsolute } from 'node:path';
 
 const MONITOR_LABEL = 'Throughline Monitor';
 const JSONC_MARKER_FILENAME = '.throughline-jsonc-noted';
@@ -81,22 +81,58 @@ export function detectIndent(text) {
 }
 
 /**
- * tasks 配列に Throughline Monitor 相当のタスクが含まれるか判定する。
+ * tasks 配列内で Throughline Monitor 相当のタスクの index を返す。
  * ユーザーが label をリネームしても command/args に "throughline" + "monitor" が
- * あれば同一タスクとみなす。
+ * あれば同一タスクとみなす。見つからない場合は -1。
  */
-export function hasMonitorTask(obj) {
+export function findMonitorTaskIndex(obj) {
   const tasks = obj?.tasks;
-  if (!Array.isArray(tasks)) return false;
-  for (const t of tasks) {
+  if (!Array.isArray(tasks)) return -1;
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
     if (!t || typeof t !== 'object') continue;
-    if (t.label === MONITOR_LABEL) return true;
+    if (t.label === MONITOR_LABEL) return i;
     const invocation = [t.command, ...(Array.isArray(t.args) ? t.args : [])]
       .filter((s) => typeof s === 'string')
       .join(' ')
       .toLowerCase();
     if (invocation.includes('throughline') && invocation.includes('monitor')) {
-      return true;
+      return i;
+    }
+  }
+  return -1;
+}
+
+export function hasMonitorTask(obj) {
+  return findMonitorTaskIndex(obj) >= 0;
+}
+
+/**
+ * 既存の Monitor タスクが「別環境（別 OS / 別 install 場所）の絶対パスを参照していて
+ * 現在の環境では起動できない」状態かを判定する。
+ *
+ * 判定基準:
+ *   - command が絶対パスかつ existsSync(command) === false → 壊れている
+ *   - args の中に絶対パスの .mjs / .js / .cjs があり、それが存在しない → 壊れている
+ *
+ * 相対パス（"node" / "throughline" 等の PATH 解決前提）は判定対象外。
+ * ユーザーが手動で PATH 解決型に書き換えたケースを誤って上書きしないため。
+ */
+export function isMonitorTaskBroken(task) {
+  if (!task || typeof task !== 'object') return false;
+  if (typeof task.command === 'string' && isAbsolute(task.command) && !existsSync(task.command)) {
+    return true;
+  }
+  if (Array.isArray(task.args)) {
+    for (const a of task.args) {
+      if (
+        typeof a === 'string' &&
+        isAbsolute(a) &&
+        /\.(mjs|js|cjs)$/.test(a) &&
+        !existsSync(a)
+      ) {
+        return true;
+      }
     }
   }
   return false;
@@ -173,18 +209,33 @@ function atomicWrite(targetPath, contents) {
  * セットアップ済みのため沈黙する（冪等性）。
  */
 export function buildSetupNotice(action) {
-  if (action !== 'created' && action !== 'merged') return null;
-  return (
-    '<system-reminder>\n' +
-    'Throughline: このプロジェクトに token-monitor の自動起動設定を追加しました (.vscode/tasks.json)。\n' +
-    '今すぐ monitor を起動するには、VSCode のコマンドパレット (Ctrl+Shift+P) から\n' +
-    '  Developer: Reload Window\n' +
-    'を実行してください。次回以降はフォルダを開いた瞬間に自動起動します。\n' +
-    '\n' +
-    'このお知らせは今このプロジェクトで初回セットアップが完了したためだけに 1 度だけ流れています。\n' +
-    '必ずユーザー（あなたの対話相手）に日本語でそのまま伝えてください。\n' +
-    '</system-reminder>\n'
-  );
+  if (action === 'created' || action === 'merged') {
+    return (
+      '<system-reminder>\n' +
+      'Throughline: このプロジェクトに token-monitor の自動起動設定を追加しました (.vscode/tasks.json)。\n' +
+      '今すぐ monitor を起動するには、VSCode のコマンドパレット (Ctrl+Shift+P) から\n' +
+      '  Developer: Reload Window\n' +
+      'を実行してください。次回以降はフォルダを開いた瞬間に自動起動します。\n' +
+      '\n' +
+      'このお知らせは今このプロジェクトで初回セットアップが完了したためだけに 1 度だけ流れています。\n' +
+      '必ずユーザー（あなたの対話相手）に日本語でそのまま伝えてください。\n' +
+      '</system-reminder>\n'
+    );
+  }
+  if (action === 'repaired') {
+    return (
+      '<system-reminder>\n' +
+      'Throughline: .vscode/tasks.json に登録されていた token-monitor タスクが\n' +
+      '別環境（別 OS / 別 install 場所）の絶対パスを参照していたため、現環境向けに自動修復しました。\n' +
+      '反映するには VSCode のコマンドパレット (Ctrl+Shift+P) から\n' +
+      '  Developer: Reload Window\n' +
+      'を実行してください。\n' +
+      '\n' +
+      '必ずユーザー（あなたの対話相手）に日本語でそのまま伝えてください。\n' +
+      '</system-reminder>\n'
+    );
+  }
+  return null;
 }
 
 function emitSetupNotice(action) {
@@ -211,9 +262,13 @@ function emitJsoncGuidanceOnce(vscodeDir) {
 /**
  * VSCode の tasks.json に Throughline Monitor タスクを（必要なら）自動登録する。
  *
+ * 既存タスクが別環境の絶対パスを参照していて現環境で起動できない場合は
+ * command/args だけを差し替えて修復する（label / presentation 等のユーザー
+ * カスタマイズは保持）。
+ *
  * @param {{cwd?: string, env?: NodeJS.ProcessEnv, throughlineBin?: string | null}} opts
  * @returns {{
- *   action: 'created' | 'merged' | 'already_present' | 'skipped',
+ *   action: 'created' | 'merged' | 'repaired' | 'already_present' | 'skipped',
  *   reason?: string,
  *   path?: string,
  * }}
@@ -264,7 +319,25 @@ export function ensureMonitorTaskFile(opts = {}) {
     return { action: 'skipped', reason: 'parse_error', path: tasksPath };
   }
 
-  if (hasMonitorTask(obj)) {
+  const existingIdx = findMonitorTaskIndex(obj);
+  if (existingIdx >= 0) {
+    const existing = obj.tasks[existingIdx];
+    if (isMonitorTaskBroken(existing)) {
+      const fresh = buildMonitorTask(bin);
+      const repaired = {
+        ...existing,
+        type: fresh.type,
+        command: fresh.command,
+        args: fresh.args,
+      };
+      const indent = detectIndent(text);
+      const nextTasks = [...obj.tasks];
+      nextTasks[existingIdx] = repaired;
+      const nextObj = { ...obj, version: obj.version ?? '2.0.0', tasks: nextTasks };
+      atomicWrite(tasksPath, JSON.stringify(nextObj, null, indent) + '\n');
+      emitSetupNotice('repaired');
+      return { action: 'repaired', path: tasksPath };
+    }
     return { action: 'already_present', path: tasksPath };
   }
 

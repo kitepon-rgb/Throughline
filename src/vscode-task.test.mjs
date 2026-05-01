@@ -9,12 +9,16 @@ import {
   detectJsoncFeatures,
   detectIndent,
   hasMonitorTask,
+  findMonitorTaskIndex,
+  isMonitorTaskBroken,
   buildMonitorTask,
   buildSetupNotice,
 } from './vscode-task.mjs';
 
 const VSCODE_ENV = { TERM_PROGRAM: 'vscode' };
-const FAKE_BIN = '/fake/abs/path/bin/throughline.mjs';
+// 実在する絶対パスを使う。`isMonitorTaskBroken` が「絶対パス + 非存在」で broken 判定するので、
+// 架空パスを使うと意図せず repaired ブランチに落ちてしまう。
+const FAKE_BIN = process.execPath;
 
 function mkTmpCwd() {
   const dir = mkdtempSync(join(tmpdir(), 'throughline-vscode-'));
@@ -135,6 +139,71 @@ test('hasMonitorTask: returns false for unrelated tasks', () => {
 test('hasMonitorTask: handles missing tasks array', () => {
   assert.equal(hasMonitorTask({}), false);
   assert.equal(hasMonitorTask({ tasks: null }), false);
+});
+
+// --- findMonitorTaskIndex ---
+
+test('findMonitorTaskIndex: returns index when label matches', () => {
+  assert.equal(
+    findMonitorTaskIndex({ tasks: [{ label: 'Build' }, { label: 'Throughline Monitor' }] }),
+    1,
+  );
+});
+
+test('findMonitorTaskIndex: returns -1 when no match', () => {
+  assert.equal(findMonitorTaskIndex({ tasks: [{ label: 'Build' }] }), -1);
+  assert.equal(findMonitorTaskIndex({}), -1);
+});
+
+// --- isMonitorTaskBroken ---
+
+test('isMonitorTaskBroken: false when command is an existing absolute path', () => {
+  assert.equal(
+    isMonitorTaskBroken({ command: process.execPath, args: ['monitor'] }),
+    false,
+  );
+});
+
+test('isMonitorTaskBroken: true when command is a non-existent absolute path', () => {
+  assert.equal(
+    isMonitorTaskBroken({ command: '/definitely/does/not/exist/node', args: ['monitor'] }),
+    true,
+  );
+});
+
+test('isMonitorTaskBroken: false when command is a relative name (PATH-resolved)', () => {
+  // ユーザーが手動で "node" / "throughline" に書き換えたケースは誤上書きしない
+  assert.equal(
+    isMonitorTaskBroken({ command: 'node', args: ['/x/throughline.mjs', 'monitor'] }),
+    true, // args 側の絶対パスが壊れているので true
+  );
+  assert.equal(
+    isMonitorTaskBroken({ command: 'throughline', args: ['monitor'] }),
+    false,
+  );
+});
+
+test('isMonitorTaskBroken: true when args contains non-existent absolute .mjs path', () => {
+  assert.equal(
+    isMonitorTaskBroken({
+      command: process.execPath,
+      args: ['/no/such/file/throughline.mjs', 'monitor'],
+    }),
+    true,
+  );
+});
+
+test('isMonitorTaskBroken: false when args has only relative strings', () => {
+  assert.equal(
+    isMonitorTaskBroken({ command: process.execPath, args: ['monitor'] }),
+    false,
+  );
+});
+
+test('isMonitorTaskBroken: handles malformed task safely', () => {
+  assert.equal(isMonitorTaskBroken(null), false);
+  assert.equal(isMonitorTaskBroken({}), false);
+  assert.equal(isMonitorTaskBroken({ command: 42 }), false);
 });
 
 // --- buildMonitorTask ---
@@ -367,7 +436,8 @@ test('ensureMonitorTaskFile: already_present when command references throughline
           label: 'My Custom Monitor',
           type: 'process',
           command: '/usr/bin/node',
-          args: ['/path/to/bin/throughline.mjs', 'monitor'],
+          // 相対パスにして broken 判定を避ける（このテストは「label renamed でも検出できるか」だけが論点）
+          args: ['./throughline.mjs', 'monitor'],
         },
       ],
     };
@@ -409,6 +479,160 @@ test('ensureMonitorTaskFile: second call is idempotent (already_present after cr
   } finally {
     cleanup();
   }
+});
+
+// --- ensureMonitorTaskFile: cross-environment repair (地雷 4) ---
+
+test('ensureMonitorTaskFile: repaired when existing task points to non-existent absolute paths', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.vscode'));
+    // 別 OS で生成されたタスク: command と args の絶対パスが現環境には存在しない
+    const stale = {
+      version: '2.0.0',
+      tasks: [
+        {
+          label: 'Throughline Monitor',
+          type: 'shell',
+          command: '/old/env/node',
+          args: ['/old/env/throughline.mjs', 'monitor'],
+          presentation: { panel: 'dedicated', group: 'throughline' },
+          isBackground: true,
+        },
+      ],
+    };
+    const tasksPath = join(dir, '.vscode', 'tasks.json');
+    writeFileSync(tasksPath, JSON.stringify(stale, null, 2));
+
+    const result = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(result.action, 'repaired');
+
+    const obj = JSON.parse(readFileSync(tasksPath, 'utf8'));
+    assert.equal(obj.tasks.length, 1);
+    const task = obj.tasks[0];
+    // command と args は現環境向けに差し替わる
+    assert.equal(task.command, process.execPath);
+    assert.deepEqual(task.args, [FAKE_BIN, 'monitor']);
+    // ユーザーカスタマイズ (presentation 等) は保持される
+    assert.equal(task.label, 'Throughline Monitor');
+    assert.deepEqual(task.presentation, { panel: 'dedicated', group: 'throughline' });
+    assert.equal(task.isBackground, true);
+  } finally {
+    cleanup();
+  }
+});
+
+test('ensureMonitorTaskFile: repaired preserves other tasks in the file', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.vscode'));
+    const stale = {
+      version: '2.0.0',
+      tasks: [
+        { label: 'Build', type: 'shell', command: 'make' },
+        {
+          label: 'Throughline Monitor',
+          type: 'shell',
+          command: '/old/env/node',
+          args: ['/old/env/throughline.mjs', 'monitor'],
+        },
+        { label: 'Test', type: 'shell', command: 'npm test' },
+      ],
+    };
+    writeFileSync(join(dir, '.vscode', 'tasks.json'), JSON.stringify(stale, null, 2));
+
+    const result = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(result.action, 'repaired');
+
+    const obj = JSON.parse(readFileSync(join(dir, '.vscode', 'tasks.json'), 'utf8'));
+    assert.equal(obj.tasks.length, 3);
+    assert.equal(obj.tasks[0].label, 'Build');
+    assert.equal(obj.tasks[1].label, 'Throughline Monitor');
+    assert.equal(obj.tasks[1].command, process.execPath);
+    assert.equal(obj.tasks[2].label, 'Test');
+  } finally {
+    cleanup();
+  }
+});
+
+test('ensureMonitorTaskFile: already_present (not repaired) when task points to existing paths', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.vscode'));
+    // command が現環境に存在するなら修復しない (process.execPath は必ず存在する)
+    const valid = {
+      version: '2.0.0',
+      tasks: [
+        {
+          label: 'Throughline Monitor',
+          type: 'shell',
+          command: process.execPath,
+          args: ['monitor'],
+        },
+      ],
+    };
+    const tasksPath = join(dir, '.vscode', 'tasks.json');
+    writeFileSync(tasksPath, JSON.stringify(valid, null, 2));
+    const beforeMtime = statSync(tasksPath).mtimeMs;
+
+    const result = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(result.action, 'already_present');
+
+    const afterMtime = statSync(tasksPath).mtimeMs;
+    assert.equal(beforeMtime, afterMtime);
+  } finally {
+    cleanup();
+  }
+});
+
+test('ensureMonitorTaskFile: repaired emits notice on stdout', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  const captured = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    captured.push(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+    return true;
+  };
+  try {
+    mkdirSync(join(dir, '.vscode'));
+    const stale = {
+      version: '2.0.0',
+      tasks: [
+        {
+          label: 'Throughline Monitor',
+          command: '/old/env/node',
+          args: ['/old/env/throughline.mjs', 'monitor'],
+        },
+      ],
+    };
+    writeFileSync(join(dir, '.vscode', 'tasks.json'), JSON.stringify(stale, null, 2));
+
+    const result = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(result.action, 'repaired');
+  } finally {
+    process.stdout.write = origWrite;
+    cleanup();
+  }
+  const joined = captured.join('');
+  assert.ok(joined.includes('<system-reminder>'), 'repaired should emit notice');
+  assert.ok(joined.includes('自動修復'));
+  assert.ok(joined.includes('Reload Window'));
 });
 
 // --- ensureMonitorTaskFile: JSONC ---
@@ -533,6 +757,13 @@ test('buildSetupNotice: returns notice text for created', () => {
 test('buildSetupNotice: returns notice text for merged', () => {
   const text = buildSetupNotice('merged');
   assert.ok(text && text.includes('<system-reminder>'));
+  assert.ok(text.includes('Reload Window'));
+});
+
+test('buildSetupNotice: returns notice text for repaired', () => {
+  const text = buildSetupNotice('repaired');
+  assert.ok(text && text.includes('<system-reminder>'));
+  assert.ok(text.includes('自動修復'));
   assert.ok(text.includes('Reload Window'));
 });
 

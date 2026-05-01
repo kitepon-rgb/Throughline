@@ -468,6 +468,57 @@ Run `throughline doctor` — it checks Node version, hook registration, DB
 writability, and PATH resolution. If the binary is not on PATH, reinstall with
 `npm install -g throughline`.
 
+The most common cause is **the npm global `bin/` directory is not on PATH**.
+This happens when you set `npm config set prefix ~/.npm-global` (the sudoless
+recommended setup) but only added the export to `~/.profile`, not `~/.bashrc`.
+VSCode's integrated terminal launches an *interactive non-login* bash, which
+reads `.bashrc` only — so the export is silently skipped and `throughline` is
+not found. Fix:
+
+```bash
+# bash: add to ~/.bashrc
+if [ -d "$HOME/.npm-global/bin" ] ; then
+    PATH="$HOME/.npm-global/bin:$PATH"
+fi
+```
+
+Then reload the shell (`source ~/.bashrc`) and verify with `which throughline`.
+
+`throughline install` itself prints a warning to stderr if PATH resolution
+fails at install time, but if you missed it, run `throughline doctor` again.
+
+**Using Throughline across Windows ↔ WSL2 (or Linux ↔ macOS)**
+
+Two things to know:
+
+1. **The DB lives under `os.homedir()`**, so each environment has its own
+   database. `C:\Users\<you>\.throughline\throughline.db` (Windows) and
+   `/home/<you>/.throughline/throughline.db` (WSL2) are unrelated. Memory does
+   **not** roam. To migrate:
+   ```bash
+   # From WSL2, copy Windows-side DB into WSL2 home
+   cp /mnt/c/Users/<you>/.throughline/throughline.db ~/.throughline/throughline.db
+   ```
+   Or vice versa. Do this with no Claude Code sessions running so WAL/SHM are
+   clean.
+
+2. **WSL2 sees Windows npm shims via `/mnt/c/...AppData/Roaming/npm`**, which
+   may be earlier on PATH than your WSL2-native npm-global bin. Symptom:
+   `which throughline` returns a `/mnt/c/...` path even though you ran
+   `npm install -g throughline` inside WSL2. Fix: ensure
+   `~/.npm-global/bin` is **before** the Windows npm path in `PATH` (the
+   `.bashrc` snippet above prepends, so it does this naturally).
+
+**Cross-environment `.vscode/tasks.json` errors after switching machines**
+
+If you commit `.vscode/tasks.json` to git and pull it on a different machine
+(Windows ↔ WSL2, Linux ↔ macOS, etc.), the `command` and `args` paths inside
+were absolutized to the original machine. Throughline auto-detects this:
+on the next hook fire it rewrites just the `command` / `args` fields to the
+current environment, preserving any `label` / `presentation` customization
+you made. You'll see a one-time `Reload Window` notice in Claude Code when
+the repair happens.
+
 **`node:sqlite` warning on startup**
 Node.js prints `ExperimentalWarning: SQLite is an experimental feature` on stderr.
 This is cosmetic — the module is stable enough for production and is used
