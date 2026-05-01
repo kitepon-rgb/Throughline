@@ -13,6 +13,7 @@ import {
   isMonitorTaskBroken,
   buildMonitorTask,
   buildSetupNotice,
+  shouldRecommendGitignore,
 } from './vscode-task.mjs';
 
 const VSCODE_ENV = { TERM_PROGRAM: 'vscode' };
@@ -476,6 +477,175 @@ test('ensureMonitorTaskFile: second call is idempotent (already_present after cr
 
     const mtimeAfterSecond = statSync(tasksPath).mtimeMs;
     assert.equal(mtimeAfterCreate, mtimeAfterSecond);
+  } finally {
+    cleanup();
+  }
+});
+
+// --- shouldRecommendGitignore ---
+
+test('shouldRecommendGitignore: false when not a git repo (.git missing)', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    assert.equal(shouldRecommendGitignore(dir), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('shouldRecommendGitignore: true when git repo has no .gitignore', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.git'));
+    assert.equal(shouldRecommendGitignore(dir), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test('shouldRecommendGitignore: true when .gitignore does not list .vscode/tasks.json', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.git'));
+    writeFileSync(join(dir, '.gitignore'), 'node_modules/\n*.log\n');
+    assert.equal(shouldRecommendGitignore(dir), true);
+  } finally {
+    cleanup();
+  }
+});
+
+test('shouldRecommendGitignore: false when .gitignore has .vscode/tasks.json', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.git'));
+    writeFileSync(join(dir, '.gitignore'), 'node_modules/\n.vscode/tasks.json\n');
+    assert.equal(shouldRecommendGitignore(dir), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('shouldRecommendGitignore: false when .gitignore has .vscode/ (whole dir)', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.git'));
+    writeFileSync(join(dir, '.gitignore'), '.vscode/\n');
+    assert.equal(shouldRecommendGitignore(dir), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('shouldRecommendGitignore: false when .gitignore has .vscode (no slash)', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.git'));
+    writeFileSync(join(dir, '.gitignore'), '.vscode\n');
+    assert.equal(shouldRecommendGitignore(dir), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('shouldRecommendGitignore: ignores comments and negation lines', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.git'));
+    // 否定パターンは「除外しない」意図なので、推奨は引き続き出す
+    writeFileSync(join(dir, '.gitignore'), '# comment\n!.vscode/tasks.json\n');
+    assert.equal(shouldRecommendGitignore(dir), true);
+  } finally {
+    cleanup();
+  }
+});
+
+// --- ensureMonitorTaskFile: gitignore recommendation notice ---
+
+test('ensureMonitorTaskFile: created emits gitignore recommendation when .git exists and no .gitignore entry', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  const captured = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    captured.push(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+    return true;
+  };
+  try {
+    mkdirSync(join(dir, '.git'));
+    const result = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(result.action, 'created');
+  } finally {
+    process.stdout.write = origWrite;
+    cleanup();
+  }
+  const joined = captured.join('');
+  assert.ok(joined.includes('.gitignore'), 'should emit gitignore recommendation');
+  assert.ok(joined.includes('Reload Window'), 'should still emit setup notice');
+});
+
+test('ensureMonitorTaskFile: created does NOT emit gitignore recommendation when not a git repo', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  const captured = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    captured.push(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+    return true;
+  };
+  try {
+    const result = ensureMonitorTaskFile({
+      cwd: dir,
+      env: VSCODE_ENV,
+      throughlineBin: FAKE_BIN,
+    });
+    assert.equal(result.action, 'created');
+  } finally {
+    process.stdout.write = origWrite;
+    cleanup();
+  }
+  const joined = captured.join('');
+  assert.ok(!joined.includes('gitignore'), 'should not mention gitignore for non-git dirs');
+});
+
+test('ensureMonitorTaskFile: gitignore recommendation is emitted only once per project', () => {
+  const { dir, cleanup } = mkTmpCwd();
+  try {
+    mkdirSync(join(dir, '.git'));
+
+    const captured = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk) => {
+      captured.push(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+      return true;
+    };
+    try {
+      // 1 回目: created → gitignore 推奨が出る
+      const r1 = ensureMonitorTaskFile({
+        cwd: dir,
+        env: VSCODE_ENV,
+        throughlineBin: FAKE_BIN,
+      });
+      assert.equal(r1.action, 'created');
+      const firstCount = captured.filter((s) => s.includes('gitignore')).length;
+      assert.equal(firstCount, 1);
+
+      // tasks.json を一度消して再 created 状況を作る
+      // （実運用では already_present になるので現実的ではないが、marker の効きを見る）
+      const tasksPath = join(dir, '.vscode', 'tasks.json');
+      rmSync(tasksPath);
+      const r2 = ensureMonitorTaskFile({
+        cwd: dir,
+        env: VSCODE_ENV,
+        throughlineBin: FAKE_BIN,
+      });
+      assert.equal(r2.action, 'created');
+      const secondCount = captured.filter((s) => s.includes('gitignore')).length;
+      assert.equal(secondCount, 1, 'marker file should suppress 2nd recommendation');
+    } finally {
+      process.stdout.write = origWrite;
+    }
   } finally {
     cleanup();
   }

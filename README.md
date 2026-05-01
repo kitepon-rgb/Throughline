@@ -509,6 +509,23 @@ Two things to know:
    `~/.npm-global/bin` is **before** the Windows npm path in `PATH` (the
    `.bashrc` snippet above prepends, so it does this naturally).
 
+**`.vscode/tasks.json` should not be committed to git (recommended)**
+
+The `Throughline Monitor` task that gets auto-generated contains absolute
+paths specific to your machine (`process.execPath` and the install location
+of `throughline.mjs`). For shared repositories, add one of these to
+`.gitignore`:
+
+```gitignore
+.vscode/tasks.json     # only ignore tasks.json (settings.json etc. stay shared)
+.vscode/                # ignore the whole .vscode directory
+```
+
+Throughline detects this and prints a one-time recommendation when it first
+creates / merges / repairs the file. (You don't have to follow the advice —
+v0.3.23+ auto-repairs stale absolute paths anyway, so committing is not
+catastrophic.)
+
 **Cross-environment `.vscode/tasks.json` errors after switching machines**
 
 If you commit `.vscode/tasks.json` to git and pull it on a different machine

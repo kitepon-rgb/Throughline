@@ -19,6 +19,7 @@ import { join, dirname, isAbsolute } from 'node:path';
 
 const MONITOR_LABEL = 'Throughline Monitor';
 const JSONC_MARKER_FILENAME = '.throughline-jsonc-noted';
+const GITIGNORE_MARKER_FILENAME = '.throughline-gitignore-noted';
 
 /**
  * VSCode 系エディタが動いているかを env から推定する。
@@ -243,6 +244,67 @@ function emitSetupNotice(action) {
   if (text) process.stdout.write(text);
 }
 
+/**
+ * `.vscode/tasks.json` が gitignore 推奨対象か判定する。
+ *
+ * 推奨条件:
+ *   - cwd が git リポジトリ (`.git/` がある) かつ
+ *   - `.gitignore` に `.vscode/tasks.json` 相当のエントリが無い
+ *
+ * 単独プロジェクト (.git なし) は判定対象外 (false を返す)。共有しないので
+ * gitignore の必要性そのものが無いため。
+ *
+ * @param {string} cwd
+ * @returns {boolean}
+ */
+export function shouldRecommendGitignore(cwd) {
+  const gitDir = join(cwd, '.git');
+  if (!existsSync(gitDir)) return false;
+
+  const gitignorePath = join(cwd, '.gitignore');
+  if (!existsSync(gitignorePath)) return true;
+
+  const content = readFileSync(gitignorePath, 'utf8');
+  const lines = content.split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    // 否定 (!) は除外しない: "!.vscode/tasks.json" は明示的に追跡したい意図なので推奨を出すべき
+    if (line.startsWith('!')) continue;
+    // .vscode 全体除外 / tasks.json 単独除外 / .vscode/* どれかを含むか
+    if (line === '.vscode' || line === '.vscode/' || line === '/.vscode' || line === '/.vscode/') return false;
+    if (line === '.vscode/*' || line === '.vscode/**') return false;
+    if (line === '.vscode/tasks.json' || line === '/.vscode/tasks.json') return false;
+  }
+  return true;
+}
+
+function emitGitignoreRecommendationOnce(vscodeDir) {
+  const markerPath = join(vscodeDir, GITIGNORE_MARKER_FILENAME);
+  if (existsSync(markerPath)) return;
+  process.stdout.write(
+    '<system-reminder>\n' +
+    'Throughline ヒント: .vscode/tasks.json には現環境の絶対パス (node 実行ファイル / throughline.mjs)\n' +
+    'が書き込まれます。共有リポジトリで commit すると別 OS / 別 install 場所のメンバーで起動失敗の\n' +
+    '原因になるため、.gitignore に以下のいずれかを追加することを推奨します:\n' +
+    '\n' +
+    '  .vscode/tasks.json     # tasks.json だけ除外 (settings.json 等は共有可)\n' +
+    '  .vscode/                # .vscode 配下を全部除外\n' +
+    '\n' +
+    'なお Throughline v0.3.23+ は別環境の絶対パスが焼き込まれた tasks.json を\n' +
+    '自動修復するため、commit してしまっても致命的ではありません。あくまで推奨です。\n' +
+    '\n' +
+    'この通知はプロジェクトごとに 1 度だけ流れます。必ずユーザー（あなたの対話相手）に日本語でそのまま伝えてください。\n' +
+    '</system-reminder>\n'
+  );
+  try {
+    writeFileSync(markerPath, `${new Date().toISOString()}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[throughline] failed to write gitignore marker: ${msg}\n`);
+  }
+}
+
 function emitJsoncGuidanceOnce(vscodeDir) {
   const markerPath = join(vscodeDir, JSONC_MARKER_FILENAME);
   if (existsSync(markerPath)) return;
@@ -302,6 +364,7 @@ export function ensureMonitorTaskFile(opts = {}) {
     const obj = { version: '2.0.0', tasks: [buildMonitorTask(bin)] };
     atomicWrite(tasksPath, JSON.stringify(obj, null, 2) + '\n');
     emitSetupNotice('created');
+    if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir);
     return { action: 'created', path: tasksPath };
   }
 
@@ -336,6 +399,7 @@ export function ensureMonitorTaskFile(opts = {}) {
       const nextObj = { ...obj, version: obj.version ?? '2.0.0', tasks: nextTasks };
       atomicWrite(tasksPath, JSON.stringify(nextObj, null, indent) + '\n');
       emitSetupNotice('repaired');
+      if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir);
       return { action: 'repaired', path: tasksPath };
     }
     return { action: 'already_present', path: tasksPath };
@@ -349,5 +413,6 @@ export function ensureMonitorTaskFile(opts = {}) {
   };
   atomicWrite(tasksPath, JSON.stringify(nextObj, null, indent) + '\n');
   emitSetupNotice('merged');
+  if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir);
   return { action: 'merged', path: tasksPath };
 }
