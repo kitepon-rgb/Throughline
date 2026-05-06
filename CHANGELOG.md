@@ -47,6 +47,8 @@ shipped to npm but were not individually tagged on GitHub.
   shipped in the npm tarball.
 - `.codex-sidecar/logs/` is ignored as a runtime artifact from real sidecar
   smoke runs.
+- Codex trim host status now distinguishes verified app-server rollback/inject
+  primitives from the still-unimplemented Throughline automatic trim execution.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual
@@ -60,6 +62,9 @@ shipped to npm but were not individually tagged on GitHub.
   sidecar diagnostics / dry-run examples reproducible from the package source.
 - `npm test` now includes nested `src/cli/*.test.mjs` coverage in addition to
   the top-level `src/*.test.mjs` tests.
+- Recorded the 2026-05-06 Codex app-server rollback/inject spike: `thread/read`
+  can read persisted threads, `thread/rollback` requires a loaded thread via
+  `thread/resume`, and injected developer items are visible to the next turn.
 
 ## [0.3.24] — 2026-05-02
 

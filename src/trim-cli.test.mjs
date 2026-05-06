@@ -77,7 +77,7 @@ test('trim CLI prints JSON dry-run plan for latest project session', async () =>
   }
 });
 
-test('trim CLI refuses non-dry-run execution while host primitives are unresolved', async () => {
+test('trim CLI refuses non-dry-run execution until automatic trim integration exists', async () => {
   const home = makeTempHome();
   const project = makeTempProject();
   try {
