@@ -13,7 +13,7 @@
 
 この文書は「rollback は欠けていた delete primitive かもしれない」という洞察を残すもの。実装時は、未検証の host primitive を本線仕様にせず、統合計画の Phase 6 で実測してから `/tl-trim` 系 UX に進む。
 
-2026-05-06 update: Codex app-server の `thread/rollback` / `thread/inject_items` は host primitive として実測済み。ただし Throughline CLI から安全に現在 thread を特定し、誤 thread を trim しない統合は未実装なので、non-dry-run `/tl-trim` はまだ有効化しない。
+2026-05-06 update: Codex app-server の `thread/rollback` / `thread/inject_items` は host primitive として実測済み。Throughline CLI には明示 `--codex-thread-id` または `THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` による current-thread identity、rollout/app-server turn count guard、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` 配下の guarded execute が入った。ただし通常の automatic rollback / inject と、Claude `/rewind` 自動化はまだ有効化しない。
 
 ## 概要
 

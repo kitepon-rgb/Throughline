@@ -54,7 +54,8 @@ shipped to npm but were not individually tagged on GitHub.
 - `.codex-sidecar/logs/` is ignored as a runtime artifact from real sidecar
   smoke runs.
 - Codex trim host status now distinguishes verified app-server rollback/inject
-  primitives from the still-unimplemented Throughline automatic trim execution.
+  primitives from default automatic trim execution, which remains disabled
+  unless the guarded Codex execute requirements are met.
 - Trim dry-run now carries an explicit Codex thread identity separately from
   the Claude/Throughline `session_id`, avoiding latest-rollout guessing.
 - Codex trim can now use `THROUGHLINE_CODEX_THREAD_ID` or `CODEX_THREAD_ID` as
