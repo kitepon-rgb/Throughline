@@ -441,6 +441,7 @@ Phase 8 partial implementation result (2026-05-06):
 - `--execute` が注入する item は `role: "developer"` の raw Responses message item で、中身は `memoryPreview.text`。`memoryPreview.text` は Reading Contract、Active Work Thread、Continuation Instruction を含むため、L2 を単なる過去ログではなく現在タスクの作業文脈として読む前提を維持する。
 - `--execute` は model turn を開始しない。つまり実行直後の「注入内容が次 turn で model-visible か」は Phase 6 の実測 spike で確認済みだが、この CLI path ではユーザー実 thread を mutate する実機 smoke はまだ行っていない。
 - fake app-server テストで、env 無しでは app-server を起動せず拒否すること、preflight は rollback / inject を送らないこと、execute は `read -> resume -> rollback -> inject -> read` の順で curated memory を注入することを固定した。
+- `throughline codex-threads [--json] [--all-projects] [--limit N]` を追加した。これは `~/.codex/session_index.jsonl` と `~/.codex/sessions/**/rollout-*.jsonl` を read-only に読み、現在 project の Codex thread id 候補を表示する。候補を出すだけで、自動 trim の対象 thread として採用しない。
 - Claude slash command [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) を追加し、現行 Claude が current-work memo を書いてから `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run UX にした。
 - `throughline install` / `uninstall` は `/tl-trim` も配布 / 削除する。
 - `throughline doctor --trim --host claude|codex|unknown` を追加し、default keep-recent、automatic rollback / inject 可否、manual procedure を表示する。

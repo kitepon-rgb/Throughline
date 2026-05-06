@@ -10,6 +10,7 @@
  *   throughline session-start # SessionStart hook (Claude Code から呼ばれる)
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
+ *   throughline codex-threads # List read-only Codex thread id candidates
  *   throughline codex-sidecar-diagnostics # Check codex-sidecar availability
  *   throughline codex-sidecar-dry-run # Print normalized sidecar request
  *   throughline trim --dry-run # Preview same-session context trim plan
@@ -51,6 +52,9 @@ switch (cmd) {
   case 'handoff-preview':
     await (await import('../src/cli/handoff-preview.mjs')).run(rest);
     break;
+  case 'codex-threads':
+    await (await import('../src/cli/codex-threads.mjs')).run(rest);
+    break;
   case 'codex-sidecar-diagnostics':
     await (await import('../src/cli/codex-sidecar-diagnostics.mjs')).run(rest);
     break;
@@ -91,6 +95,8 @@ Usage:
   throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
   throughline save-inflight     Save in-flight memo (stdin) to the current /tl baton
   throughline handoff-preview   Print Codex-facing throughline_handoff JSON
+  throughline codex-threads     List read-only Codex thread id candidates
+                              for --codex-thread-id
   throughline codex-sidecar-diagnostics
                               Check codex-sidecar diagnostics status
   throughline codex-sidecar-dry-run
