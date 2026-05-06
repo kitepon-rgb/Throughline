@@ -239,7 +239,12 @@ export function buildSetupNotice(action) {
   return null;
 }
 
-function emitSetupNotice(action) {
+function shouldEmitNotices(env) {
+  return env.THROUGHLINE_SUPPRESS_VSCODE_NOTICES !== '1';
+}
+
+function emitSetupNotice(action, env) {
+  if (!shouldEmitNotices(env)) return;
   const text = buildSetupNotice(action);
   if (text) process.stdout.write(text);
 }
@@ -279,9 +284,18 @@ export function shouldRecommendGitignore(cwd) {
   return true;
 }
 
-function emitGitignoreRecommendationOnce(vscodeDir) {
+function emitGitignoreRecommendationOnce(vscodeDir, env) {
   const markerPath = join(vscodeDir, GITIGNORE_MARKER_FILENAME);
   if (existsSync(markerPath)) return;
+  if (!shouldEmitNotices(env)) {
+    try {
+      writeFileSync(markerPath, `${new Date().toISOString()}\n`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      process.stderr.write(`[throughline] failed to write gitignore marker: ${msg}\n`);
+    }
+    return;
+  }
   process.stdout.write(
     '<system-reminder>\n' +
     'Throughline ヒント: .vscode/tasks.json には現環境の絶対パス (node 実行ファイル / throughline.mjs)\n' +
@@ -305,9 +319,18 @@ function emitGitignoreRecommendationOnce(vscodeDir) {
   }
 }
 
-function emitJsoncGuidanceOnce(vscodeDir) {
+function emitJsoncGuidanceOnce(vscodeDir, env) {
   const markerPath = join(vscodeDir, JSONC_MARKER_FILENAME);
   if (existsSync(markerPath)) return;
+  if (!shouldEmitNotices(env)) {
+    try {
+      writeFileSync(markerPath, `${new Date().toISOString()}\n`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      process.stderr.write(`[throughline] failed to write JSONC marker: ${msg}\n`);
+    }
+    return;
+  }
   process.stderr.write(
     `[throughline] .vscode/tasks.json contains JSONC features (comments or trailing commas). ` +
       `Auto-edit is unsafe on this file — add the Throughline Monitor task manually. ` +
@@ -363,15 +386,15 @@ export function ensureMonitorTaskFile(opts = {}) {
     if (!existsSync(vscodeDir)) mkdirSync(vscodeDir, { recursive: true });
     const obj = { version: '2.0.0', tasks: [buildMonitorTask(bin)] };
     atomicWrite(tasksPath, JSON.stringify(obj, null, 2) + '\n');
-    emitSetupNotice('created');
-    if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir);
+    emitSetupNotice('created', env);
+    if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir, env);
     return { action: 'created', path: tasksPath };
   }
 
   const text = readFileSync(tasksPath, 'utf8');
 
   if (detectJsoncFeatures(text)) {
-    emitJsoncGuidanceOnce(vscodeDir);
+    emitJsoncGuidanceOnce(vscodeDir, env);
     return { action: 'skipped', reason: 'jsonc_unsupported', path: tasksPath };
   }
 
@@ -398,8 +421,8 @@ export function ensureMonitorTaskFile(opts = {}) {
       nextTasks[existingIdx] = repaired;
       const nextObj = { ...obj, version: obj.version ?? '2.0.0', tasks: nextTasks };
       atomicWrite(tasksPath, JSON.stringify(nextObj, null, indent) + '\n');
-      emitSetupNotice('repaired');
-      if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir);
+      emitSetupNotice('repaired', env);
+      if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir, env);
       return { action: 'repaired', path: tasksPath };
     }
     return { action: 'already_present', path: tasksPath };
@@ -412,7 +435,7 @@ export function ensureMonitorTaskFile(opts = {}) {
     tasks: [...(Array.isArray(obj.tasks) ? obj.tasks : []), buildMonitorTask(bin)],
   };
   atomicWrite(tasksPath, JSON.stringify(nextObj, null, indent) + '\n');
-  emitSetupNotice('merged');
-  if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir);
+  emitSetupNotice('merged', env);
+  if (shouldRecommendGitignore(cwd)) emitGitignoreRecommendationOnce(vscodeDir, env);
   return { action: 'merged', path: tasksPath };
 }

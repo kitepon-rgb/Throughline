@@ -7,3 +7,9 @@ node_modules/
 
 # Claude Code scheduled tasks lockfile (runtime state)
 .claude/scheduled_tasks.lock
+
+# Local code intelligence index
+.codegraph/
+
+# Codex sidecar runtime logs
+.codex-sidecar/logs/

@@ -40,7 +40,7 @@ function silence() {
   };
 }
 
-test('global install copies /tl and /sc-detail to ~/.claude/commands/', async () => {
+test('global install copies Throughline slash commands to ~/.claude/commands/', async () => {
   const home = makeTempHome();
   if (home.resolved !== home.dir) {
     home.restore();
@@ -51,8 +51,10 @@ test('global install copies /tl and /sc-detail to ~/.claude/commands/', async ()
     await run([]);
     const tl = join(home.dir, '.claude', 'commands', 'tl.md');
     const sc = join(home.dir, '.claude', 'commands', 'sc-detail.md');
+    const trim = join(home.dir, '.claude', 'commands', 'tl-trim.md');
     assert.ok(existsSync(tl), 'tl.md should be installed globally');
     assert.ok(existsSync(sc), 'sc-detail.md should be installed globally');
+    assert.ok(existsSync(trim), 'tl-trim.md should be installed globally');
     const tlBody = readFileSync(tl, 'utf8');
     assert.match(tlBody, /Throughline/, 'tl.md content should be real');
     const settings = JSON.parse(readFileSync(join(home.dir, '.claude', 'settings.json'), 'utf8'));
@@ -102,6 +104,8 @@ test('uninstall removes slash command files', async () => {
     assert.ok(!existsSync(tl), 'uninstall should remove tl.md');
     const sc = join(home.dir, '.claude', 'commands', 'sc-detail.md');
     assert.ok(!existsSync(sc), 'uninstall should remove sc-detail.md');
+    const trim = join(home.dir, '.claude', 'commands', 'tl-trim.md');
+    assert.ok(!existsSync(trim), 'uninstall should remove tl-trim.md');
   } finally {
     unsilence();
     home.restore();

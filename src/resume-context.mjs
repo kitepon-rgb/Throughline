@@ -13,10 +13,12 @@
  *   - 各行頭に [HH:MM:SS] 時刻プレフィックス（created_at ベース、DB 永続）
  *   - 末尾に /sc-detail <時刻> ガイドを追記
  *   - 現セッションのターンは注入しない（Claude Code 本体のコンテキストに既にあるため）
- *   - フレーミングを「過去の記憶」から「中断した作業の再開」に変更 (B 案)
+ *   - フレーミングを「過去の記憶」から「中断した作業の再開」に変更する。
+ *     冒頭と末尾の両方に current-work instruction を置き、長文 context 内でも
+ *     L1/L2 を現在タスク用の作業文脈として読むよう誘導する。
  */
 
-const N_RECENT_L2 = 20;
+import { buildHandoffRecord, N_RECENT_L2 } from './handoff-record.mjs';
 
 const RESUME_HEADER_TEMPLATE = (turnCount) =>
   `## Throughline: 中断した作業の再開（${turnCount} ターン分の文脈を保持）\n` +
@@ -30,6 +32,19 @@ const RESUME_HEADER_TEMPLATE = (turnCount) =>
   `応答の冒頭でユーザーに「前の作業を ${turnCount} ターン分引き継ぎました」と報告してください。` +
   `作業方針は前セッションのものを踏襲し、中断地点から自然に続行してください。`;
 
+const ACTIVE_WORK_READING_CONTRACT =
+  `\n` +
+  `**読み方の契約:**\n` +
+  `- これは単なる過去ログではなく、現在進行中の作業を再開するための active work context です。\n` +
+  `- L2 は古い順に並んだ作業履歴です。後の発言・判断・TODO は前の仮説や作業方針を上書きし得ます。\n` +
+  `- すべての L2 行を現在も正しい事実として扱わず、最新の L2、in-flight メモ、最終ターン thinking を優先して現在状態を推定してください。\n` +
+  `- 不足している tool output / 詳細根拠が必要なときだけ、末尾の \`throughline detail <時刻>\` を使って L3 を取得してください。`;
+
+const CONTINUATION_REMINDER =
+  '**再開指示:** 上記の L1 / L2 / thinking / in-flight メモを、現在タスクに使う作業コンテキストとして扱ってください。' +
+  '最新の L2、in-flight メモ、最終ターン thinking から次の一手を決め、中断地点から続行してください。' +
+  '古い仮説や未完了 TODO は、後続の判断で上書きされ得ます。';
+
 const NORMAL_HEADER = '## Throughline: セッション記憶';
 
 const FOOTER_GUIDE =
@@ -42,67 +57,6 @@ const FOOTER_GUIDE =
   '\n' +
   '返る内容: 指定ターンの L2 会話本文 + L3（tool_input / tool_output / system / thinking 別にグループ化）。\n' +
   'ユーザーに「詳細を見せて」と言われた時だけでなく、**ユーザー発言の文脈が過去ターンに依存しているのに L1/L2 だけでは情報不足だと判断した時**に、Claude 自身の判断で呼び出して構いません。';
-
-/**
- * Unix ms を HH:MM:SS 形式に変換する。
- */
-function formatTime(unixMs) {
-  const d = new Date(unixMs);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
-}
-
-/**
- * 最新ターン番号 (= 中断直前) の thinking ブロックを details から取り出す。
- * origin 除外がある場合はそれも考慮する。
- *
- * @param {import('node:sqlite').DatabaseSync} db
- * @param {string} sessionId
- * @param {string | null} excludeOriginId
- * @returns {Array<{ output_text: string, created_at: number }>}
- */
-function loadLatestThinking(db, sessionId, excludeOriginId) {
-  const hasExclude = Boolean(excludeOriginId);
-
-  // 最新 (origin_session_id, turn_number) を bodies から特定
-  const latestQuery = hasExclude
-    ? `SELECT origin_session_id, turn_number, created_at
-       FROM bodies
-       WHERE session_id = ? AND origin_session_id != ? AND role = 'assistant'
-       ORDER BY created_at DESC
-       LIMIT 1`
-    : `SELECT origin_session_id, turn_number, created_at
-       FROM bodies
-       WHERE session_id = ? AND role = 'assistant'
-       ORDER BY created_at DESC
-       LIMIT 1`;
-
-  let latest;
-  try {
-    latest = hasExclude
-      ? db.prepare(latestQuery).get(sessionId, excludeOriginId)
-      : db.prepare(latestQuery).get(sessionId);
-  } catch {
-    return [];
-  }
-  if (!latest) return [];
-
-  // その (origin_session_id, turn_number) に紐づく kind='thinking' を取り出す
-  try {
-    const rows = db
-      .prepare(
-        `SELECT output_text, created_at FROM details
-         WHERE session_id = ? AND origin_session_id = ? AND turn_number = ? AND kind = 'thinking'
-         ORDER BY created_at ASC`,
-      )
-      .all(sessionId, latest.origin_session_id, latest.turn_number);
-    return rows.filter((r) => typeof r.output_text === 'string' && r.output_text.length > 0);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * L1+L2 注入テキストを組み立てる。
@@ -120,107 +74,57 @@ export function buildResumeContext(
   db,
   { sessionId, isInheritance, excludeOriginId = null, inflightMemo = null },
 ) {
-  if (!sessionId) return null;
+  const record = buildHandoffRecord(db, {
+    sessionId,
+    isInheritance,
+    excludeOriginId,
+    inflightMemo,
+  });
+  if (!record) return null;
 
-  const hasExclude = Boolean(excludeOriginId);
-
-  const bodiesQuery = hasExclude
-    ? `SELECT origin_session_id, turn_number, role, text, created_at
-       FROM bodies
-       WHERE session_id = ? AND origin_session_id != ?
-       ORDER BY created_at DESC
-       LIMIT ?`
-    : `SELECT origin_session_id, turn_number, role, text, created_at
-       FROM bodies
-       WHERE session_id = ?
-       ORDER BY created_at DESC
-       LIMIT ?`;
-
-  const limitRows = N_RECENT_L2 * 2; // user/assistant の 2 ロール分
-
-  let bodyRowsDesc = [];
-  try {
-    bodyRowsDesc = hasExclude
-      ? db.prepare(bodiesQuery).all(sessionId, excludeOriginId, limitRows)
-      : db.prepare(bodiesQuery).all(sessionId, limitRows);
-  } catch {
-    // bodies テーブル未作成（v3 DB）の場合は空
-    bodyRowsDesc = [];
-  }
-  const bodyRows = bodyRowsDesc.reverse(); // ASC に戻す
-
-  // 古い側の L1（bodies に既に含まれるターンを除いたもの）
-  const bodySet = new Set(
-    bodyRows.map((r) => `${r.origin_session_id}\x00${r.turn_number}`),
-  );
-
-  const skelQuery = hasExclude
-    ? `SELECT origin_session_id, turn_number, role, summary, created_at
-       FROM skeletons
-       WHERE session_id = ? AND origin_session_id != ?
-       ORDER BY created_at ASC`
-    : `SELECT origin_session_id, turn_number, role, summary, created_at
-       FROM skeletons
-       WHERE session_id = ?
-       ORDER BY created_at ASC`;
-
-  const allSkel = hasExclude
-    ? db.prepare(skelQuery).all(sessionId, excludeOriginId)
-    : db.prepare(skelQuery).all(sessionId);
-
-  const l1Rows = allSkel.filter(
-    (s) => !bodySet.has(`${s.origin_session_id}\x00${s.turn_number}`),
-  );
-
-  const thinkingRows = loadLatestThinking(db, sessionId, excludeOriginId);
-
-  if (
-    bodyRows.length === 0 &&
-    l1Rows.length === 0 &&
-    thinkingRows.length === 0 &&
-    !inflightMemo
-  ) {
-    return null;
-  }
-
-  const turnCount = bodyRows.length + l1Rows.length;
-  const header = isInheritance ? RESUME_HEADER_TEMPLATE(turnCount) : NORMAL_HEADER;
+  const turnCount = record.stats.preservedContextRows;
+  const header = isInheritance
+    ? RESUME_HEADER_TEMPLATE(turnCount) + ACTIVE_WORK_READING_CONTRACT
+    : NORMAL_HEADER;
   const lines = [header];
 
-  if (inflightMemo && inflightMemo.trim().length > 0) {
+  if (record.memory.inflightMemo) {
     lines.push('');
     lines.push('### 中断直前の in-flight メモ（前セッションの Claude 自身による要約）');
-    lines.push(inflightMemo.trim());
+    lines.push(record.memory.inflightMemo);
   }
 
-  if (thinkingRows.length > 0) {
+  if (record.memory.latestThinking.length > 0) {
     lines.push('');
     lines.push('### 中断直前の思考 (最終ターンの extended thinking)');
-    for (const r of thinkingRows) {
-      lines.push(`[${formatTime(r.created_at)}] ${r.output_text}`);
+    for (const r of record.memory.latestThinking) {
+      lines.push(`[${r.time}] ${r.text}`);
     }
   }
 
-  if (l1Rows.length > 0) {
+  if (record.memory.l1Summaries.length > 0) {
     lines.push('');
     lines.push('### それ以前の要約 (L1)');
-    for (const r of l1Rows) {
+    for (const r of record.memory.l1Summaries) {
       if (!r.summary || r.summary === '(no content)') continue;
-      lines.push(`[${formatTime(r.created_at)}] ${r.summary.replace(/\n+/g, ' ').trim()}`);
+      lines.push(`[${r.time}] ${r.summary.replace(/\n+/g, ' ').trim()}`);
     }
   }
 
-  if (bodyRows.length > 0) {
+  if (record.memory.recentBodies.length > 0) {
     lines.push('');
-    lines.push('### 直近のターン履歴 (L2)');
-    for (const r of bodyRows) {
+    lines.push('### 現在進行中の作業履歴 (L2 / active work thread)');
+    lines.push('以下は古い順です。後の行ほど現在状態に近く、前の仮説を上書きし得ます。');
+    for (const r of record.memory.recentBodies) {
       if (!r.text) continue;
-      lines.push(`[${formatTime(r.created_at)}] [${r.role}]: ${r.text}`);
+      lines.push(`[${r.time}] [${r.role}]: ${r.text}`);
     }
   }
 
   lines.push('');
   lines.push(FOOTER_GUIDE);
+  lines.push('');
+  lines.push(CONTINUATION_REMINDER);
 
   return lines.join('\n');
 }

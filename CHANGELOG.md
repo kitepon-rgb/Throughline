@@ -8,6 +8,59 @@ Pre-`0.3.18` iteration history is preserved as a rollup section near the bottom
 since most of those releases were rapid-fire monitor render bug fixes that
 shipped to npm but were not individually tagged on GitHub.
 
+## [Unreleased]
+
+### Added
+- Claude-primary / Codex-sidecar groundwork:
+  `HandoffRecord` projection, `throughline handoff-preview`,
+  `throughline_handoff` example context, and `codex-sidecar-diagnostics` /
+  `codex-sidecar-dry-run` command surfaces.
+- Optional `codex-sidecar` L2→L1 summarization path. When the sidecar is
+  configured for the `summarize-l1` preset, Throughline uses it for the only
+  subagent-like external model call; disabled/unavailable/run-failed sidecar
+  states keep the existing Claude Haiku route.
+- `/tl-trim` dry-run surface:
+  `throughline trim --dry-run`, `--host`, `--keep-recent`, `--all`,
+  `--memo-stdin`, and `throughline doctor --trim`.
+
+### Changed
+- Resume context now frames recent L2 as an active work thread with explicit
+  reading/continuation instructions at both the top and bottom of injected
+  memory. Older L2 entries may be superseded by later entries and are not
+  blindly treated as still-current truth.
+- Hook entry modules are import-safe and expose `run()` so subprocess tests can
+  cover the Claude path without touching the user's real database.
+- VSCode task tests suppress Claude-facing `<system-reminder>` notices by
+  default and opt in only for notice assertions, keeping test output from
+  looking like fresh user-facing instructions.
+- `codex-sidecar` subprocess calls now shell-wrap on Windows so npm global
+  `.cmd` shims resolve consistently, matching the existing Claude CLI handling.
+- L2→L1 sidecar summarization accepts the stable `SidecarResult` JSON shape
+  (`summary` without `status: "ok"`) as well as the older test fixture shape.
+- `codex-sidecar-dry-run --turn-timeout-ms` now forwards the timeout into the
+  normalized sidecar request instead of only changing the local subprocess
+  timeout.
+- `.codex-sidecar.yml` no longer denies every path containing `token`, so
+  legitimate source files such as `src/token-monitor.mjs` remain reviewable.
+- `.codex-sidecar.yml` allows release docs and Claude slash commands, so
+  review/risk-check sidecars can inspect the same contract surfaces that are
+  shipped in the npm tarball.
+- `.codex-sidecar/logs/` is ignored as a runtime artifact from real sidecar
+  smoke runs.
+
+### Documentation
+- Added integrated implementation/TODO plan and cross-links for the Codex dual
+  support and rollback trim design docs.
+- README now documents Claude-primary behavior, optional Codex sidecar usage,
+  and the current dry-run-only state of context trim.
+- npm packaging now includes `docs/` and `CHANGELOG.md`, so README-linked
+  design docs and the `throughline_handoff` example context are present in the
+  tarball.
+- npm packaging also includes `.codex-sidecar.yml`, keeping the documented
+  sidecar diagnostics / dry-run examples reproducible from the package source.
+- `npm test` now includes nested `src/cli/*.test.mjs` coverage in addition to
+  the top-level `src/*.test.mjs` tests.
+
 ## [0.3.24] — 2026-05-02
 
 ### Added

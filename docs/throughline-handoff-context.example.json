@@ -1,0 +1,57 @@
+[
+  {
+    "kind": "throughline_handoff",
+    "source": "throughline",
+    "trust": "local",
+    "summary": "In-flight handoff: continue the Codex projection work.",
+    "data": {
+      "throughlineHandoffSchemaVersion": 1,
+      "handoffRecordVersion": 1,
+      "sessionId": "example-session",
+      "projectPath": "/home/kite/projects/Throughline",
+      "sourceAgent": "claude",
+      "hostMode": "claude-primary",
+      "intent": "continue implementation",
+      "constraints": [
+        "preserve existing Claude Code hook, slash command, transcript, baton, and resume behavior",
+        "add Codex support as adapter/projection; do not rename Claude-facing DB fields or commands"
+      ],
+      "originSessionIds": [
+        "example-origin"
+      ],
+      "stats": {
+        "l1Rows": 0,
+        "l2Rows": 1,
+        "thinkingRows": 0,
+        "l3References": 1,
+        "preservedContextRows": 1
+      },
+      "memory": {
+        "inflightMemo": "Continue Phase 5 read-only sidecar smoke.",
+        "latestThinking": [],
+        "l1Summaries": [],
+        "recentBodies": [
+          {
+            "originSessionId": "example-origin",
+            "turnNumber": 1,
+            "role": "assistant",
+            "text": "Configured throughline_handoff projection and diagnostics wrapper.",
+            "createdAt": 1770000000000,
+            "time": "12:00:00"
+          }
+        ]
+      },
+      "detailReferences": [
+        {
+          "type": "throughline_detail",
+          "label": "tool_input:Bash",
+          "command": "throughline detail 12:00:00",
+          "sourceId": "toolu_example",
+          "detailKind": "tool_input",
+          "originSessionId": "example-origin",
+          "turnNumber": 1
+        }
+      ]
+    }
+  }
+]

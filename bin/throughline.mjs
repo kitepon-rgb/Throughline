@@ -9,6 +9,10 @@
  *   throughline process-turn  # Stop hook (Claude Code から呼ばれる)
  *   throughline session-start # SessionStart hook (Claude Code から呼ばれる)
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
+ *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
+ *   throughline codex-sidecar-diagnostics # Check codex-sidecar availability
+ *   throughline codex-sidecar-dry-run # Print normalized sidecar request
+ *   throughline trim --dry-run # Preview same-session context trim plan
  *   throughline doctor        # 環境チェック
  *   throughline status        # DB 統計表示
  *   throughline --version     # バージョン表示
@@ -27,13 +31,13 @@ switch (cmd) {
     await (await import('../src/cli/install.mjs')).run(['--uninstall', ...rest]);
     break;
   case 'process-turn':
-    await import('../src/turn-processor.mjs');
+    await (await import('../src/turn-processor.mjs')).run();
     break;
   case 'session-start':
-    await import('../src/session-start.mjs');
+    await (await import('../src/session-start.mjs')).run();
     break;
   case 'prompt-submit':
-    await import('../src/prompt-submit.mjs');
+    await (await import('../src/prompt-submit.mjs')).run();
     break;
   case 'monitor':
     (await import('../src/token-monitor.mjs')).main();
@@ -43,6 +47,18 @@ switch (cmd) {
     break;
   case 'save-inflight':
     await (await import('../src/cli/save-inflight.mjs')).run();
+    break;
+  case 'handoff-preview':
+    await (await import('../src/cli/handoff-preview.mjs')).run(rest);
+    break;
+  case 'codex-sidecar-diagnostics':
+    await (await import('../src/cli/codex-sidecar-diagnostics.mjs')).run(rest);
+    break;
+  case 'codex-sidecar-dry-run':
+    await (await import('../src/cli/codex-sidecar-dry-run.mjs')).run(rest);
+    break;
+  case 'trim':
+    await (await import('../src/cli/trim.mjs')).run(rest);
     break;
   case 'doctor':
     await (await import('../src/cli/doctor.mjs')).run(rest);
@@ -74,7 +90,14 @@ Usage:
   throughline monitor           Multi-session token monitor (use --all, --session <id>)
   throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
   throughline save-inflight     Save in-flight memo (stdin) to the current /tl baton
+  throughline handoff-preview   Print Codex-facing throughline_handoff JSON
+  throughline codex-sidecar-diagnostics
+                              Check codex-sidecar diagnostics status
+  throughline codex-sidecar-dry-run
+                              Print normalized read-only sidecar request
+  throughline trim --dry-run   Preview same-session context trim plan
   throughline doctor            Check environment
+  throughline doctor --trim     Show trim host boundary diagnostics
   throughline status            Show DB statistics
   throughline --version         Show version
 

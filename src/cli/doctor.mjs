@@ -19,6 +19,7 @@ import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { getStateDir } from '../state-file.mjs';
 import { readLatestUsage } from '../transcript-usage.mjs';
+import { DEFAULT_TRIM_KEEP_RECENT, describeTrimHost } from '../trim-model.mjs';
 
 const GREEN = '\x1b[32m✓\x1b[0m';
 const RED = '\x1b[31m✗\x1b[0m';
@@ -43,7 +44,7 @@ async function check(label, fn) {
 }
 
 function parseArgs(argv) {
-  const args = { session: null };
+  const args = { session: null, trim: false, host: 'unknown' };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--session') {
       const value = argv[i + 1];
@@ -51,6 +52,15 @@ function parseArgs(argv) {
         throw new Error('--session requires a session id prefix');
       }
       args.session = value;
+      i++;
+    } else if (argv[i] === '--trim') {
+      args.trim = true;
+    } else if (argv[i] === '--host') {
+      const value = argv[i + 1];
+      if (!['claude', 'codex', 'unknown'].includes(value)) {
+        throw new Error('--host must be claude, codex, or unknown');
+      }
+      args.host = value;
       i++;
     }
   }
@@ -266,6 +276,25 @@ function runSessionDiagnosis(prefix) {
   }
 }
 
+function runTrimDiagnosis(host) {
+  const info = describeTrimHost(host);
+  console.log(`${BOLD}[Trim]${RESET}\n`);
+  console.log(`  host:                  ${info.host}`);
+  console.log(`  default keep-recent:   ${DEFAULT_TRIM_KEEP_RECENT}`);
+  console.log(`  automatic rollback:    ${info.automaticRollback ? 'yes' : 'no'}`);
+  console.log(`  automatic inject:      ${info.automaticInject ? 'yes' : 'no'}`);
+  console.log(`  boundary status:       ${info.status}`);
+  console.log(`  boundary reason:       ${info.reason}`);
+  console.log('');
+  console.log('  dry-run command:');
+  console.log(`    throughline trim --dry-run --host ${info.host}`);
+  console.log('');
+  console.log('  manual procedure:');
+  for (const step of info.manualProcedure) {
+    console.log(`    - ${step}`);
+  }
+}
+
 export async function run(argv = []) {
   let args;
   try {
@@ -277,6 +306,11 @@ export async function run(argv = []) {
 
   if (args.session) {
     runSessionDiagnosis(args.session);
+    return;
+  }
+
+  if (args.trim) {
+    runTrimDiagnosis(args.host);
     return;
   }
 
@@ -343,6 +377,7 @@ export async function run(argv = []) {
 
   console.log('');
   console.log(`${DIM}ヒント: 特定セッションが止まって見えるときは ${RESET}throughline doctor --session <id-prefix>${DIM} で診断できます。${RESET}`);
+  console.log(`${DIM}ヒント: trim の host 境界を見るには ${RESET}throughline doctor --trim --host claude${DIM} を使います。${RESET}`);
 }
 
 // テスト用エクスポート
@@ -351,6 +386,7 @@ export const _internal = {
   formatAgo,
   formatBytes,
   runSessionDiagnosis,
+  runTrimDiagnosis,
   isPidAlive,
   findLatestJsonlInSameDir,
 };
