@@ -145,7 +145,7 @@ Phase 2 implementation result (2026-05-06):
 
 完了条件:
 
-- [x] Codex adapter 追加前の Claude path 主要テストが通る。2026-05-06 に `npm test` で 233 tests pass。Phase 9 時点では nested CLI tests を含めて 291 tests pass。
+- [x] Codex adapter 追加前の Claude path 主要テストが通る。2026-05-06 に `npm test` で 233 tests pass。Codex guarded trim 統合後は nested CLI tests を含めて 324 tests pass。
 - [x] Claude transcript / handoff behavior の破壊が test failure になる。
 
 ## Phase 3: Agent-neutral Handoff Core
@@ -465,7 +465,7 @@ Current-work framing research note (2026-05-06):
 
 完了条件:
 
-- [ ] 対応 host では同一 session / thread の context trim が動く。
+- [x] 対応 host では同一 session / thread の context trim が動く。Codex guarded execute は実機 smoke で現在 thread の rollback / inject を完了し、後続 preflight で rollout/app-server turn count match を確認した。
 - [x] Codex では guarded execute path が fake app-server 上で rollback / inject 順序を満たす。
 - [x] Codex では明示 thread id の rollout JSONL から active turns / memory preview を作り、DB 未捕捉の Codex 作業でも dry-run / preflight / guarded execute の plan source にできる。
 - [x] Codex では `codex-rollout` active turn count と app-server read/resume turn count を突き合わせ、差分がある場合は mutation 前に拒否する。
@@ -497,10 +497,11 @@ Verification refresh (2026-05-06):
 
 - `node --test src/vscode-task.test.mjs`: 68 tests pass。Claude-facing `<system-reminder>` notice は assertion 対象テスト内で捕捉され、通常の TAP output には漏れない。
 - `node --test src/codex-sidecar.test.mjs src/haiku-summarizer.test.mjs src/codex-sidecar-cli.test.mjs`: 16 tests pass。Windows npm bin shim 用 shell wrap と sidecar/Haiku 互換経路を確認。
+- `node --test src/codex-app-server.test.mjs src/trim-cli.test.mjs`: 24 tests pass。Codex guarded execute の post-inject visibility polling を含む。
 - `codex-sidecar review --project . --preset review ...`: sidecar 側の structured-output validation は failed になったが、raw event log から 3 件の actionable finding を回収し、stable `SidecarResult` parser、`npm test` の nested test coverage、`.codex-sidecar.yml` allowed_paths を修正済み。
 - `throughline codex-sidecar-diagnostics --project . --preset review`: `configured`。
 - `codex-sidecar explore --project . --preset explore ...`: read-only smoke 成功。`src/token-monitor.mjs` が sidecar から read 可能であることを確認。生成される `.codex-sidecar/logs/` は runtime artifact として `.gitignore` 済み。
-- `npm test`: nested `src/cli/*.test.mjs` coverage を含めて 291 tests pass。
+- `npm test`: nested `src/cli/*.test.mjs` coverage を含めて 324 tests pass。
 - `git diff --check`: pass。
 - `npm pack --dry-run`: 73 files。README 参照先 docs / slash command / new CLI files / `.codex-sidecar.yml` を含む。
 
