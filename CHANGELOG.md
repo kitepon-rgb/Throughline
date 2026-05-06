@@ -80,6 +80,9 @@ shipped to npm but were not individually tagged on GitHub.
 - Guarded Codex execute now performs the same rollout/app-server turn-count
   check before rollback; mismatch or unavailable app-server counts refuse
   execution before any rollback or inject request is sent.
+- Codex app-server stderr in trim preflight / guarded execute now compacts
+  repeated unknown-turn item warnings while preserving the first occurrence and
+  unrelated diagnostics.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual

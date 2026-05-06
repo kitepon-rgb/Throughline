@@ -16,6 +16,7 @@ import {
   encodeAppServerMessage,
   parseAppServerLine,
   runCodexTrimPreflight,
+  summarizeAppServerStderr,
 } from './codex-app-server.mjs';
 
 test('encodeAppServerMessage writes one newline-delimited JSON object', () => {
@@ -186,6 +187,26 @@ test('compareTurnCounts: rejects invalid expected turn count', () => {
         resumedTurns: 2,
       }),
     /expectedTurns must be a non-negative integer/,
+  );
+});
+
+test('summarizeAppServerStderr: compacts repeated unknown-turn item warnings', () => {
+  const stderr = [
+    '2026-05-06T00:00:00Z  WARN codex_app_server_protocol::protocol::thread_history: dropping turn-scoped item for unknown turn id `turn-a` item_id="call_1"',
+    '2026-05-06T00:00:01Z  WARN codex_app_server_protocol::protocol::thread_history: dropping turn-scoped item for unknown turn id `turn-a` item_id="call_2"',
+    'unrelated warning',
+    '2026-05-06T00:00:02Z  WARN codex_app_server_protocol::protocol::thread_history: dropping turn-scoped item for unknown turn id `turn-a` item_id="call_3"',
+    '',
+  ].join('\n');
+
+  assert.equal(
+    summarizeAppServerStderr(stderr),
+    [
+      '2026-05-06T00:00:00Z  WARN codex_app_server_protocol::protocol::thread_history: dropping turn-scoped item for unknown turn id `turn-a` item_id="call_1"',
+      'unrelated warning',
+      '[throughline] suppressed 2 repeated Codex app-server unknown-turn item warnings for turn turn-a',
+      '',
+    ].join('\n'),
   );
 });
 

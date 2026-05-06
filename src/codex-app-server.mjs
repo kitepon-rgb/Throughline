@@ -490,7 +490,7 @@ function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs 
   return {
     notifications,
     get stderr() {
-      return stderr;
+      return summarizeAppServerStderr(stderr);
     },
     request(message) {
       if (!isRequestId(message.id)) {
@@ -587,6 +587,45 @@ export function compareTurnCounts({ expectedTurns = null, readTurns = null, resu
     reason: 'rollout_and_app_server_turn_counts_differ',
     ...counts,
   };
+}
+
+export function summarizeAppServerStderr(stderr) {
+  if (typeof stderr !== 'string' || stderr.length === 0) return '';
+
+  const lines = stderr.split('\n');
+  const out = [];
+  const suppressedByTurn = new Map();
+  const unknownTurnWarning =
+    /WARN codex_app_server_protocol::protocol::thread_history: dropping turn-scoped item for unknown turn id `([^`]+)` item_id=/;
+
+  for (const line of lines) {
+    if (line === '') continue;
+    const match = line.match(unknownTurnWarning);
+    if (!match) {
+      out.push(line);
+      continue;
+    }
+
+    const turnId = match[1];
+    const current = suppressedByTurn.get(turnId) ?? { seen: 0, suppressed: 0 };
+    if (current.seen === 0) {
+      out.push(line);
+    } else {
+      current.suppressed++;
+    }
+    current.seen++;
+    suppressedByTurn.set(turnId, current);
+  }
+
+  for (const [turnId, { suppressed }] of suppressedByTurn.entries()) {
+    if (suppressed > 0) {
+      out.push(
+        `[throughline] suppressed ${suppressed} repeated Codex app-server unknown-turn item warnings for turn ${turnId}`,
+      );
+    }
+  }
+
+  return out.length === 0 ? '' : `${out.join('\n')}\n`;
 }
 
 function compactNullish(value) {
