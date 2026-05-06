@@ -110,8 +110,8 @@ test('buildTrimPlan: --all plans to roll back every captured turn without enabli
     trimAll: true,
   });
 
-  assert.equal(plan.status, 'unresolved');
-  assert.equal(plan.host.reason, 'codex_thread_rollback_inject_not_verified_for_throughline');
+  assert.equal(plan.status, 'verified-host-primitive');
+  assert.equal(plan.host.reason, 'codex_thread_rollback_inject_verified_but_not_integrated');
   assert.equal(plan.trim.keepRecent, 0);
   assert.equal(plan.trim.rollbackTurns, 3);
   assert.equal(plan.trim.automaticExecutionAllowed, false);

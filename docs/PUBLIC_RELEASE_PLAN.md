@@ -118,7 +118,7 @@ schema v4 で PostToolUse (`capture-tool`) は廃止、L2/L3 は Stop 内で一�
 | **npm 公開 (v0.3.24)** | 2026-05-02 v0.3.23 の補完: `.vscode/tasks.json` には現環境の絶対パスが書き込まれるため、**そもそも commit すべきではない**。`shouldRecommendGitignore` を [src/vscode-task.mjs](../src/vscode-task.mjs) に追加し、`ensureMonitorTaskFile` が created / merged / repaired を返すタイミングで「git リポジトリ内かつ `.gitignore` に `.vscode/tasks.json` 系エントリが無い」を判定。該当時に `<system-reminder>` で `.gitignore` 追加推奨を 1 度だけ stdout 通知 (`.throughline-gitignore-noted` marker で抑止)。否定パターン (`!.vscode/tasks.json`) はスキップ判定 = 推奨を出す。README Troubleshooting にも明示。配布物 (npm tarball) には絶対パスは入っていない (`files` フィールドが `.vscode/` を含まない、ソースに hard-coded path 無し) ことを再確認 |
 | **未公開: Claude-primary / Codex-sidecar groundwork** | `HandoffRecord` projection、`throughline handoff-preview`、`throughline_handoff` example、`codex-sidecar-diagnostics` / `codex-sidecar-dry-run` を追加。Claude Code hooks / slash command / transcript / baton / resume behavior は正本として維持し、Codex 対応は adapter / projection として足す |
 | **未公開: optional Codex L1 summarization** | L2→L1 要約は、`codex-sidecar` が `summarize-l1` preset で configured の場合だけ sidecar を使う。disabled / unavailable / run failure では、ユーザー許可済み互換経路として既存 Claude Haiku 要約を維持する。Claude CLI smoke / test で Claude を呼ぶ場合は Haiku を使う |
-| **未公開: `/tl-trim` dry-run** | `throughline trim --dry-run`、`--host`、`--keep-recent`、`--all`、`--memo-stdin`、`throughline doctor --trim`、Claude slash command `/tl-trim` を追加。automatic rollback / inject は未検証 host primitive のため無効。curated memory は current-work memo と active work thread framing を含み、L2 を単なる過去ログとして読ませない |
+| **未公開: `/tl-trim` dry-run** | `throughline trim --dry-run`、`--host`、`--keep-recent`、`--all`、`--memo-stdin`、`throughline doctor --trim`、Claude slash command `/tl-trim` を追加。Codex app-server の rollback / inject primitive は実測済みだが、Throughline CLI から対象 thread を安全に制御する統合は未実装のため automatic rollback / inject は無効。curated memory は current-work memo と active work thread framing を含み、L2 を単なる過去ログとして読ませない |
 | **未公開: npm docs packaging** | README から参照する `docs/` と `CHANGELOG.md` を npm `files` に追加。`docs/throughline-handoff-context.example.json` を含め、README の sidecar dry-run 例が tarball 内でも成立するようにする |
 | **グローバル E2E 検証** | 2026-04-17 別ディレクトリから `throughline doctor` 全緑を確認 |
 
@@ -131,7 +131,7 @@ schema v4 で PostToolUse (`capture-tool`) は廃止、L2/L3 は Stop 内で一�
 | **GitHub Actions 自動 publish** | `release` タグ push をトリガー（Phase 3+、Trusted Publishing 使用） |
 | **Claude Code プラグインマーケットプレース登録** | npm 公開の後継ステップ（Phase 3+） |
 | **turn-processor.test.mjs の 10 秒タイムアウト解消** | `main()` が stdin を待ち続けるためテストファイルがハングする既存の問題。実装動作は無影響、テスト個別 9/9 は pass |
-| **automatic context rollback / inject** | Claude / Codex いずれも host primitive の自動実行は未検証。現時点では `/tl-trim` dry-run と手動手順に留める |
+| **automatic context rollback / inject** | Codex host primitive は実測済み。残る本線タスクは Throughline 側の current thread identity / app-server integration harness。Claude は引き続き `/rewind conversation only` の手動 UX 扱い。現時点では `/tl-trim` dry-run と手動手順に留める |
 
 ---
 

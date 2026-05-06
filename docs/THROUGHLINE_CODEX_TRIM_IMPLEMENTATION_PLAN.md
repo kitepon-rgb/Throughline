@@ -43,7 +43,7 @@ rollback trim は最終的な理想に近いが、host primitive の実測が必
 - Claude hooks、slash command、transcript parsing、handoff baton、SessionStart resume behavior を Codex 用に置き換えない。
 - Claude-facing field / command / DB semantics を rename しない。
 - Codex 対応は adapter / projection として足す。
-- 未検証の `thread/rollback` / `thread/inject_items` 挙動を確定仕様として扱わない。
+- `thread/rollback` / `thread/inject_items` は host primitive として実測済み。ただし Throughline CLI から安全に現在 thread を特定して実行する統合が入るまで、本線 UX では自動 rollback / inject を有効化しない。
 - fallback や silent recovery で失敗を隠さない。互換モードは条件と理由を明示する。
 
 ## 運用ルール
@@ -335,17 +335,17 @@ Phase 5 implementation result (2026-05-06):
 
 Codex spike TODO:
 
-- [ ] 小さな test thread を開始する。
-- [ ] 複数 turn を作る。
-- [ ] Codex の host identity model を記録する。`thread_id`、turn index、rollout JSONL、project path の対応を確認する。
-- [ ] `thread/rollback` を partial `numTurns` で呼ぶ。
-- [ ] `thread/rollback` を full または near-full `numTurns` で呼ぶ。
-- [ ] rollback 後の `thread/read includeTurns:true` を確認する。
-- [ ] rollback 後の rollout JSONL を確認する。
-- [ ] `thread/inject_items` に最小 memory item を渡す。
-- [ ] 次 turn で injected memory が model-visible か確認する。
+- [x] 小さな test thread を開始する。
+- [ ] 複数 turn を作る。単一 turn の full rollback は検証済み。partial rollback は Throughline 統合実装時の harness で追加検証する。
+- [x] Codex の host identity model を記録する。`thread_id`、turn index、rollout JSONL、project path の対応を確認する。
+- [ ] `thread/rollback` を partial `numTurns` で呼ぶ。複数 turn harness 未作成のため未完了。
+- [x] `thread/rollback` を full または near-full `numTurns` で呼ぶ。
+- [x] rollback 後の `thread/read includeTurns:true` を確認する。
+- [x] rollback 後の rollout JSONL を確認する。
+- [x] `thread/inject_items` に最小 memory item を渡す。
+- [x] 次 turn で injected memory が model-visible か確認する。
 - [ ] `thread/resume` 後も rollback marker と injected memory が効くか確認する。
-- [ ] ローカルファイル変更が戻らないことを確認する。
+- [ ] ローカルファイル変更が戻らないことを確認する。schema 上は conversation history only と明記されるが、Throughline 統合 harness で実ファイル変更を含めて確認する。
 
 Claude spike TODO:
 
@@ -363,13 +363,18 @@ Claude spike TODO:
 Phase 6 result (2026-05-06):
 
 - `codex-sidecar` read-only `explore` smoke と `review` / `risk-check` dry-run は成功。
-- Codex `thread/rollback` / `thread/inject_items` を Throughline から安全に呼べる host primitive は未検証。Codex host の automatic rollback / inject は `unresolved`。
+- Codex CLI `0.128.0-alpha.1` の app-server schema で `thread/read`、`thread/resume`、`thread/rollback`、`thread/inject_items`、`turn/start` を確認した。
+- `stdio://` transport は newline-delimited JSON で実測通過した。`initialize` 後に `thread/read includeTurns:true` が persisted thread を読める。
+- `thread/rollback` は persisted thread を直接対象にすると `thread not found` を返す。`thread/resume` で loaded thread にしてから呼ぶ必要がある。
+- 検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` で、1 turn を `thread/rollback { numTurns: 1 }` し、`thread/read includeTurns:true` が 0 turns を返すことを確認した。
+- `thread/inject_items` に raw Responses API item `{ type: "message", role: "developer", content: [{ type: "input_text", text: "..." }] }` を渡し、次の `turn/start` で injected memory が model-visible になることを確認した。marker `TL_PHASE6_INJECT_OK` を正しく返した。
+- Codex host primitive は `verified-host-primitive`。ただし Throughline CLI から安全に「現在操作すべき Codex thread」を特定して制御する統合は未実装なので、Codex host の automatic rollback / inject はまだ有効化しない。
 - Claude `/rewind conversation only` は手動 UX として扱う。外部ツールからの自動化 surface は未確認。Claude host の automatic rollback / inject は `manual-only`。
-- このため Phase 8 は自動 rollback 実装に進まず、dry-run / 手動案内までに留める。
+- このため Phase 8 は Codex app-server integration harness を追加するまで non-dry-run を拒否し、dry-run / 手動案内までに留める。
 
 完了条件:
 
-- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。
+- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。Codex は primitive 済みだが Throughline 統合未完了、Claude は manual-only。
 
 ## Phase 7: Trim Handoff Model
 
@@ -377,7 +382,7 @@ Phase 6 result (2026-05-06):
 
 TODO:
 
-- [x] host identity model を整理する。Claude `session_id`、Codex `thread_id`、`project_path`、origin session / thread references の対応表を作る。Phase 6 で未検証の host は `unknown / unresolved` として扱い、自動 rollback 対応 host に含めない。
+- [x] host identity model を整理する。Claude `session_id`、Codex `thread_id`、`project_path`、origin session / thread references の対応表を作る。Codex は `thread_id` と rollout JSONL を app-server で扱えるが、Throughline CLI が現在 thread を誤認しない統合が入るまで自動 rollback 対応 host に含めない。
 - [x] current session / thread の captured turn count を記録または導出する方法を決める。
 - [x] rollback 可能な最大 turn 数を計算する。
 - [x] keep-recent の既定値を決める。
@@ -417,14 +422,14 @@ TODO:
 - [x] `/tl-trim --dry-run` を先に実装する。
 - [x] host が自動 rollback 非対応の場合、明示的な手動手順を返す。
 - [x] 実行前に captured turns / keep turns / injected memory summary を表示する。
-- [ ] 自動 rollback 対応 host では、実行後に resume / injected memory が有効か検証する。未対応 / unresolved host ではこの検証を要求しない。
+- [ ] 自動 rollback 対応 host では、実行後に resume / injected memory が有効か検証する。Codex は primitive 検証済みだが、Throughline 統合 harness までは未対応 host として扱う。
 - [x] `doctor` に trim 関連診断を追加する。
 
 Phase 8 partial implementation result (2026-05-06):
 
 - `throughline trim --dry-run [--host claude|codex|unknown] [--keep-recent N] [--all] [--session <id>] [--json]` を追加。
 - `throughline trim --dry-run --memo-stdin` を追加。`/tl` が解決した「L1/L2 はあるが今やっている作業として認識されない」問題を `/tl-trim` でも再発させないため、current-work memo を curated memory preview の先頭に入れる。
-- non-dry-run `throughline trim` は automatic rollback / inject 未検証のため exit 1 で明示拒否する。
+- non-dry-run `throughline trim` は automatic rollback / inject の Throughline 統合が未実装のため exit 1 で明示拒否する。Codex primitive 自体は検証済みだが、現在 thread の明示制御が入るまで実行しない。
 - Claude slash command [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) を追加し、現行 Claude が current-work memo を書いてから `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run UX にした。
 - `throughline install` / `uninstall` は `/tl-trim` も配布 / 削除する。
 - `throughline doctor --trim --host claude|codex|unknown` を追加し、default keep-recent、automatic rollback / inject 可否、manual procedure を表示する。

@@ -88,12 +88,12 @@ export function describeTrimHost(host) {
       host,
       automaticRollback: false,
       automaticInject: false,
-      status: 'unresolved',
-      reason: 'codex_thread_rollback_inject_not_verified_for_throughline',
+      status: 'verified-host-primitive',
+      reason: 'codex_thread_rollback_inject_verified_but_not_integrated',
       manualProcedure: [
         'Run this dry-run first and review the rollback / injection plan.',
-        'Do not call thread/rollback or thread/inject_items from Throughline until Phase 6 host primitive verification is complete.',
-        'Use the current Codex session directly unless an explicit, verified host boundary is available.',
+        'Codex app-server thread/rollback and thread/inject_items are verified host primitives.',
+        'Do not run automatic trim until Throughline can identify and control the intended Codex thread explicitly.',
       ],
     };
   }

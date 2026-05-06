@@ -13,6 +13,8 @@
 
 この文書は「rollback は欠けていた delete primitive かもしれない」という洞察を残すもの。実装時は、未検証の host primitive を本線仕様にせず、統合計画の Phase 6 で実測してから `/tl-trim` 系 UX に進む。
 
+2026-05-06 update: Codex app-server の `thread/rollback` / `thread/inject_items` は host primitive として実測済み。ただし Throughline CLI から安全に現在 thread を特定し、誤 thread を trim しない統合は未実装なので、non-dry-run `/tl-trim` はまだ有効化しない。
+
 ## 概要
 
 Throughline はもともと、ホスト側の制約に対する回避策として作られた。
@@ -158,6 +160,17 @@ Codex CLI / app-server documentation から確認できたもの:
 - rollback の説明では、thread history のみを変更し、ローカルファイル変更は戻さないとされている。
 
 つまり Codex の `thread/rollback` は、かなり conversation-only rollback に近い。
+
+2026-05-06 の実測:
+
+- Codex CLI `0.128.0-alpha.1` で `stdio://` app-server は newline-delimited JSON request / response で操作できた。
+- `thread/read includeTurns:true` は persisted thread を読める。
+- `thread/rollback` は loaded thread にだけ効く。persisted thread に直接呼ぶと `thread not found`。
+- `thread/resume` 後に `thread/rollback { numTurns: 1 }` を呼ぶと、1 turn の検証 thread は 0 turns になった。
+- rollback 後に `thread/inject_items` へ developer message item を入れ、次の `turn/start` で marker `TL_PHASE6_INJECT_OK` が model-visible になった。
+- rollout JSONL には injected item が developer role の response item として記録された。
+
+残る未検証は、複数 turn の partial rollback、rollback marker の resume 後挙動、ローカルファイル変更が戻らないことの実ファイル付き smoke、UI 表示差分。
 
 参考:
 
@@ -339,10 +352,10 @@ memory を保存する
 
 Codex:
 
-- `thread/rollback` は thread 内の全turn数と同じ `numTurns` を受け入れるか。
-- 受け入れない場合、最低限残さなければならない履歴は何か。
-- `thread/inject_items` は次の model-visible context に確実に入るか。
-- `thread/inject_items` が受け付ける正確な Responses API item 形式は何か。
+- 複数 turn thread で `thread/rollback` の partial `numTurns` が期待通りに効くか。
+- `thread/rollback` は thread 内の全turn数と同じ `numTurns` を受け入れるか。単一 turn の full rollback は成功済み。
+- `thread/inject_items` は次の model-visible context に確実に入るか。developer message item では成功済み。
+- `thread/inject_items` が受け付ける Responses API item 形式の許容範囲は何か。developer message item は成功済み。
 - rollback 後、UI履歴はどう見えるか。消えるのか、marker付きで残るのか。
 - rollback marker は `thread/resume` 後も期待通りに効くか。
 - full rollback が token accounting を壊したり、不要な auto-compaction を誘発しないか。
@@ -391,7 +404,7 @@ Claude:
 
 推奨する次の検証:
 
-1. 小さな Codex app-server spike を作る。
+1. 小さな Codex app-server integration harness を Throughline 側に作る。
 2. test thread を開始し、数turn実行する。
 3. turn を最小Throughline風DBまたはJSONへ捕捉する。
 4. `thread/rollback` を partial `numTurns` で呼ぶ。
@@ -408,6 +421,7 @@ Claude:
 full または near-full rollback が動く。
 ローカルファイル変更は維持される。
 injected curated memory が次の model turn から見える。
+Throughline が対象 Codex thread を明示的に識別でき、誤 thread を rollback しない。
 標準 compaction は不要。
 同じ thread / session で続行できる。
 ```
