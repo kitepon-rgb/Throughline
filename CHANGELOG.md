@@ -61,6 +61,8 @@ shipped to npm but were not individually tagged on GitHub.
   experimental guarded execution path behind
   `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1`. It sends app-server read/resume,
   rollback, then curated-memory inject, and never starts a model turn.
+- Codex app-server helpers now report spawn failures explicitly instead of
+  waiting for a request timeout.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual

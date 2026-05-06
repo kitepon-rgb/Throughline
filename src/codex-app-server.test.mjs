@@ -14,6 +14,7 @@ import {
   buildTurnStartRequest,
   encodeAppServerMessage,
   parseAppServerLine,
+  runCodexTrimPreflight,
 } from './codex-app-server.mjs';
 
 test('encodeAppServerMessage writes one newline-delimited JSON object', () => {
@@ -144,5 +145,19 @@ test('buildThreadRollbackRequest rejects numTurns below the documented minimum',
   assert.throws(
     () => buildThreadRollbackRequest({ id: 1, threadId: 'thread-1', numTurns: 0 }),
     /numTurns must be an integer >= 1/,
+  );
+});
+
+test('runCodexTrimPreflight reports app-server spawn failure explicitly', async () => {
+  await assert.rejects(
+    () =>
+      runCodexTrimPreflight({
+        threadId: 'thread-1',
+        cwd: process.cwd(),
+        rollbackTurns: 1,
+        command: `/tmp/throughline-missing-codex-app-server-${process.pid}`,
+        requestTimeoutMs: 1_000,
+      }),
+    /codex app-server failed to start|codex app-server is unavailable/,
   );
 });

@@ -401,6 +401,7 @@ function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs 
   let stdoutBuffer = '';
   let stderr = '';
   let closed = false;
+  let failure = null;
   const pending = new Map();
   const notifications = [];
 
@@ -438,13 +439,17 @@ function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs 
     stderr += chunk.toString('utf8');
   });
 
+  child.on('error', (err) => {
+    failure = err instanceof Error ? err : new Error(String(err));
+    closed = true;
+    clearTimeout(overallTimer);
+    rejectPending(`codex app-server failed to start: ${failure.message}`);
+  });
+
   child.on('exit', (code, signal) => {
     closed = true;
     clearTimeout(overallTimer);
-    for (const [id, pendingRequest] of pending) {
-      pending.delete(id);
-      pendingRequest.reject(new Error(`codex app-server exited before response ${id}: code=${code} signal=${signal}`));
-    }
+    rejectPending(`codex app-server exited before response: code=${code} signal=${signal}`);
   });
 
   return {
@@ -456,7 +461,9 @@ function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs 
       if (!isRequestId(message.id)) {
         throw new Error('app-server request message requires an id');
       }
-      child.stdin.write(encodeAppServerMessage(message));
+      if (failure) {
+        return Promise.reject(new Error(`codex app-server is unavailable: ${failure.message}`));
+      }
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           if (pending.has(message.id)) {
@@ -475,6 +482,14 @@ function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs 
             }
           },
         });
+        try {
+          child.stdin.write(encodeAppServerMessage(message));
+        } catch (err) {
+          clearTimeout(timer);
+          pending.delete(message.id);
+          const msg = err instanceof Error ? err.message : 'unknown';
+          reject(new Error(`failed to write app-server request ${message.method}: ${msg}`));
+        }
       });
     },
     notify(message) {
@@ -491,6 +506,13 @@ function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs 
       });
     },
   };
+
+  function rejectPending(reason) {
+    for (const [id, pendingRequest] of pending) {
+      pending.delete(id);
+      pendingRequest.reject(new Error(`${reason}; request=${id}`));
+    }
+  }
 }
 
 function countTurns(result) {
