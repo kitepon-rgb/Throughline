@@ -158,6 +158,67 @@ test('buildTrimPlan: current-work memo is placed in curated memory preview', () 
   assert.match(plan.memoryPreview.text, /keep implementing trim dry-run/);
 });
 
+test('buildTrimPlan: external Codex rollout source can drive trim without captured DB turns', () => {
+  const db = makeDb();
+  db.prepare(
+    `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+     VALUES ('sess-empty', '/repo', 'active', 1, 2)`,
+  ).run();
+
+  const plan = buildTrimPlan(db, {
+    sessionId: 'sess-empty',
+    host: 'codex',
+    codexThreadId: '019dfabf-thread',
+    keepRecent: 20,
+    trimSource: {
+      source: 'codex-rollout',
+      sourceReason: 'explicit_codex_thread_rollout',
+      threadId: '019dfabf-thread',
+      projectPath: '/repo',
+      capturedTurns: 22,
+      memoryPreview: {
+        text: '## Throughline Trim Memory Preview\n\n### Active Work Thread (Codex Rollout)\nactive',
+        truncated: false,
+        stats: { source: 'codex-rollout' },
+      },
+    },
+  });
+
+  assert.equal(plan.status, 'verified-host-primitive');
+  assert.equal(plan.trim.source, 'codex-rollout');
+  assert.equal(plan.trim.sourceReason, 'explicit_codex_thread_rollout');
+  assert.equal(plan.trim.capturedTurns, 22);
+  assert.equal(plan.trim.rollbackTurns, 2);
+  assert.match(plan.memoryPreview.text, /Codex Rollout/);
+});
+
+test('buildTrimPlan: external Codex rollout source can stand in when DB session is absent', () => {
+  const db = makeDb();
+
+  const plan = buildTrimPlan(db, {
+    host: 'codex',
+    codexThreadId: '019dfabf-thread',
+    keepRecent: 1,
+    trimSource: {
+      source: 'codex-rollout',
+      threadId: '019dfabf-thread',
+      projectPath: '/repo',
+      capturedTurns: 3,
+      memoryPreview: {
+        text: 'active rollout memory',
+        truncated: false,
+        stats: { source: 'codex-rollout' },
+      },
+    },
+  });
+
+  assert.equal(plan.status, 'verified-host-primitive');
+  assert.equal(plan.session.id, '019dfabf-thread');
+  assert.equal(plan.session.status, 'external');
+  assert.equal(plan.session.source, 'codex-rollout');
+  assert.equal(plan.trim.rollbackTurns, 2);
+});
+
 test('renderTrimDryRunReport: explains host boundary and curated memory', () => {
   const db = makeDb();
   seedTurns(db, { count: 2 });

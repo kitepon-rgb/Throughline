@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -101,6 +101,27 @@ async function seedDb(home, project) {
   }
 }
 
+async function seedEmptyDb(home, project) {
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    const mod = await import(`./db.mjs?trimCliEmpty=${Date.now()}-${Math.random()}`);
+    const db = mod.getDb();
+    db.prepare(
+      `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+       VALUES ('sess-empty-codex', ?, 'active', 1, 2)`,
+    ).run(project);
+    db.close();
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+  }
+}
+
 function runTrim(home, project, args = [], input = null, extraEnv = {}) {
   return spawnSync(process.execPath, [join(REPO_ROOT, 'bin/throughline.mjs'), 'trim', ...args], {
     cwd: project,
@@ -161,6 +182,48 @@ test('trim CLI carries explicit Codex thread id in dry-run JSON', async () => {
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI uses explicit Codex rollout source when DB has no captured turns', async () => {
+  const home = makeTempHome();
+  const codexHome = makeTempHome();
+  const project = makeTempProject();
+  try {
+    await seedEmptyDb(home, project);
+    writeCodexRollout(codexHome, {
+      project,
+      threadId: '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9',
+      turnCount: 22,
+    });
+
+    const result = runTrim(
+      home,
+      project,
+      [
+        '--dry-run',
+        '--host',
+        'codex',
+        '--codex-thread-id',
+        '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9',
+        '--json',
+      ],
+      null,
+      { CODEX_HOME: codexHome },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.equal(plan.session.id, 'sess-empty-codex');
+    assert.equal(plan.trim.source, 'codex-rollout');
+    assert.equal(plan.trim.capturedTurns, 22);
+    assert.equal(plan.trim.rollbackTurns, 2);
+    assert.match(plan.memoryPreview.text, /Active Work Thread \(Codex Rollout\)/);
+    assert.match(plan.memoryPreview.text, /codex user turn 22/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(codexHome, { recursive: true, force: true });
   }
 });
 
@@ -301,6 +364,56 @@ function assertInOrder(text, needles) {
     assert.notEqual(index, -1, `missing ${needle.trim()} after offset ${offset}`);
     offset = index + needle.length;
   }
+}
+
+function writeCodexRollout(codexHome, { project, threadId, turnCount }) {
+  const dir = join(codexHome, 'sessions', '2026', '05', '06');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `rollout-2026-05-06T09-40-50-${threadId}.jsonl`);
+  const rows = [
+    {
+      timestamp: '2026-05-06T00:40:50.000Z',
+      type: 'session_meta',
+      payload: {
+        id: threadId,
+        timestamp: '2026-05-06T00:40:50.000Z',
+        cwd: project,
+        source: 'vscode',
+        cli_version: '0.128.0-alpha.1',
+      },
+    },
+  ];
+
+  for (let turn = 1; turn <= turnCount; turn++) {
+    rows.push({
+      timestamp: `2026-05-06T00:41:${String(turn).padStart(2, '0')}.000Z`,
+      type: 'event_msg',
+      payload: {
+        type: 'user_message',
+        message: `codex user turn ${turn}`,
+      },
+    });
+    rows.push({
+      timestamp: `2026-05-06T00:41:${String(turn).padStart(2, '0')}.100Z`,
+      type: 'event_msg',
+      payload: { type: 'task_started' },
+    });
+    rows.push({
+      timestamp: `2026-05-06T00:41:${String(turn).padStart(2, '0')}.200Z`,
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        message: `codex assistant turn ${turn}`,
+      },
+    });
+    rows.push({
+      timestamp: `2026-05-06T00:41:${String(turn).padStart(2, '0')}.300Z`,
+      type: 'event_msg',
+      payload: { type: 'task_complete' },
+    });
+  }
+
+  writeFileSync(path, rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
 }
 
 test('trim CLI accepts current-work memo on stdin for dry-run preview', async () => {

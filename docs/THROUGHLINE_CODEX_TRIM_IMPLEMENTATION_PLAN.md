@@ -442,6 +442,8 @@ Phase 8 partial implementation result (2026-05-06):
 - `--execute` は model turn を開始しない。つまり実行直後の「注入内容が次 turn で model-visible か」は Phase 6 の実測 spike で確認済みだが、この CLI path ではユーザー実 thread を mutate する実機 smoke はまだ行っていない。
 - fake app-server テストで、env 無しでは app-server を起動せず拒否すること、preflight は rollback / inject を送らないこと、execute は `read -> resume -> rollback -> inject -> read` の順で curated memory を注入することを固定した。
 - `throughline codex-threads [--json] [--all-projects] [--limit N]` を追加した。これは `~/.codex/session_index.jsonl` と `~/.codex/sessions/**/rollout-*.jsonl` を read-only に読み、現在 project の Codex thread id 候補を表示する。候補を出すだけで、自動 trim の対象 thread として採用しない。
+- `--host codex --codex-thread-id <id>` の計画作成では、明示 thread id と現在 project に一致する rollout JSONL があれば `codex-rollout` を trim source として使う。これにより Throughline DB の `bodies` が 0 件でも、Codex 側の active turns から rollback candidate と memory preview を作れる。
+- `codex-rollout` source は `event_msg:task_started` を turn として扱い、`event_msg:thread_rolled_back` を適用して active turns を再構成する。rollback 済み tail は current memory preview に戻さない。
 - Claude slash command [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) を追加し、現行 Claude が current-work memo を書いてから `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run UX にした。
 - `throughline install` / `uninstall` は `/tl-trim` も配布 / 削除する。
 - `throughline doctor --trim --host claude|codex|unknown` を追加し、default keep-recent、automatic rollback / inject 可否、manual procedure を表示する。
@@ -462,6 +464,7 @@ Current-work framing research note (2026-05-06):
 
 - [ ] 対応 host では同一 session / thread の context trim が動く。
 - [x] Codex では guarded execute path が fake app-server 上で rollback / inject 順序を満たす。
+- [x] Codex では明示 thread id の rollout JSONL から active turns / memory preview を作り、DB 未捕捉の Codex 作業でも dry-run / preflight / guarded execute の plan source にできる。
 - [x] 非対応 host では、何が足りないかを明示して止まる。
 - [x] Claude の既存 `/tl` baton handoff は残る。
 

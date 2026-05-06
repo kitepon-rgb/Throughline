@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { listCodexThreadCandidates, readSessionIndex } from './codex-thread-index.mjs';
+import {
+  findCodexThreadCandidate,
+  listCodexThreadCandidates,
+  readSessionIndex,
+} from './codex-thread-index.mjs';
 
 test('readSessionIndex: reads JSONL rows and ignores corrupt rows', () => {
   const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
@@ -98,6 +102,42 @@ test('listCodexThreadCandidates: sorts by rollout mtime rather than stale index 
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('findCodexThreadCandidate: requires current project match for explicit thread id', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-project-'));
+  const otherProject = mkdtempSync(join(tmpdir(), 'tl-codex-other-'));
+  try {
+    writeRollout(home, {
+      day: '06',
+      started: '2026-05-06T09-41-50',
+      id: '019dfabb-1111-7111-8111-111111111111',
+      cwd: otherProject,
+    });
+
+    assert.equal(
+      findCodexThreadCandidate({
+        threadId: '019dfabb-1111-7111-8111-111111111111',
+        codexHome: home,
+        projectPath: project,
+      }),
+      null,
+    );
+
+    const candidate = findCodexThreadCandidate({
+      threadId: '019dfabb-1111-7111-8111-111111111111',
+      codexHome: home,
+      projectPath: project,
+      requireProjectMatch: false,
+    });
+    assert.equal(candidate.id, '019dfabb-1111-7111-8111-111111111111');
+    assert.equal(candidate.cwd, otherProject);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+    rmSync(otherProject, { recursive: true, force: true });
   }
 });
 
