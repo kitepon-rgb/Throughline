@@ -316,6 +316,8 @@ export async function runCodexTrimExecution({
   commandArgs = ['app-server', '--listen', 'stdio://'],
   timeoutMs = 30_000,
   requestTimeoutMs = 10_000,
+  postInjectReadAttempts = 5,
+  postInjectReadDelayMs = 100,
 } = {}) {
   assertNonEmptyString(threadId, 'runCodexTrimExecution: threadId');
   assertNonEmptyString(cwd, 'runCodexTrimExecution: cwd');
@@ -328,6 +330,8 @@ export async function runCodexTrimExecution({
   if (!Array.isArray(commandArgs)) {
     throw new Error('runCodexTrimExecution: commandArgs must be an array');
   }
+  assertPositiveInteger(postInjectReadAttempts, 'runCodexTrimExecution: postInjectReadAttempts');
+  assertNonNegativeInteger(postInjectReadDelayMs, 'runCodexTrimExecution: postInjectReadDelayMs');
 
   const client = startAppServerClient({
     command,
@@ -399,13 +403,20 @@ export async function runCodexTrimExecution({
         items: [buildDeveloperMessageItem(memoryText)],
       }),
     );
-    const afterRead = await client.request(
-      buildThreadReadRequest({
-        id: randomUUID(),
-        threadId,
-        includeTurns: true,
-      }),
-    );
+    const rollbackResultTurns = countTurns(rollback);
+    const injectResultTurns = countTurns(inject);
+    const expectedPostInjectTurns = expectedPostInjectTurnCount({
+      rollbackResultTurns,
+      injectResultTurns,
+      injectedItems: 1,
+    });
+    const postInjectRead = await waitForThreadTurnCount({
+      client,
+      threadId,
+      expectedTurns: expectedPostInjectTurns,
+      attempts: postInjectReadAttempts,
+      delayMs: postInjectReadDelayMs,
+    });
 
     return {
       status: 'executed',
@@ -416,9 +427,11 @@ export async function runCodexTrimExecution({
       readTurns,
       resumedTurns,
       rollbackRequestedTurns: rollbackTurns,
-      rollbackResultTurns: countTurns(rollback),
-      injectResultTurns: countTurns(inject),
-      afterTurns: countTurns(afterRead),
+      rollbackResultTurns,
+      injectResultTurns,
+      afterTurns: postInjectRead.turns,
+      postInjectReadAttempts: postInjectRead.attempts,
+      postInjectVisibilityCheck: postInjectRead.visibilityCheck,
       turnCountCheck,
       notifications: [...new Set(client.notifications)],
       stderr: client.stderr,
@@ -426,6 +439,68 @@ export async function runCodexTrimExecution({
   } finally {
     await client.close();
   }
+}
+
+async function waitForThreadTurnCount({ client, threadId, expectedTurns, attempts, delayMs }) {
+  let lastTurns = null;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (attempt > 1 && delayMs > 0) {
+      await sleep(delayMs);
+    }
+    const read = await client.request(
+      buildThreadReadRequest({
+        id: randomUUID(),
+        threadId,
+        includeTurns: true,
+      }),
+    );
+    lastTurns = countTurns(read);
+    if (expectedTurns === null || expectedTurns === undefined) {
+      return {
+        turns: lastTurns,
+        attempts: attempt,
+        visibilityCheck: {
+          status: 'unchecked',
+          reason: 'expected_post_inject_turn_count_unavailable',
+          expectedTurns,
+          actualTurns: lastTurns,
+        },
+      };
+    }
+    if (lastTurns === expectedTurns) {
+      return {
+        turns: lastTurns,
+        attempts: attempt,
+        visibilityCheck: {
+          status: 'match',
+          reason: 'post_inject_turn_count_visible',
+          expectedTurns,
+          actualTurns: lastTurns,
+        },
+      };
+    }
+  }
+
+  return {
+    turns: lastTurns,
+    attempts,
+    visibilityCheck: {
+      status: 'timeout',
+      reason: 'post_inject_turn_count_not_visible_after_reads',
+      expectedTurns,
+      actualTurns: lastTurns,
+    },
+  };
+}
+
+function expectedPostInjectTurnCount({ rollbackResultTurns, injectResultTurns, injectedItems }) {
+  if (Number.isInteger(rollbackResultTurns)) return rollbackResultTurns + injectedItems;
+  if (Number.isInteger(injectResultTurns)) return injectResultTurns;
+  return null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs }) {
@@ -650,6 +725,18 @@ function assertOptionalTurnCount(value, label) {
   if (value === null || value === undefined) return;
   if (!Number.isInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative integer when provided`);
+  }
+}
+
+function assertPositiveInteger(value, label) {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${label} must be an integer >= 1`);
+  }
+}
+
+function assertNonNegativeInteger(value, label) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
   }
 }
 

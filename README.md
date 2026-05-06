@@ -227,7 +227,10 @@ Throughline DB has no captured Codex turn bodies; rollback events in the rollout
 are applied before the active work memory preview is built. During Codex
 preflight / guarded execute, Throughline also compares the rollout active-turn
 count with app-server `thread/read` / `thread/resume` counts and refuses to
-mutate the thread if they differ.
+mutate the thread if they differ. After guarded execute injects memory,
+Throughline polls `thread/read` briefly and reports a
+`postInjectVisibilityCheck`, because the app-server can acknowledge
+`thread/inject_items` before the injected item appears in a follow-up read.
 
 ```bash
 throughline doctor --trim --host claude
