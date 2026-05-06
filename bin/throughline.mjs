@@ -96,6 +96,7 @@ Usage:
   throughline codex-sidecar-dry-run
                               Print normalized read-only sidecar request
   throughline trim --dry-run   Preview same-session context trim plan
+                              (Codex: accepts --codex-thread-id <id>)
   throughline doctor            Check environment
   throughline doctor --trim     Show trim host boundary diagnostics
   throughline status            Show DB statistics

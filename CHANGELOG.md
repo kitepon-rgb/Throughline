@@ -21,7 +21,7 @@ shipped to npm but were not individually tagged on GitHub.
   states keep the existing Claude Haiku route.
 - `/tl-trim` dry-run surface:
   `throughline trim --dry-run`, `--host`, `--keep-recent`, `--all`,
-  `--memo-stdin`, and `throughline doctor --trim`.
+  `--memo-stdin`, `--codex-thread-id`, and `throughline doctor --trim`.
 - Codex app-server protocol helpers for the verified trim flow: newline JSON
   framing, initialize / resume / rollback / inject / turn-start request
   builders, and parser coverage.
@@ -52,6 +52,8 @@ shipped to npm but were not individually tagged on GitHub.
   smoke runs.
 - Codex trim host status now distinguishes verified app-server rollback/inject
   primitives from the still-unimplemented Throughline automatic trim execution.
+- Trim dry-run now carries an explicit Codex thread identity separately from
+  the Claude/Throughline `session_id`, avoiding latest-rollout guessing.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual

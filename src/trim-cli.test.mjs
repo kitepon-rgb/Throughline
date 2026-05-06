@@ -77,6 +77,35 @@ test('trim CLI prints JSON dry-run plan for latest project session', async () =>
   }
 });
 
+test('trim CLI carries explicit Codex thread id in dry-run JSON', async () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    await seedDb(home, project);
+    const result = runTrim(home, project, [
+      '--dry-run',
+      '--host',
+      'codex',
+      '--codex-thread-id',
+      '019dfabf-thread',
+      '--json',
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.deepEqual(plan.hostIdentity, {
+      host: 'codex',
+      codexThreadId: '019dfabf-thread',
+      explicit: true,
+      reason: 'explicit_codex_thread_id',
+    });
+    assert.equal(plan.trim.automaticExecutionAllowed, false);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('trim CLI refuses non-dry-run execution until automatic trim integration exists', async () => {
   const home = makeTempHome();
   const project = makeTempProject();

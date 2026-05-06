@@ -217,6 +217,7 @@ export function buildTrimPlan(
     keepRecent = DEFAULT_TRIM_KEEP_RECENT,
     trimAll = false,
     inflightMemo = null,
+    codexThreadId = null,
     previewMaxChars = 1_500,
   } = {},
 ) {
@@ -267,6 +268,10 @@ export function buildTrimPlan(
       mergedInto: session.merged_into ?? null,
     },
     host: hostInfo,
+    hostIdentity: buildHostIdentity({
+      host: normalizedHost,
+      codexThreadId,
+    }),
     trim: {
       capturedTurns,
       keepRecent: effectiveKeepRecent,
@@ -297,6 +302,9 @@ export function renderTrimDryRunReport(plan) {
   lines.push(`Session: ${plan.session.id}`);
   lines.push(`Project: ${plan.session.projectPath}`);
   lines.push(`Host: ${plan.host.host}`);
+  if (plan.hostIdentity?.codexThreadId) {
+    lines.push(`Codex thread: ${plan.hostIdentity.codexThreadId}`);
+  }
   lines.push(`Captured turns: ${plan.trim.capturedTurns}`);
   lines.push(`Keep recent turns: ${plan.trim.keepRecent}`);
   lines.push(`Rollback candidate turns: ${plan.trim.rollbackTurns}`);
@@ -320,4 +328,31 @@ export function renderTrimDryRunReport(plan) {
   lines.push(plan.memoryPreview.text);
 
   return lines.join('\n');
+}
+
+function buildHostIdentity({ host, codexThreadId }) {
+  if (host !== 'codex') {
+    return {
+      host,
+      codexThreadId: null,
+      explicit: false,
+      reason: 'not_codex_host',
+    };
+  }
+
+  if (typeof codexThreadId === 'string' && codexThreadId.length > 0) {
+    return {
+      host,
+      codexThreadId,
+      explicit: true,
+      reason: 'explicit_codex_thread_id',
+    };
+  }
+
+  return {
+    host,
+    codexThreadId: null,
+    explicit: false,
+    reason: 'codex_thread_id_not_provided',
+  };
 }

@@ -26,6 +26,7 @@ function parseArgs(args) {
     keepRecent: DEFAULT_TRIM_KEEP_RECENT,
     trimAll: false,
     memoStdin: false,
+    codexThreadId: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -57,6 +58,12 @@ function parseArgs(args) {
       out.trimAll = true;
     } else if (arg === '--memo-stdin') {
       out.memoStdin = true;
+    } else if (arg === '--codex-thread-id') {
+      const value = args[++i];
+      if (!value || value.startsWith('-')) {
+        throw new Error('--codex-thread-id requires a thread id');
+      }
+      out.codexThreadId = value;
     } else if (!arg.startsWith('-') && !out.sessionId) {
       out.sessionId = arg;
     } else {
@@ -93,6 +100,7 @@ export async function run(args) {
     keepRecent: parsed.keepRecent,
     trimAll: parsed.trimAll,
     inflightMemo,
+    codexThreadId: parsed.codexThreadId,
   });
 
   if (parsed.json) {
