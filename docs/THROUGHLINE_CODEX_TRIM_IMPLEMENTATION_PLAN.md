@@ -430,6 +430,7 @@ Phase 8 partial implementation result (2026-05-06):
 - `throughline trim --dry-run [--host claude|codex|unknown] [--keep-recent N] [--all] [--session <id>] [--json]` を追加。
 - `throughline trim --dry-run --memo-stdin` を追加。`/tl` が解決した「L1/L2 はあるが今やっている作業として認識されない」問題を `/tl-trim` でも再発させないため、current-work memo を curated memory preview の先頭に入れる。
 - non-dry-run `throughline trim` は automatic rollback / inject の Throughline 統合が未実装のため exit 1 で明示拒否する。Codex primitive 自体は検証済みだが、現在 thread の明示制御が入るまで実行しない。
+- `src/codex-app-server.mjs` を追加し、newline JSON framing、initialize / read / resume / rollback / inject / turn-start request builder、server line parser をテストで固定した。これは実行統合の足場であり、まだ non-dry-run trim を有効化しない。
 - Claude slash command [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) を追加し、現行 Claude が current-work memo を書いてから `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run UX にした。
 - `throughline install` / `uninstall` は `/tl-trim` も配布 / 削除する。
 - `throughline doctor --trim --host claude|codex|unknown` を追加し、default keep-recent、automatic rollback / inject 可否、manual procedure を表示する。

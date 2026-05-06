@@ -22,6 +22,9 @@ shipped to npm but were not individually tagged on GitHub.
 - `/tl-trim` dry-run surface:
   `throughline trim --dry-run`, `--host`, `--keep-recent`, `--all`,
   `--memo-stdin`, and `throughline doctor --trim`.
+- Codex app-server protocol helpers for the verified trim flow: newline JSON
+  framing, initialize / resume / rollback / inject / turn-start request
+  builders, and parser coverage.
 
 ### Changed
 - Resume context now frames recent L2 as an active work thread with explicit
