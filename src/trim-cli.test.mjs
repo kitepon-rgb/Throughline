@@ -16,7 +16,14 @@ function makeTempProject() {
   return mkdtempSync(join(tmpdir(), 'tl-trim-project-'));
 }
 
-function makeFakeCodexAppServer(dir, { allowMutation = false } = {}) {
+function makeFakeCodexAppServer(
+  dir,
+  {
+    allowMutation = false,
+    threadId = '019dfabf-thread',
+    turnCount = 2,
+  } = {},
+) {
   const script = join(dir, 'fake-codex-app-server.mjs');
   const log = join(dir, 'fake-codex-app-server.log');
   writeFileSync(
@@ -27,8 +34,8 @@ import { createInterface } from 'node:readline';
 
 const log = ${JSON.stringify(log)};
 const allowMutation = ${JSON.stringify(allowMutation)};
-const threadId = '019dfabf-thread';
-let turns = [{ id: 'turn-1' }, { id: 'turn-2' }];
+const threadId = ${JSON.stringify(threadId)};
+let turns = Array.from({ length: ${JSON.stringify(turnCount)} }, (_, index) => ({ id: 'turn-' + (index + 1) }));
 const rl = createInterface({ input: process.stdin });
 
 function send(message) {
@@ -305,6 +312,112 @@ test('trim CLI preflight reads and resumes Codex thread without rollback or inje
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI preflight checks Codex rollout source against app-server turns', async () => {
+  const home = makeTempHome();
+  const codexHome = makeTempHome();
+  const project = makeTempProject();
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  try {
+    await seedEmptyDb(home, project);
+    writeCodexRollout(codexHome, {
+      project,
+      threadId,
+      turnCount: 22,
+    });
+    const { script } = makeFakeCodexAppServer(project, { threadId, turnCount: 22 });
+    const result = runTrim(
+      home,
+      project,
+      [
+        '--host',
+        'codex',
+        '--codex-thread-id',
+        threadId,
+        '--preflight',
+        '--codex-app-server-bin',
+        script,
+        '--json',
+      ],
+      null,
+      { CODEX_HOME: codexHome },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'preflight-ready');
+    assert.deepEqual(payload.preflight.turnCountCheck, {
+      status: 'match',
+      reason: 'rollout_and_app_server_turn_counts_match',
+      expectedTurns: 22,
+      readTurns: 22,
+      resumedTurns: 22,
+    });
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI execute refuses before rollback when rollout and app-server turn counts differ', async () => {
+  const home = makeTempHome();
+  const codexHome = makeTempHome();
+  const project = makeTempProject();
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  try {
+    await seedEmptyDb(home, project);
+    writeCodexRollout(codexHome, {
+      project,
+      threadId,
+      turnCount: 22,
+    });
+    const { script, log } = makeFakeCodexAppServer(project, {
+      allowMutation: true,
+      threadId,
+      turnCount: 21,
+    });
+    const result = runTrim(
+      home,
+      project,
+      [
+        '--host',
+        'codex',
+        '--codex-thread-id',
+        threadId,
+        '--keep-recent',
+        '20',
+        '--execute',
+        '--codex-app-server-bin',
+        script,
+        '--json',
+      ],
+      null,
+      {
+        CODEX_HOME: codexHome,
+        THROUGHLINE_EXPERIMENTAL_CODEX_TRIM: '1',
+      },
+    );
+
+    assert.equal(result.status, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'execute-refused');
+    assert.equal(payload.reason, 'codex_rollout_app_server_turn_mismatch');
+    assert.equal(payload.execution.rollbackSent, false);
+    assert.equal(payload.execution.injectSent, false);
+    assert.equal(payload.execution.turnCountCheck.status, 'mismatch');
+
+    const calledMethods = readFileSync(log, 'utf8');
+    assert.match(calledMethods, /thread\/read/);
+    assert.match(calledMethods, /thread\/resume/);
+    assert.doesNotMatch(calledMethods, /thread\/rollback/);
+    assert.doesNotMatch(calledMethods, /thread\/inject_items/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(codexHome, { recursive: true, force: true });
   }
 });
 

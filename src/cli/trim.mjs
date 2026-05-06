@@ -177,8 +177,18 @@ async function runExecute(parsed, plan) {
     cwd: process.cwd(),
     rollbackTurns: plan.trim.rollbackTurns,
     memoryText: plan.memoryPreview.text,
+    expectedTurns: expectedCodexAppServerTurns(plan),
     command,
   });
+
+  if (execution.status === 'refused') {
+    return {
+      status: 'execute-refused',
+      reason: execution.reason,
+      plan,
+      execution,
+    };
+  }
 
   return {
     status: 'executed',
@@ -200,8 +210,18 @@ async function runPreflight(parsed, plan) {
     threadId: parsed.codexThreadId,
     cwd: process.cwd(),
     rollbackTurns: plan.trim.rollbackTurns,
+    expectedTurns: expectedCodexAppServerTurns(plan),
     command,
   });
+  const turnCountStatus = preflight.turnCountCheck?.status;
+  if (turnCountStatus === 'mismatch' || turnCountStatus === 'unknown') {
+    return {
+      status: 'preflight-refused',
+      reason: preflight.turnCountCheck.reason,
+      plan,
+      preflight,
+    };
+  }
 
   return {
     status: 'preflight-ready',
@@ -251,6 +271,10 @@ function hasInjectableMemory(text) {
   return typeof text === 'string' && text.trim().length > 0 && text !== '(no captured memory available)';
 }
 
+function expectedCodexAppServerTurns(plan) {
+  return plan?.trim?.source === 'codex-rollout' ? plan.trim.capturedTurns : null;
+}
+
 function renderTrimActionReport(result) {
   const lines = [];
   lines.push(result.status === 'executed' ? '## Throughline Trim Execute' : '## Throughline Trim Preflight');
@@ -264,6 +288,10 @@ function renderTrimActionReport(result) {
     lines.push(`Codex thread: ${result.preflight.threadId}`);
     lines.push(`Read turns: ${result.preflight.readTurns ?? 'unknown'}`);
     lines.push(`Resumed turns: ${result.preflight.resumedTurns ?? 'unknown'}`);
+    if (result.preflight.turnCountCheck) {
+      lines.push(`Turn count check: ${result.preflight.turnCountCheck.status}`);
+      lines.push(`Expected turns: ${result.preflight.turnCountCheck.expectedTurns ?? 'unchecked'}`);
+    }
     lines.push(`Rollback sent: ${result.preflight.rollbackSent ? 'yes' : 'no'}`);
     lines.push(`Inject sent: ${result.preflight.injectSent ? 'yes' : 'no'}`);
     lines.push(`Rollback candidate turns: ${result.plan.trim.rollbackTurns}`);
@@ -274,6 +302,10 @@ function renderTrimActionReport(result) {
     lines.push(`Codex thread: ${result.execution.threadId}`);
     lines.push(`Read turns: ${result.execution.readTurns ?? 'unknown'}`);
     lines.push(`Resumed turns: ${result.execution.resumedTurns ?? 'unknown'}`);
+    if (result.execution.turnCountCheck) {
+      lines.push(`Turn count check: ${result.execution.turnCountCheck.status}`);
+      lines.push(`Expected turns: ${result.execution.turnCountCheck.expectedTurns ?? 'unchecked'}`);
+    }
     lines.push(`Rollback sent: ${result.execution.rollbackSent ? 'yes' : 'no'}`);
     lines.push(`Inject sent: ${result.execution.injectSent ? 'yes' : 'no'}`);
     lines.push(`Injected items: ${result.execution.injectedItems}`);
