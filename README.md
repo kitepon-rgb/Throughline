@@ -201,6 +201,7 @@ Useful inspection commands:
 
 ```bash
 throughline handoff-preview --session <id>
+throughline codex-threads --limit 5
 throughline codex-sidecar-diagnostics --project . --preset review
 throughline codex-sidecar-dry-run --project . --preset risk-check \
   --context-file docs/throughline-handoff-context.example.json
@@ -211,15 +212,22 @@ summarization. When `codex-sidecar` is configured for `summarize-l1`,
 Throughline can use it for that step; otherwise it keeps the existing Claude
 Haiku path. This is an explicit compatibility mode, not silent auto-detection.
 
-`/tl-trim` is currently **dry-run only**. It previews how many captured turns
-would be trimmed, what recent turns would remain, and what curated memory would
-need to be injected back. Automatic rollback / inject is disabled until the
-host primitives are verified.
+`/tl-trim` starts from dry-run. It previews how many captured turns would be
+trimmed, what recent turns would remain, and what curated memory would need to
+be injected back. Codex also has a guarded preflight and experimental execute
+path, but automatic rollback / inject remains disabled. Throughline never
+guesses the active Codex thread: use `throughline codex-threads` to inspect
+read-only rollout candidates, then pass the chosen id explicitly.
 
 ```bash
 throughline doctor --trim --host claude
 printf '**Next move**: continue the current implementation\n' \
   | throughline trim --dry-run --host claude --memo-stdin
+throughline codex-threads --json --limit 5
+throughline trim --dry-run --host codex --codex-thread-id <id>
+throughline trim --preflight --host codex --codex-thread-id <id>
+THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1 \
+  throughline trim --execute --host codex --codex-thread-id <id>
 ```
 
 That current-work framing matters: the original `/tl` design learned that L1/L2
@@ -374,6 +382,7 @@ entry to the `tasks` array yourself:
 | `throughline doctor --session <id-prefix>`     | Diagnose a specific session — detect state/transcript drift, idle vs. stuck |
 | `throughline doctor --trim --host claude`      | Diagnose trim host boundaries and manual procedure            |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
+| `throughline codex-threads`                    | List read-only Codex thread id candidates for the current project |
 | `throughline codex-sidecar-diagnostics`        | Check `codex-sidecar` diagnostics status for this project     |
 | `throughline codex-sidecar-dry-run`            | Print a normalized read-only sidecar request without running the app server |
 | `throughline trim --dry-run`                   | Preview `/tl-trim` context trim memory and host boundary; does not rollback automatically |
