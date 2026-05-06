@@ -32,13 +32,15 @@ export function listCodexThreadCandidates({
       return {
         id: rollout.threadId,
         threadName: indexed.thread_name ?? null,
-        updatedAt: indexed.updated_at ?? meta?.timestamp ?? rollout.mtimeIso,
+        updatedAt: rollout.mtimeIso,
+        indexedUpdatedAt: indexed.updated_at ?? null,
         rolloutStartedAt: rollout.startedAt,
         rolloutPath: rollout.path,
         cwd,
         source: meta?.source ?? null,
         cliVersion: meta?.cli_version ?? null,
         matchesProject,
+        mtimeMs: rollout.mtimeMs,
       };
     })
     .filter((candidate) => allProjects || candidate.matchesProject)
@@ -119,10 +121,8 @@ function readFirstLine(path) {
 }
 
 function compareCandidates(a, b) {
-  const aTime = Date.parse(a.updatedAt ?? a.rolloutStartedAt ?? '');
-  const bTime = Date.parse(b.updatedAt ?? b.rolloutStartedAt ?? '');
-  if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
-    return bTime - aTime;
+  if (a.mtimeMs !== b.mtimeMs) {
+    return b.mtimeMs - a.mtimeMs;
   }
   return String(b.rolloutPath).localeCompare(String(a.rolloutPath));
 }
