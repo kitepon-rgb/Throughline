@@ -57,6 +57,10 @@ shipped to npm but were not individually tagged on GitHub.
 - `throughline trim --preflight --host codex --codex-thread-id <id>` now
   performs a guarded Codex app-server initialize/read/resume check and stops
   before sending rollback or inject.
+- `throughline trim --execute --host codex --codex-thread-id <id>` now has an
+  experimental guarded execution path behind
+  `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1`. It sends app-server read/resume,
+  rollback, then curated-memory inject, and never starts a model turn.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual

@@ -424,6 +424,7 @@ TODO:
 - [x] 実行前に captured turns / keep turns / injected memory summary を表示する。
 - [x] Codex dry-run では `--codex-thread-id` を受け取り、Claude / Throughline の `session_id` と Codex `thread_id` を混同しない形で plan に残す。
 - [x] Codex non-dry-run の最初の統合として `--preflight` を追加する。これは app-server の initialize / read / resume だけを実行し、rollback / inject は送らない。
+- [x] Codex の guarded execution として `--execute` を追加する。ただし `--host codex`、明示 `--codex-thread-id`、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` を必須にし、実行後に model turn は開始しない。
 - [ ] 自動 rollback 対応 host では、実行後に resume / injected memory が有効か検証する。Codex は primitive 検証済みだが、Throughline 統合 harness までは未対応 host として扱う。
 - [x] `doctor` に trim 関連診断を追加する。
 
@@ -436,6 +437,10 @@ Phase 8 partial implementation result (2026-05-06):
 - shell 環境には現在 Codex thread id が安定して出ていないため、当面は `--codex-thread-id` の明示入力だけを信頼する。最新 rollout 推測による automatic trim は行わない。
 - `throughline trim --preflight --host codex --codex-thread-id <id> [--json]` を追加した。これは `thread/read` と `thread/resume` が対象 thread に届くことを確認し、`rollbackRequestPreview` を返すが、`thread/rollback` / `thread/inject_items` は送らない。
 - 同日、検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` に実 app-server preflight を当て、`readTurns: 1` / `resumedTurns: 1` / `rollbackSent: false` / `injectSent: false` を確認した。
+- `throughline trim --execute --host codex --codex-thread-id <id> [--json]` を追加した。これは `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` がある場合だけ、app-server の `thread/read`、`thread/resume`、`thread/rollback`、`thread/inject_items`、確認用 `thread/read` を順に送る。
+- `--execute` が注入する item は `role: "developer"` の raw Responses message item で、中身は `memoryPreview.text`。`memoryPreview.text` は Reading Contract、Active Work Thread、Continuation Instruction を含むため、L2 を単なる過去ログではなく現在タスクの作業文脈として読む前提を維持する。
+- `--execute` は model turn を開始しない。つまり実行直後の「注入内容が次 turn で model-visible か」は Phase 6 の実測 spike で確認済みだが、この CLI path ではユーザー実 thread を mutate する実機 smoke はまだ行っていない。
+- fake app-server テストで、env 無しでは app-server を起動せず拒否すること、preflight は rollback / inject を送らないこと、execute は `read -> resume -> rollback -> inject -> read` の順で curated memory を注入することを固定した。
 - Claude slash command [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) を追加し、現行 Claude が current-work memo を書いてから `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run UX にした。
 - `throughline install` / `uninstall` は `/tl-trim` も配布 / 削除する。
 - `throughline doctor --trim --host claude|codex|unknown` を追加し、default keep-recent、automatic rollback / inject 可否、manual procedure を表示する。
@@ -455,6 +460,7 @@ Current-work framing research note (2026-05-06):
 完了条件:
 
 - [ ] 対応 host では同一 session / thread の context trim が動く。
+- [x] Codex では guarded execute path が fake app-server 上で rollback / inject 順序を満たす。
 - [x] 非対応 host では、何が足りないかを明示して止まる。
 - [x] Claude の既存 `/tl` baton handoff は残る。
 

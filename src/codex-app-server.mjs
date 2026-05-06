@@ -297,6 +297,102 @@ export async function runCodexTrimPreflight({
   }
 }
 
+export async function runCodexTrimExecution({
+  threadId,
+  cwd,
+  rollbackTurns,
+  memoryText,
+  command = 'codex',
+  commandArgs = ['app-server', '--listen', 'stdio://'],
+  timeoutMs = 30_000,
+  requestTimeoutMs = 10_000,
+} = {}) {
+  assertNonEmptyString(threadId, 'runCodexTrimExecution: threadId');
+  assertNonEmptyString(cwd, 'runCodexTrimExecution: cwd');
+  assertNonEmptyString(command, 'runCodexTrimExecution: command');
+  assertNonEmptyString(memoryText, 'runCodexTrimExecution: memoryText');
+  if (!Number.isInteger(rollbackTurns) || rollbackTurns < 1) {
+    throw new Error('runCodexTrimExecution: rollbackTurns must be an integer >= 1');
+  }
+  if (!Array.isArray(commandArgs)) {
+    throw new Error('runCodexTrimExecution: commandArgs must be an array');
+  }
+
+  const client = startAppServerClient({
+    command,
+    args: commandArgs,
+    cwd,
+    timeoutMs,
+    requestTimeoutMs,
+  });
+
+  try {
+    await client.request(
+      buildInitializeRequest({
+        id: randomUUID(),
+        clientName: 'throughline-trim',
+        clientTitle: 'Throughline Trim',
+      }),
+    );
+    client.notify(buildInitializedNotification());
+
+    const beforeRead = await client.request(
+      buildThreadReadRequest({
+        id: randomUUID(),
+        threadId,
+        includeTurns: true,
+      }),
+    );
+    const resumed = await client.request(
+      buildThreadResumeRequest({
+        id: randomUUID(),
+        threadId,
+        cwd,
+        excludeTurns: false,
+      }),
+    );
+    const rollback = await client.request(
+      buildThreadRollbackRequest({
+        id: randomUUID(),
+        threadId,
+        numTurns: rollbackTurns,
+      }),
+    );
+    const inject = await client.request(
+      buildThreadInjectItemsRequest({
+        id: randomUUID(),
+        threadId,
+        items: [buildDeveloperMessageItem(memoryText)],
+      }),
+    );
+    const afterRead = await client.request(
+      buildThreadReadRequest({
+        id: randomUUID(),
+        threadId,
+        includeTurns: true,
+      }),
+    );
+
+    return {
+      status: 'executed',
+      threadId,
+      rollbackSent: true,
+      injectSent: true,
+      injectedItems: 1,
+      readTurns: countTurns(beforeRead),
+      resumedTurns: countTurns(resumed),
+      rollbackRequestedTurns: rollbackTurns,
+      rollbackResultTurns: countTurns(rollback),
+      injectResultTurns: countTurns(inject),
+      afterTurns: countTurns(afterRead),
+      notifications: [...new Set(client.notifications)],
+      stderr: client.stderr,
+    };
+  } finally {
+    await client.close();
+  }
+}
+
 function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs }) {
   const child = spawn(command, args, {
     cwd,

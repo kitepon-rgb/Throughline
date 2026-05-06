@@ -253,6 +253,10 @@ Codex で考えられる流れ:
 9. ユーザーは同じ Codex thread で続行する。
 ```
 
+現行実装では、この流れは `throughline trim --execute --host codex --codex-thread-id <id>` と
+`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` の両方がある場合だけ実行する。`--execute` は
+rollback / inject 後に model turn を開始しない。通常の automatic rollback / inject はまだ無効。
+
 重要な考え:
 
 ```text
