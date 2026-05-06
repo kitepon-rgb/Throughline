@@ -66,6 +66,9 @@ shipped to npm but were not individually tagged on GitHub.
 - `throughline codex-threads` lists read-only Codex rollout/thread candidates
   for the current project so users can pass an explicit `--codex-thread-id`
   without Throughline guessing the active thread.
+- `throughline codex-threads` now sorts candidates by rollout file mtime, not
+  stale `session_index.jsonl` timestamps, so actively written threads appear
+  before old probe threads.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -63,12 +63,51 @@ test('listCodexThreadCandidates: filters rollouts to current project and merges 
   }
 });
 
+test('listCodexThreadCandidates: sorts by rollout mtime rather than stale index updated_at', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-project-'));
+  try {
+    writeFileSync(
+      join(home, 'session_index.jsonl'),
+      [
+        '{"id":"019dfaba-f87e-7f41-a144-d5ca7c6dd7f9","thread_name":"Old index newer","updated_at":"2026-05-06T20:00:00Z"}',
+        '{"id":"019dfa40-1cc8-7d13-a110-16b09364fa6a","thread_name":"Current file older index","updated_at":"2026-05-05T20:00:00Z"}',
+        '',
+      ].join('\n'),
+    );
+    const oldPath = writeRollout(home, {
+      day: '06',
+      started: '2026-05-06T09-40-50',
+      id: '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9',
+      cwd: project,
+    });
+    const currentPath = writeRollout(home, {
+      day: '06',
+      started: '2026-05-06T07-26-38',
+      id: '019dfa40-1cc8-7d13-a110-16b09364fa6a',
+      cwd: project,
+    });
+    utimesSync(oldPath, new Date('2026-05-06T01:00:00Z'), new Date('2026-05-06T01:00:00Z'));
+    utimesSync(currentPath, new Date('2026-05-06T03:00:00Z'), new Date('2026-05-06T03:00:00Z'));
+
+    const candidates = listCodexThreadCandidates({ codexHome: home, projectPath: project });
+
+    assert.equal(candidates[0].id, '019dfa40-1cc8-7d13-a110-16b09364fa6a');
+    assert.equal(candidates[0].indexedUpdatedAt, '2026-05-05T20:00:00Z');
+    assert.equal(candidates[1].id, '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
 function writeRollout(home, { day, started, id, cwd }) {
   const dir = join(home, 'sessions', '2026', '05', day);
   mkdirSync(dir, { recursive: true });
   const fileStarted = started.replace(/:/g, '-');
+  const path = join(dir, `rollout-${fileStarted}-${id}.jsonl`);
   writeFileSync(
-    join(dir, `rollout-${fileStarted}-${id}.jsonl`),
+    path,
     JSON.stringify({
       timestamp: '2026-05-06T00:40:54.808Z',
       type: 'session_meta',
@@ -81,4 +120,5 @@ function writeRollout(home, { day, started, id, cwd }) {
       },
     }) + '\n',
   );
+  return path;
 }
