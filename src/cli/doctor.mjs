@@ -20,6 +20,7 @@ import { execSync } from 'node:child_process';
 import { getStateDir } from '../state-file.mjs';
 import { readLatestUsage } from '../transcript-usage.mjs';
 import { DEFAULT_TRIM_KEEP_RECENT, describeTrimHost } from '../trim-model.mjs';
+import { resolveCodexThreadIdentity } from '../codex-thread-identity.mjs';
 
 const GREEN = '\x1b[32m✓\x1b[0m';
 const RED = '\x1b[31m✗\x1b[0m';
@@ -276,8 +277,10 @@ function runSessionDiagnosis(prefix) {
   }
 }
 
-function runTrimDiagnosis(host) {
+function runTrimDiagnosis(host, env = process.env) {
   const info = describeTrimHost(host);
+  const codexIdentity =
+    info.host === 'codex' ? resolveCodexThreadIdentity({ codexThreadId: null }, env) : null;
   console.log(`${BOLD}[Trim]${RESET}\n`);
   console.log(`  host:                  ${info.host}`);
   console.log(`  default keep-recent:   ${DEFAULT_TRIM_KEEP_RECENT}`);
@@ -285,9 +288,19 @@ function runTrimDiagnosis(host) {
   console.log(`  automatic inject:      ${info.automaticInject ? 'yes' : 'no'}`);
   console.log(`  boundary status:       ${info.status}`);
   console.log(`  boundary reason:       ${info.reason}`);
+  if (codexIdentity) {
+    const identityText = codexIdentity.codexThreadId
+      ? `${codexIdentity.codexThreadId} (${codexIdentity.codexThreadIdSource})`
+      : 'not detected';
+    console.log(`  current Codex thread:  ${identityText}`);
+  }
   console.log('');
   console.log('  dry-run command:');
-  console.log(`    throughline trim --dry-run --host ${info.host}`);
+  if (info.host === 'codex' && !codexIdentity?.codexThreadId) {
+    console.log('    throughline trim --dry-run --host codex --codex-thread-id <id>');
+  } else {
+    console.log(`    throughline trim --dry-run --host ${info.host}`);
+  }
   console.log('');
   console.log('  manual procedure:');
   for (const step of info.manualProcedure) {
