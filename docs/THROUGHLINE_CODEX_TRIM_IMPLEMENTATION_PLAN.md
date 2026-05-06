@@ -434,7 +434,7 @@ Phase 8 partial implementation result (2026-05-06):
 - `throughline trim --dry-run --memo-stdin` を追加。`/tl` が解決した「L1/L2 はあるが今やっている作業として認識されない」問題を `/tl-trim` でも再発させないため、current-work memo を curated memory preview の先頭に入れる。
 - non-dry-run `throughline trim` は automatic rollback / inject の Throughline 統合が未実装のため exit 1 で明示拒否する。Codex primitive 自体は検証済みだが、現在 thread の明示制御が入るまで実行しない。
 - `src/codex-app-server.mjs` を追加し、newline JSON framing、initialize / read / resume / rollback / inject / turn-start request builder、server line parser をテストで固定した。これは実行統合の足場であり、まだ non-dry-run trim を有効化しない。
-- shell 環境には現在 Codex thread id が安定して出ていないため、当面は `--codex-thread-id` の明示入力だけを信頼する。最新 rollout 推測による automatic trim は行わない。
+- `--codex-thread-id` の明示入力を最優先で信頼する。明示入力が無い場合のみ、`THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` を current-thread identity signal として使う。最新 rollout 推測による automatic trim は行わない。
 - `throughline trim --preflight --host codex --codex-thread-id <id> [--json]` を追加した。これは `thread/read` と `thread/resume` が対象 thread に届くことを確認し、`rollbackRequestPreview` を返すが、`thread/rollback` / `thread/inject_items` は送らない。
 - `codex-rollout` source の場合、preflight は rollout 側 active turn count と app-server `thread/read` / `thread/resume` の turn count を突き合わせる。不一致または app-server count 不明なら `preflight-refused` として止まり、rollback / inject は送らない。
 - 同日、検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` に実 app-server preflight を当て、`readTurns: 1` / `resumedTurns: 1` / `rollbackSent: false` / `injectSent: false` を確認した。
