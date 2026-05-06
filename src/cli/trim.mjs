@@ -1,3 +1,4 @@
+import { runCodexTrimPreflight } from '../codex-app-server.mjs';
 import { getDb } from '../db.mjs';
 import {
   DEFAULT_TRIM_KEEP_RECENT,
@@ -27,6 +28,8 @@ function parseArgs(args) {
     trimAll: false,
     memoStdin: false,
     codexThreadId: null,
+    preflight: false,
+    codexAppServerBin: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -64,6 +67,14 @@ function parseArgs(args) {
         throw new Error('--codex-thread-id requires a thread id');
       }
       out.codexThreadId = value;
+    } else if (arg === '--preflight') {
+      out.preflight = true;
+    } else if (arg === '--codex-app-server-bin') {
+      const value = args[++i];
+      if (!value || value.startsWith('-')) {
+        throw new Error('--codex-app-server-bin requires a command path');
+      }
+      out.codexAppServerBin = value;
     } else if (!arg.startsWith('-') && !out.sessionId) {
       out.sessionId = arg;
     } else {
@@ -84,13 +95,6 @@ export async function run(args) {
     process.exit(1);
   }
 
-  if (!parsed.dryRun) {
-    process.stderr.write(
-      '[trim] automatic rollback/inject is not implemented yet. Re-run with --dry-run.\n',
-    );
-    process.exit(1);
-  }
-
   const inflightMemo = parsed.memoStdin ? await readStdin() : null;
   const db = getDb();
   const plan = buildTrimPlan(db, {
@@ -103,6 +107,22 @@ export async function run(args) {
     codexThreadId: parsed.codexThreadId,
   });
 
+  if (!parsed.dryRun) {
+    if (!parsed.preflight) {
+      process.stderr.write(
+        '[trim] automatic rollback/inject is not implemented yet. Re-run with --dry-run or --preflight.\n',
+      );
+      process.exit(1);
+    }
+    const result = await runPreflight(parsed, plan);
+    if (parsed.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    } else {
+      process.stdout.write(renderTrimPreflightReport(result) + '\n');
+    }
+    process.exit(result.status === 'preflight-ready' ? 0 : 1);
+  }
+
   if (parsed.json) {
     process.stdout.write(JSON.stringify(plan, null, 2) + '\n');
   } else {
@@ -110,4 +130,73 @@ export async function run(args) {
   }
 
   process.exit(plan.status === 'unavailable' ? 1 : 0);
+}
+
+async function runPreflight(parsed, plan) {
+  if (parsed.host !== 'codex') {
+    return {
+      status: 'preflight-refused',
+      reason: 'preflight_requires_codex_host',
+      plan,
+    };
+  }
+
+  if (!parsed.codexThreadId) {
+    return {
+      status: 'preflight-refused',
+      reason: 'codex_thread_id_required',
+      plan,
+    };
+  }
+
+  if (plan.status === 'unavailable') {
+    return {
+      status: 'preflight-refused',
+      reason: plan.reason,
+      plan,
+    };
+  }
+
+  if (plan.trim.rollbackTurns < 1) {
+    return {
+      status: 'preflight-noop',
+      reason: 'nothing_to_trim',
+      plan,
+    };
+  }
+
+  const command = parsed.codexAppServerBin ?? process.env.THROUGHLINE_CODEX_APP_SERVER_BIN ?? 'codex';
+  const preflight = await runCodexTrimPreflight({
+    threadId: parsed.codexThreadId,
+    cwd: process.cwd(),
+    rollbackTurns: plan.trim.rollbackTurns,
+    command,
+  });
+
+  return {
+    status: 'preflight-ready',
+    reason: 'rollback_not_sent',
+    plan,
+    preflight,
+  };
+}
+
+function renderTrimPreflightReport(result) {
+  const lines = [];
+  lines.push('## Throughline Trim Preflight');
+  lines.push('');
+  lines.push(`Status: ${result.status}`);
+  if (result.reason) lines.push(`Reason: ${result.reason}`);
+
+  if (result.preflight) {
+    lines.push('');
+    lines.push(`Codex thread: ${result.preflight.threadId}`);
+    lines.push(`Read turns: ${result.preflight.readTurns ?? 'unknown'}`);
+    lines.push(`Resumed turns: ${result.preflight.resumedTurns ?? 'unknown'}`);
+    lines.push(`Rollback sent: ${result.preflight.rollbackSent ? 'yes' : 'no'}`);
+    lines.push(`Inject sent: ${result.preflight.injectSent ? 'yes' : 'no'}`);
+    lines.push(`Rollback candidate turns: ${result.plan.trim.rollbackTurns}`);
+  }
+
+  return lines.join('\n');
 }
