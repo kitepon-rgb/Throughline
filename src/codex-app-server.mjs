@@ -1,3 +1,6 @@
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+
 export const CODEX_APP_SERVER_METHODS = Object.freeze({
   initialize: 'initialize',
   initialized: 'initialized',
@@ -219,6 +222,184 @@ export function buildDeveloperMessageItem(text) {
     role: 'developer',
     content: [{ type: 'input_text', text }],
   };
+}
+
+export async function runCodexTrimPreflight({
+  threadId,
+  cwd,
+  rollbackTurns,
+  command = 'codex',
+  commandArgs = ['app-server', '--listen', 'stdio://'],
+  timeoutMs = 30_000,
+  requestTimeoutMs = 10_000,
+} = {}) {
+  assertNonEmptyString(threadId, 'runCodexTrimPreflight: threadId');
+  assertNonEmptyString(cwd, 'runCodexTrimPreflight: cwd');
+  assertNonEmptyString(command, 'runCodexTrimPreflight: command');
+  if (!Number.isInteger(rollbackTurns) || rollbackTurns < 1) {
+    throw new Error('runCodexTrimPreflight: rollbackTurns must be an integer >= 1');
+  }
+  if (!Array.isArray(commandArgs)) {
+    throw new Error('runCodexTrimPreflight: commandArgs must be an array');
+  }
+
+  const client = startAppServerClient({
+    command,
+    args: commandArgs,
+    cwd,
+    timeoutMs,
+    requestTimeoutMs,
+  });
+
+  try {
+    await client.request(
+      buildInitializeRequest({
+        id: randomUUID(),
+        clientName: 'throughline-trim',
+        clientTitle: 'Throughline Trim',
+      }),
+    );
+    client.notify(buildInitializedNotification());
+
+    const beforeRead = await client.request(
+      buildThreadReadRequest({
+        id: randomUUID(),
+        threadId,
+        includeTurns: true,
+      }),
+    );
+    const resumed = await client.request(
+      buildThreadResumeRequest({
+        id: randomUUID(),
+        threadId,
+        cwd,
+        excludeTurns: false,
+      }),
+    );
+
+    return {
+      status: 'preflight-ready',
+      threadId,
+      rollbackSent: false,
+      injectSent: false,
+      readTurns: countTurns(beforeRead),
+      resumedTurns: countTurns(resumed),
+      rollbackRequestPreview: buildThreadRollbackRequest({
+        id: 'rollback-preview',
+        threadId,
+        numTurns: rollbackTurns,
+      }),
+      notifications: [...new Set(client.notifications)],
+      stderr: client.stderr,
+    };
+  } finally {
+    await client.close();
+  }
+}
+
+function startAppServerClient({ command, args, cwd, timeoutMs, requestTimeoutMs }) {
+  const child = spawn(command, args, {
+    cwd,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdoutBuffer = '';
+  let stderr = '';
+  let closed = false;
+  const pending = new Map();
+  const notifications = [];
+
+  const overallTimer = setTimeout(() => {
+    if (!closed) {
+      child.kill('SIGTERM');
+    }
+  }, timeoutMs);
+
+  child.stdout.on('data', (chunk) => {
+    stdoutBuffer += chunk.toString('utf8');
+    let newlineIndex;
+    while ((newlineIndex = stdoutBuffer.indexOf('\n')) >= 0) {
+      const line = stdoutBuffer.slice(0, newlineIndex);
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+      if (!line.trim()) continue;
+      let message;
+      try {
+        message = parseAppServerLine(line);
+      } catch {
+        continue;
+      }
+
+      if ((message.kind === 'response' || message.kind === 'error') && pending.has(message.id)) {
+        const pendingRequest = pending.get(message.id);
+        pending.delete(message.id);
+        pendingRequest.finish(message);
+      } else if (message.kind === 'notification') {
+        notifications.push(message.method);
+      }
+    }
+  });
+
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString('utf8');
+  });
+
+  child.on('exit', (code, signal) => {
+    closed = true;
+    clearTimeout(overallTimer);
+    for (const [id, pendingRequest] of pending) {
+      pending.delete(id);
+      pendingRequest.reject(new Error(`codex app-server exited before response ${id}: code=${code} signal=${signal}`));
+    }
+  });
+
+  return {
+    notifications,
+    get stderr() {
+      return stderr;
+    },
+    request(message) {
+      if (!isRequestId(message.id)) {
+        throw new Error('app-server request message requires an id');
+      }
+      child.stdin.write(encodeAppServerMessage(message));
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          if (pending.has(message.id)) {
+            pending.delete(message.id);
+            reject(new Error(`timeout waiting for app-server response to ${message.method}`));
+          }
+        }, requestTimeoutMs);
+        pending.set(message.id, {
+          reject,
+          finish(response) {
+            clearTimeout(timer);
+            if (response.kind === 'error') {
+              reject(new Error(`${message.method}: ${JSON.stringify(response.error)}`));
+            } else {
+              resolve(response.result);
+            }
+          },
+        });
+      });
+    },
+    notify(message) {
+      child.stdin.write(encodeAppServerMessage(message));
+    },
+    close() {
+      clearTimeout(overallTimer);
+      child.kill('SIGTERM');
+      child.stdin.destroy();
+      if (closed) return Promise.resolve();
+      return new Promise((resolve) => {
+        child.once('exit', resolve);
+        setTimeout(resolve, 1_000);
+      });
+    },
+  };
+}
+
+function countTurns(result) {
+  const thread = isRecord(result) && isRecord(result.thread) ? result.thread : result;
+  return isRecord(thread) && Array.isArray(thread.turns) ? thread.turns.length : null;
 }
 
 function compactNullish(value) {

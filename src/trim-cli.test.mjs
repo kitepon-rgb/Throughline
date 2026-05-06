@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,47 @@ function makeTempHome() {
 
 function makeTempProject() {
   return mkdtempSync(join(tmpdir(), 'tl-trim-project-'));
+}
+
+function makeFakeCodexAppServer(dir) {
+  const script = join(dir, 'fake-codex-app-server.mjs');
+  const log = join(dir, 'fake-codex-app-server.log');
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node
+import { appendFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+
+const log = ${JSON.stringify(log)};
+const threadId = '019dfabf-thread';
+const turns = [{ id: 'turn-1' }, { id: 'turn-2' }];
+const rl = createInterface({ input: process.stdin });
+
+function send(message) {
+  process.stdout.write(JSON.stringify(message) + '\\n');
+}
+
+rl.on('line', (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === 'initialized') return;
+  appendFileSync(log, msg.method + '\\n');
+  if (msg.method === 'initialize') {
+    send({ id: msg.id, result: { userAgent: 'fake-codex', codexHome: '/tmp/codex' } });
+  } else if (msg.method === 'thread/read') {
+    send({ id: msg.id, result: { thread: { id: threadId, turns } } });
+  } else if (msg.method === 'thread/resume') {
+    send({ id: msg.id, result: { thread: { id: threadId, turns } } });
+  } else if (msg.method === 'thread/rollback' || msg.method === 'thread/inject_items') {
+    appendFileSync(log, 'UNEXPECTED_MUTATION:' + msg.method + '\\n');
+    send({ id: msg.id, error: { code: -32000, message: 'mutation must not be called' } });
+  } else {
+    send({ id: msg.id, error: { code: -32601, message: 'unknown method' } });
+  }
+});
+`,
+  );
+  chmodSync(script, 0o755);
+  return { script, log };
 }
 
 async function seedDb(home, project) {
@@ -115,6 +156,44 @@ test('trim CLI refuses non-dry-run execution until automatic trim integration ex
 
     assert.equal(result.status, 1);
     assert.match(result.stderr, /automatic rollback\/inject is not implemented yet/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI preflight reads and resumes Codex thread without rollback or inject', async () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    await seedDb(home, project);
+    const { script, log } = makeFakeCodexAppServer(project);
+    const result = runTrim(home, project, [
+      '--host',
+      'codex',
+      '--codex-thread-id',
+      '019dfabf-thread',
+      '--preflight',
+      '--codex-app-server-bin',
+      script,
+      '--json',
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'preflight-ready');
+    assert.equal(payload.preflight.rollbackSent, false);
+    assert.equal(payload.preflight.injectSent, false);
+    assert.equal(payload.preflight.readTurns, 2);
+    assert.equal(payload.preflight.resumedTurns, 2);
+    assert.equal(payload.preflight.rollbackRequestPreview.method, 'thread/rollback');
+    assert.equal(payload.preflight.rollbackRequestPreview.params.numTurns, 2);
+
+    const calledMethods = readFileSync(log, 'utf8');
+    assert.match(calledMethods, /initialize/);
+    assert.match(calledMethods, /thread\/read/);
+    assert.match(calledMethods, /thread\/resume/);
+    assert.doesNotMatch(calledMethods, /UNEXPECTED_MUTATION/);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

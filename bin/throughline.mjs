@@ -97,6 +97,8 @@ Usage:
                               Print normalized read-only sidecar request
   throughline trim --dry-run   Preview same-session context trim plan
                               (Codex: accepts --codex-thread-id <id>)
+  throughline trim --preflight
+                              Codex-only app-server read/resume guard; does not rollback
   throughline doctor            Check environment
   throughline doctor --trim     Show trim host boundary diagnostics
   throughline status            Show DB statistics

@@ -54,6 +54,9 @@ shipped to npm but were not individually tagged on GitHub.
   primitives from the still-unimplemented Throughline automatic trim execution.
 - Trim dry-run now carries an explicit Codex thread identity separately from
   the Claude/Throughline `session_id`, avoiding latest-rollout guessing.
+- `throughline trim --preflight --host codex --codex-thread-id <id>` now
+  performs a guarded Codex app-server initialize/read/resume check and stops
+  before sending rollback or inject.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual
