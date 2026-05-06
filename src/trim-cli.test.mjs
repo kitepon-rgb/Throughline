@@ -16,7 +16,7 @@ function makeTempProject() {
   return mkdtempSync(join(tmpdir(), 'tl-trim-project-'));
 }
 
-function makeFakeCodexAppServer(dir) {
+function makeFakeCodexAppServer(dir, { allowMutation = false } = {}) {
   const script = join(dir, 'fake-codex-app-server.mjs');
   const log = join(dir, 'fake-codex-app-server.log');
   writeFileSync(
@@ -26,8 +26,9 @@ import { appendFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const log = ${JSON.stringify(log)};
+const allowMutation = ${JSON.stringify(allowMutation)};
 const threadId = '019dfabf-thread';
-const turns = [{ id: 'turn-1' }, { id: 'turn-2' }];
+let turns = [{ id: 'turn-1' }, { id: 'turn-2' }];
 const rl = createInterface({ input: process.stdin });
 
 function send(message) {
@@ -44,9 +45,24 @@ rl.on('line', (line) => {
     send({ id: msg.id, result: { thread: { id: threadId, turns } } });
   } else if (msg.method === 'thread/resume') {
     send({ id: msg.id, result: { thread: { id: threadId, turns } } });
-  } else if (msg.method === 'thread/rollback' || msg.method === 'thread/inject_items') {
-    appendFileSync(log, 'UNEXPECTED_MUTATION:' + msg.method + '\\n');
-    send({ id: msg.id, error: { code: -32000, message: 'mutation must not be called' } });
+  } else if (msg.method === 'thread/rollback') {
+    if (!allowMutation) {
+      appendFileSync(log, 'UNEXPECTED_MUTATION:' + msg.method + '\\n');
+      send({ id: msg.id, error: { code: -32000, message: 'mutation must not be called' } });
+      return;
+    }
+    turns = turns.slice(0, Math.max(0, turns.length - msg.params.numTurns));
+    send({ id: msg.id, result: { thread: { id: threadId, turns } } });
+  } else if (msg.method === 'thread/inject_items') {
+    if (!allowMutation) {
+      appendFileSync(log, 'UNEXPECTED_MUTATION:' + msg.method + '\\n');
+      send({ id: msg.id, error: { code: -32000, message: 'mutation must not be called' } });
+      return;
+    }
+    const injected = msg.params.items?.[0]?.content?.[0]?.text ?? '';
+    appendFileSync(log, 'INJECT_TEXT:' + injected.replace(/\\n/g, ' ') + '\\n');
+    turns = [...turns, { id: 'injected-memory' }];
+    send({ id: msg.id, result: { thread: { id: threadId, turns } } });
   } else {
     send({ id: msg.id, error: { code: -32601, message: 'unknown method' } });
   }
@@ -85,13 +101,14 @@ async function seedDb(home, project) {
   }
 }
 
-function runTrim(home, project, args = [], input = null) {
+function runTrim(home, project, args = [], input = null, extraEnv = {}) {
   return spawnSync(process.execPath, [join(REPO_ROOT, 'bin/throughline.mjs'), 'trim', ...args], {
     cwd: project,
     env: {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      ...extraEnv,
     },
     input,
     encoding: 'utf8',
@@ -162,6 +179,34 @@ test('trim CLI refuses non-dry-run execution until automatic trim integration ex
   }
 });
 
+test('trim CLI refuses guarded execute without experimental env', async () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    await seedDb(home, project);
+    const { script, log } = makeFakeCodexAppServer(project, { allowMutation: true });
+    const result = runTrim(home, project, [
+      '--host',
+      'codex',
+      '--codex-thread-id',
+      '019dfabf-thread',
+      '--execute',
+      '--codex-app-server-bin',
+      script,
+      '--json',
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'execute-refused');
+    assert.equal(payload.reason, 'experimental_env_required');
+    assert.throws(() => readFileSync(log, 'utf8'), /ENOENT/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('trim CLI preflight reads and resumes Codex thread without rollback or inject', async () => {
   const home = makeTempHome();
   const project = makeTempProject();
@@ -199,6 +244,64 @@ test('trim CLI preflight reads and resumes Codex thread without rollback or inje
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('trim CLI guarded execute rolls back then injects curated memory', async () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    await seedDb(home, project);
+    const { script, log } = makeFakeCodexAppServer(project, { allowMutation: true });
+    const result = runTrim(
+      home,
+      project,
+      [
+        '--host',
+        'codex',
+        '--codex-thread-id',
+        '019dfabf-thread',
+        '--execute',
+        '--codex-app-server-bin',
+        script,
+        '--json',
+      ],
+      null,
+      { THROUGHLINE_EXPERIMENTAL_CODEX_TRIM: '1' },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'executed');
+    assert.equal(payload.execution.rollbackSent, true);
+    assert.equal(payload.execution.injectSent, true);
+    assert.equal(payload.execution.injectedItems, 1);
+    assert.equal(payload.plan.mode, 'execute');
+
+    const calledMethods = readFileSync(log, 'utf8');
+    assertInOrder(calledMethods, [
+      'initialize\n',
+      'thread/read\n',
+      'thread/resume\n',
+      'thread/rollback\n',
+      'thread/inject_items\n',
+      'thread/read\n',
+    ]);
+    assert.match(calledMethods, /INJECT_TEXT:## Throughline Trim Memory Preview/);
+    assert.match(calledMethods, /Active Work Thread \(Recent L2\)/);
+    assert.doesNotMatch(calledMethods, /UNEXPECTED_MUTATION/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+function assertInOrder(text, needles) {
+  let offset = 0;
+  for (const needle of needles) {
+    const index = text.indexOf(needle, offset);
+    assert.notEqual(index, -1, `missing ${needle.trim()} after offset ${offset}`);
+    offset = index + needle.length;
+  }
+}
 
 test('trim CLI accepts current-work memo on stdin for dry-run preview', async () => {
   const home = makeTempHome();

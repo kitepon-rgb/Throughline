@@ -99,6 +99,8 @@ Usage:
                               (Codex: accepts --codex-thread-id <id>)
   throughline trim --preflight
                               Codex-only app-server read/resume guard; does not rollback
+  throughline trim --execute  Experimental Codex rollback/inject guard; requires
+                              THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1 and --codex-thread-id
   throughline doctor            Check environment
   throughline doctor --trim     Show trim host boundary diagnostics
   throughline status            Show DB statistics
