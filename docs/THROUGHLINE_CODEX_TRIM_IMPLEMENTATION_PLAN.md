@@ -43,14 +43,14 @@ rollback trim は最終的な理想に近いが、host primitive の実測が必
 - Claude hooks、slash command、transcript parsing、handoff baton、SessionStart resume behavior を Codex 用に置き換えない。
 - Claude-facing field / command / DB semantics を rename しない。
 - Codex 対応は adapter / projection として足す。
-- `thread/rollback` / `thread/inject_items` は host primitive として実測済み。ただし Throughline CLI から安全に現在 thread を特定して実行する統合が入るまで、本線 UX では自動 rollback / inject を有効化しない。
+- `thread/rollback` / `thread/inject_items` は host primitive として実測済み。Codex は明示 thread identity と rollout/app-server turn count guard がある場合だけ guarded execute を許可する。通常の automatic rollback / inject と Claude `/rewind` 自動化はまだ有効化しない。
 - fallback や silent recovery で失敗を隠さない。互換モードは条件と理由を明示する。
 
 ## 運用ルール
 
 - この計画書のチェックボックスは、実装 PR / 作業単位ごとに更新する。
 - Phase の完了条件は、継続運用ルールではなく、その Phase で閉じられる成果物だけにする。
-- README は Phase 9 まで更新しない。実装前の将来計画をユーザー向け仕様として見せない。
+- README には実装済み behavior だけを載せる。実装前の将来計画をユーザー向け仕様として見せない。
 
 ## Phase 0: 計画とドキュメントの整列
 
@@ -58,7 +58,7 @@ rollback trim は最終的な理想に近いが、host primitive の実測が必
 
 - [x] `AGENTS.md` を追加し、`CLAUDE.md` 正本参照と Claude 主軸を明記する。
 - [x] `CLAUDE.md` の必読ドキュメントに、この計画書と元 2 文書を位置付ける。
-- [x] README は Phase 9 まで更新しない方針を運用ルールに明記する。
+- [x] README には実装済み behavior だけを載せる方針を運用ルールに明記する。
 
 完了条件:
 
@@ -368,13 +368,13 @@ Phase 6 result (2026-05-06):
 - `thread/rollback` は persisted thread を直接対象にすると `thread not found` を返す。`thread/resume` で loaded thread にしてから呼ぶ必要がある。
 - 検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` で、1 turn を `thread/rollback { numTurns: 1 }` し、`thread/read includeTurns:true` が 0 turns を返すことを確認した。
 - `thread/inject_items` に raw Responses API item `{ type: "message", role: "developer", content: [{ type: "input_text", text: "..." }] }` を渡し、次の `turn/start` で injected memory が model-visible になることを確認した。marker `TL_PHASE6_INJECT_OK` を正しく返した。
-- Codex host primitive は `verified-host-primitive`。ただし Throughline CLI から安全に「現在操作すべき Codex thread」を特定して制御する統合は未実装なので、Codex host の automatic rollback / inject はまだ有効化しない。
+- Codex host primitive は `verified-host-primitive`。現在は明示 `--codex-thread-id` または env thread identity と rollout/app-server turn count guard がそろった場合だけ、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` 配下で guarded execute できる。通常の automatic rollback / inject はまだ有効化しない。
 - Claude `/rewind conversation only` は手動 UX として扱う。外部ツールからの自動化 surface は未確認。Claude host の automatic rollback / inject は `manual-only`。
-- このため Phase 8 は Codex app-server integration harness を追加するまで non-dry-run を拒否し、dry-run / 手動案内までに留める。
+- Phase 8 では dry-run / preflight を本線にしつつ、Codex だけ実験フラグ配下の guarded execute を追加した。Claude は manual-only のまま扱う。
 
 完了条件:
 
-- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。Codex は primitive 済みだが Throughline 統合未完了、Claude は manual-only。
+- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。Codex は guarded execute のみ実験フラグ配下で許可し、Claude は manual-only。
 
 ## Phase 7: Trim Handoff Model
 
@@ -382,7 +382,7 @@ Phase 6 result (2026-05-06):
 
 TODO:
 
-- [x] host identity model を整理する。Claude `session_id`、Codex `thread_id`、`project_path`、origin session / thread references の対応表を作る。Codex は `thread_id` と rollout JSONL を app-server で扱えるが、Throughline CLI が現在 thread を誤認しない統合が入るまで自動 rollback 対応 host に含めない。
+- [x] host identity model を整理する。Claude `session_id`、Codex `thread_id`、`project_path`、origin session / thread references の対応表を作る。Codex は `thread_id` と rollout JSONL を app-server で扱い、明示 identity と turn count guard がある場合だけ guarded execute へ進む。
 - [x] current session / thread の captured turn count を記録または導出する方法を決める。
 - [x] rollback 可能な最大 turn 数を計算する。
 - [x] keep-recent の既定値を決める。
@@ -397,7 +397,7 @@ Phase 7 result (2026-05-06):
 - `keep-recent` 既定値は既存 resume context と同じ `N_RECENT_L2 = 20`。
 - rollback candidate は `max(0, capturedTurns - keepRecent)`。`--all` は `keepRecent = 0`。
 - curated memory preview は `HandoffRecord` から作る。L1 / recent L2 / latest thinking は preview に含めるが、L3 detail は inline 展開せず `throughline detail <time>` reference として扱う。
-- trim audit log は現時点では DB に追加しない。automatic rollback が未実装のため、dry-run 出力を evidence とする。永続化が必要になったら、memory tables ではなく専用 audit table / artifact に分離する。
+- trim audit log は現時点では DB に追加しない。dry-run / preflight / guarded execute の JSON 出力を evidence とする。永続化が必要になったら、memory tables ではなく専用 audit table / artifact に分離する。
 
 完了条件:
 
@@ -425,15 +425,15 @@ TODO:
 - [x] Codex dry-run では `--codex-thread-id` を受け取り、Claude / Throughline の `session_id` と Codex `thread_id` を混同しない形で plan に残す。
 - [x] Codex non-dry-run の最初の統合として `--preflight` を追加する。これは app-server の initialize / read / resume だけを実行し、rollback / inject は送らない。
 - [x] Codex の guarded execution として `--execute` を追加する。ただし `--host codex`、明示 `--codex-thread-id`、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` を必須にし、実行後に model turn は開始しない。
-- [ ] 自動 rollback 対応 host では、実行後に resume / injected memory が有効か検証する。Codex は primitive 検証済みだが、Throughline 統合 harness までは未対応 host として扱う。
+- [x] 自動 rollback 対応 host では、実行後に resume / injected memory が有効か検証する。Codex は Phase 6 spike と 2026-05-06 guarded execute smoke で、resume 後 rollback/inject と post-inject visibility を確認した。
 - [x] `doctor` に trim 関連診断を追加する。
 
 Phase 8 partial implementation result (2026-05-06):
 
 - `throughline trim --dry-run [--host claude|codex|unknown] [--keep-recent N] [--all] [--session <id>] [--codex-thread-id <id>] [--json]` を追加。
 - `throughline trim --dry-run --memo-stdin` を追加。`/tl` が解決した「L1/L2 はあるが今やっている作業として認識されない」問題を `/tl-trim` でも再発させないため、current-work memo を curated memory preview の先頭に入れる。
-- non-dry-run `throughline trim` は automatic rollback / inject の Throughline 統合が未実装のため exit 1 で明示拒否する。Codex primitive 自体は検証済みだが、現在 thread の明示制御が入るまで実行しない。
-- `src/codex-app-server.mjs` を追加し、newline JSON framing、initialize / read / resume / rollback / inject / turn-start request builder、server line parser をテストで固定した。これは実行統合の足場であり、まだ non-dry-run trim を有効化しない。
+- non-dry-run `throughline trim` は Claude / unknown host では automatic rollback / inject 未対応として exit 1 で明示拒否する。Codex host では `--execute`、明示または env の thread identity、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` がそろう場合だけ guarded execute へ進む。
+- `src/codex-app-server.mjs` を追加し、newline JSON framing、initialize / read / resume / rollback / inject / turn-start request builder、server line parser をテストで固定した。Codex guarded execute はこの helper を通り、model turn は開始しない。
 - `--codex-thread-id` の明示入力を最優先で信頼する。明示入力が無い場合のみ、`THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` を current-thread identity signal として使う。最新 rollout 推測による automatic trim は行わない。
 - `throughline trim --preflight --host codex --codex-thread-id <id> [--json]` を追加した。これは `thread/read` と `thread/resume` が対象 thread に届くことを確認し、`rollbackRequestPreview` を返すが、`thread/rollback` / `thread/inject_items` は送らない。
 - `codex-rollout` source の場合、preflight は rollout 側 active turn count と app-server `thread/read` / `thread/resume` の turn count を突き合わせる。不一致または app-server count 不明なら `preflight-refused` として止まり、rollback / inject は送らない。
