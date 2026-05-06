@@ -112,8 +112,35 @@ test('buildTrimPlan: --all plans to roll back every captured turn without enabli
 
   assert.equal(plan.status, 'verified-host-primitive');
   assert.equal(plan.host.reason, 'codex_thread_rollback_inject_verified_but_not_integrated');
+  assert.deepEqual(plan.hostIdentity, {
+    host: 'codex',
+    codexThreadId: null,
+    explicit: false,
+    reason: 'codex_thread_id_not_provided',
+  });
   assert.equal(plan.trim.keepRecent, 0);
   assert.equal(plan.trim.rollbackTurns, 3);
+  assert.equal(plan.trim.automaticExecutionAllowed, false);
+});
+
+test('buildTrimPlan: explicit Codex thread id is carried separately from Claude session id', () => {
+  const db = makeDb();
+  seedTurns(db, { count: 3 });
+
+  const plan = buildTrimPlan(db, {
+    sessionId: 'sess-trim',
+    host: 'codex',
+    codexThreadId: '019dfabf-thread',
+    trimAll: true,
+  });
+
+  assert.deepEqual(plan.hostIdentity, {
+    host: 'codex',
+    codexThreadId: '019dfabf-thread',
+    explicit: true,
+    reason: 'explicit_codex_thread_id',
+  });
+  assert.equal(plan.session.id, 'sess-trim');
   assert.equal(plan.trim.automaticExecutionAllowed, false);
 });
 
