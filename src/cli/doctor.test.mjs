@@ -6,7 +6,8 @@ import { join } from 'node:path';
 
 import { _internal } from './doctor.mjs';
 
-const { parseArgs, formatAgo, formatBytes, findLatestJsonlInSameDir, isPidAlive } = _internal;
+const { parseArgs, formatAgo, formatBytes, findLatestJsonlInSameDir, isPidAlive, runTrimDiagnosis } =
+  _internal;
 
 // ─── parseArgs ──────────────────────────────────────────────────────
 
@@ -42,11 +43,48 @@ test('parseArgs: --host は known host のみ', () => {
   assert.throws(() => parseArgs(['--trim', '--host', 'robot']), /claude, codex, or unknown/);
 });
 
+test('runTrimDiagnosis: codex reports missing current thread identity', () => {
+  const output = captureStdout(() => runTrimDiagnosis('codex', {}));
+
+  assert.match(output, /current Codex thread:\s+not detected/);
+  assert.match(output, /throughline trim --dry-run --host codex --codex-thread-id <id>/);
+});
+
+test('runTrimDiagnosis: codex reports env current thread identity', () => {
+  const output = captureStdout(() =>
+    runTrimDiagnosis('codex', {
+      THROUGHLINE_CODEX_THREAD_ID: '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9',
+    }),
+  );
+
+  assert.match(
+    output,
+    /current Codex thread:\s+019dfaba-f87e-7f41-a144-d5ca7c6dd7f9 \(env:THROUGHLINE_CODEX_THREAD_ID\)/,
+  );
+  assert.match(output, /throughline trim --dry-run --host codex/);
+  assert.doesNotMatch(output, /--codex-thread-id <id>/);
+});
+
 // ─── formatAgo ──────────────────────────────────────────────────────
 
 test('formatAgo: 60 秒未満は秒表示', () => {
   assert.equal(formatAgo(30_000), '30s ago');
 });
+
+function captureStdout(fn) {
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  let output = '';
+  process.stdout.write = (chunk) => {
+    output += String(chunk);
+    return true;
+  };
+  try {
+    fn();
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  return output;
+}
 
 test('formatAgo: 60 分未満は分表示', () => {
   assert.equal(formatAgo(5 * 60_000), '5m ago');

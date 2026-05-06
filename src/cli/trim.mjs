@@ -1,5 +1,6 @@
 import { runCodexTrimExecution, runCodexTrimPreflight } from '../codex-app-server.mjs';
 import { buildCodexRolloutTrimSource } from '../codex-rollout-memory.mjs';
+import { resolveCodexThreadIdentity } from '../codex-thread-identity.mjs';
 import { getDb } from '../db.mjs';
 import {
   DEFAULT_TRIM_KEEP_RECENT,
@@ -283,30 +284,6 @@ function hasInjectableMemory(text) {
 
 function expectedCodexAppServerTurns(plan) {
   return plan?.trim?.source === 'codex-rollout' ? plan.trim.capturedTurns : null;
-}
-
-export function resolveCodexThreadIdentity(parsed, env = process.env) {
-  if (parsed.codexThreadId) {
-    return {
-      codexThreadId: parsed.codexThreadId,
-      codexThreadIdSource: 'arg:--codex-thread-id',
-    };
-  }
-
-  for (const name of ['THROUGHLINE_CODEX_THREAD_ID', 'CODEX_THREAD_ID']) {
-    const value = typeof env[name] === 'string' ? env[name].trim() : '';
-    if (value) {
-      return {
-        codexThreadId: value,
-        codexThreadIdSource: `env:${name}`,
-      };
-    }
-  }
-
-  return {
-    codexThreadId: null,
-    codexThreadIdSource: null,
-  };
 }
 
 function renderTrimActionReport(result) {

@@ -61,6 +61,8 @@ shipped to npm but were not individually tagged on GitHub.
   a current-thread identity signal when `--codex-thread-id` is omitted; the CLI
   flag remains authoritative and Throughline still does not guess from the
   latest rollout.
+- `throughline doctor --trim --host codex` now reports whether a current Codex
+  thread id is available from env and adjusts its dry-run example accordingly.
 - `throughline trim --preflight --host codex --codex-thread-id <id>` now
   performs a guarded Codex app-server initialize/read/resume check and stops
   before sending rollback or inject. When the plan source is `codex-rollout`,

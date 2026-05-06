@@ -448,7 +448,7 @@ Phase 8 partial implementation result (2026-05-06):
 - `codex-rollout` source は `event_msg:task_started` を turn として扱い、`event_msg:thread_rolled_back` を適用して active turns を再構成する。rollback 済み tail は current memory preview に戻さない。
 - Claude slash command [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) を追加し、現行 Claude が current-work memo を書いてから `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run UX にした。
 - `throughline install` / `uninstall` は `/tl-trim` も配布 / 削除する。
-- `throughline doctor --trim --host claude|codex|unknown` を追加し、default keep-recent、automatic rollback / inject 可否、manual procedure を表示する。
+- `throughline doctor --trim --host claude|codex|unknown` を追加し、default keep-recent、automatic rollback / inject 可否、manual procedure を表示する。Codex host では `THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` の検出結果も表示する。
 - `resume-context` の L2 section を「直近のターン履歴」から「現在進行中の作業履歴 (active work thread)」へ寄せ、読み方の契約を追加した。L2 全体を現在真実とみなすのではなく、古い順の active context として読み、後続行が前の仮説を上書きし得ることを明示する。
 
 Current-work framing research note (2026-05-06):

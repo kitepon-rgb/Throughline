@@ -231,6 +231,7 @@ mutate the thread if they differ.
 
 ```bash
 throughline doctor --trim --host claude
+throughline doctor --trim --host codex
 printf '**Next move**: continue the current implementation\n' \
   | throughline trim --dry-run --host claude --memo-stdin
 throughline codex-threads --json --limit 5
