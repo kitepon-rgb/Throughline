@@ -28,9 +28,6 @@
 // 大量の node プロセスが生まれ API 500 を引き起こす。
 // haiku-summarizer が spawn 時に env.THROUGHLINE_IN_HAIKU_SUBPROCESS=1 を設定するので
 // ここで即検出して exit する。env は child_process.spawn で継承される。
-if (process.env.THROUGHLINE_IN_HAIKU_SUBPROCESS === '1') {
-  process.exit(0);
-}
 
 import { getDb } from './db.mjs';
 import {
@@ -44,6 +41,7 @@ import { writeSessionState } from './state-file.mjs';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
 import { ensureMonitorTaskFile } from './vscode-task.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
+import { pathToFileURL } from 'node:url';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
@@ -106,7 +104,11 @@ function buildL2ForSummary(userTurn, assistantTurn) {
   return parts.join('\n\n');
 }
 
-async function main() {
+export async function run() {
+  if (process.env.THROUGHLINE_IN_HAIKU_SUBPROCESS === '1') {
+    process.exit(0);
+  }
+
   let raw = '';
   await new Promise((resolve) => {
     process.stdin.setEncoding('utf8');
@@ -217,7 +219,7 @@ async function main() {
         userRow ? { content: userRow.text } : null,
         asstRow ? { content: asstRow.text } : null,
       );
-      const { summary } = summarizeToL1(l2ForSummary);
+      const { summary } = summarizeToL1(l2ForSummary, { projectPath: cwd ?? process.cwd() });
 
       db.prepare(
         `INSERT OR IGNORE INTO skeletons
@@ -297,8 +299,10 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`[turn-processor] error: ${msg}\n`);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  run().catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[turn-processor] error: ${msg}\n`);
+    process.exit(1);
+  });
+}

@@ -116,6 +116,10 @@ schema v4 で PostToolUse (`capture-tool`) は廃止、L2/L3 は Stop 内で一�
 | **npm 公開 (v0.3.22)** | 2026-04-19 Stop hook を `"async": true` で登録。`throughline process-turn`（内部で Haiku subprocess 起動）がターン完了 → ユーザー表示をブロックしていた症状を解消。L1 要約は次 SessionStart 注入用なので今ターンをブロックする理由が無い。既存ユーザーは `throughline uninstall && throughline install` で再登録が必要（dedup が command 一致で skip するため async フラグ昇格は起きない）。Claude Code 公式 hooks schema の正式フィールドであることを docs で確認済み |
 | **npm 公開 (v0.3.23)** | 2026-05-02 クロス環境ユーザビリティの 2 件: (1) `.vscode/tasks.json` の **絶対パス自動修復** — Windows ↔ WSL2 / Linux ↔ macOS 間でリポジトリを共有したとき、別環境の絶対パスが焼き込まれた既存タスクを検出して `command` / `args` だけを差し替え、`label` / `presentation` 等のユーザーカスタマイズは保持。`isMonitorTaskBroken` (絶対パス + 非存在で判定) と `findMonitorTaskIndex` を [src/vscode-task.mjs](../src/vscode-task.mjs) に新設。`action: 'repaired'` を追加して Reload Window 通知を 1 回出す。(2) `throughline install` 完了時に **PATH 解決チェック** — `resolveThroughlineOnPath` が PATH を走査して `throughline` が見つからない場合、stderr に修復手順 (npm prefix → `~/.bashrc` 編集 → `doctor` 確認) を出力。`~/.npm-global/bin` を `.profile` だけに書いて `.bashrc` に書き忘れる sudoless prefix 派の silent fail を防ぐ。あわせて [README.md](../README.md) Troubleshooting に WSL2 ↔ Windows 交差 / OS 別 DB / tasks.json 自動修復の各節を追加 |
 | **npm 公開 (v0.3.24)** | 2026-05-02 v0.3.23 の補完: `.vscode/tasks.json` には現環境の絶対パスが書き込まれるため、**そもそも commit すべきではない**。`shouldRecommendGitignore` を [src/vscode-task.mjs](../src/vscode-task.mjs) に追加し、`ensureMonitorTaskFile` が created / merged / repaired を返すタイミングで「git リポジトリ内かつ `.gitignore` に `.vscode/tasks.json` 系エントリが無い」を判定。該当時に `<system-reminder>` で `.gitignore` 追加推奨を 1 度だけ stdout 通知 (`.throughline-gitignore-noted` marker で抑止)。否定パターン (`!.vscode/tasks.json`) はスキップ判定 = 推奨を出す。README Troubleshooting にも明示。配布物 (npm tarball) には絶対パスは入っていない (`files` フィールドが `.vscode/` を含まない、ソースに hard-coded path 無し) ことを再確認 |
+| **未公開: Claude-primary / Codex-sidecar groundwork** | `HandoffRecord` projection、`throughline handoff-preview`、`throughline_handoff` example、`codex-sidecar-diagnostics` / `codex-sidecar-dry-run` を追加。Claude Code hooks / slash command / transcript / baton / resume behavior は正本として維持し、Codex 対応は adapter / projection として足す |
+| **未公開: optional Codex L1 summarization** | L2→L1 要約は、`codex-sidecar` が `summarize-l1` preset で configured の場合だけ sidecar を使う。disabled / unavailable / run failure では、ユーザー許可済み互換経路として既存 Claude Haiku 要約を維持する。Claude CLI smoke / test で Claude を呼ぶ場合は Haiku を使う |
+| **未公開: `/tl-trim` dry-run** | `throughline trim --dry-run`、`--host`、`--keep-recent`、`--all`、`--memo-stdin`、`throughline doctor --trim`、Claude slash command `/tl-trim` を追加。automatic rollback / inject は未検証 host primitive のため無効。curated memory は current-work memo と active work thread framing を含み、L2 を単なる過去ログとして読ませない |
+| **未公開: npm docs packaging** | README から参照する `docs/` と `CHANGELOG.md` を npm `files` に追加。`docs/throughline-handoff-context.example.json` を含め、README の sidecar dry-run 例が tarball 内でも成立するようにする |
 | **グローバル E2E 検証** | 2026-04-17 別ディレクトリから `throughline doctor` 全緑を確認 |
 
 ### ❌ 未完タスク
@@ -127,6 +131,7 @@ schema v4 で PostToolUse (`capture-tool`) は廃止、L2/L3 は Stop 内で一�
 | **GitHub Actions 自動 publish** | `release` タグ push をトリガー（Phase 3+、Trusted Publishing 使用） |
 | **Claude Code プラグインマーケットプレース登録** | npm 公開の後継ステップ（Phase 3+） |
 | **turn-processor.test.mjs の 10 秒タイムアウト解消** | `main()` が stdin を待ち続けるためテストファイルがハングする既存の問題。実装動作は無影響、テスト個別 9/9 は pass |
+| **automatic context rollback / inject** | Claude / Codex いずれも host primitive の自動実行は未検証。現時点では `/tl-trim` dry-run と手動手順に留める |
 
 ---
 

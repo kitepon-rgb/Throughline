@@ -18,6 +18,7 @@ import { ensureMonitorTaskFile } from './vscode-task.mjs';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 function logBaton(entry) {
   const path = join(homedir(), '.throughline', 'logs', 'baton-write.log');
@@ -42,7 +43,7 @@ export function isBatonCommand(prompt) {
   return false;
 }
 
-async function main() {
+export async function run() {
   let raw = '';
   await new Promise((resolve) => {
     process.stdin.setEncoding('utf8');
@@ -91,8 +92,10 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
-  const msg = err instanceof Error ? err.message : 'unknown';
-  process.stderr.write(`[prompt-submit] error: ${msg}\n`);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  run().catch((err) => {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[prompt-submit] error: ${msg}\n`);
+    process.exit(1);
+  });
+}

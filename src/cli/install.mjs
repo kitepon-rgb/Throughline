@@ -17,7 +17,7 @@ import { homedir } from 'node:os';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SLASH_COMMANDS_SRC = join(PACKAGE_ROOT, '.claude', 'commands');
-const SC_SLASH_COMMAND_FILES = ['tl.md', 'sc-detail.md'];
+const SC_SLASH_COMMAND_FILES = ['tl.md', 'sc-detail.md', 'tl-trim.md'];
 
 // Throughline が管理する hook コマンド一覧
 // schema v4 以降: PostToolUse (capture-tool) は廃止。Stop 内で L2/L3 を一括処理する。

@@ -11,11 +11,15 @@ const { parseArgs, formatAgo, formatBytes, findLatestJsonlInSameDir, isPidAlive 
 // ─── parseArgs ──────────────────────────────────────────────────────
 
 test('parseArgs: 引数なしは session null', () => {
-  assert.deepEqual(parseArgs([]), { session: null });
+  assert.deepEqual(parseArgs([]), { session: null, trim: false, host: 'unknown' });
 });
 
 test('parseArgs: --session <prefix>', () => {
-  assert.deepEqual(parseArgs(['--session', 'abc']), { session: 'abc' });
+  assert.deepEqual(parseArgs(['--session', 'abc']), {
+    session: 'abc',
+    trim: false,
+    host: 'unknown',
+  });
 });
 
 test('parseArgs: --session の値欠落は throw', () => {
@@ -24,6 +28,18 @@ test('parseArgs: --session の値欠落は throw', () => {
 
 test('parseArgs: --session の次が別フラグなら throw', () => {
   assert.throws(() => parseArgs(['--session', '--other']), /session id prefix/);
+});
+
+test('parseArgs: --trim --host <host>', () => {
+  assert.deepEqual(parseArgs(['--trim', '--host', 'claude']), {
+    session: null,
+    trim: true,
+    host: 'claude',
+  });
+});
+
+test('parseArgs: --host は known host のみ', () => {
+  assert.throws(() => parseArgs(['--trim', '--host', 'robot']), /claude, codex, or unknown/);
 });
 
 // ─── formatAgo ──────────────────────────────────────────────────────

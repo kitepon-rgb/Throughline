@@ -28,6 +28,9 @@
 | [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **L1/L2/L3 記憶レイヤーの設計仕様**。ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表。schema v4 基盤 + v5 L3 分類拡張まで。以後の v6/v7 追加は本文書とは独立 |
 | [docs/INHERITANCE_ON_CLEAR_ONLY.md](docs/INHERITANCE_ON_CLEAR_ONLY.md) | `/tl` バトン引き継ぎ方式の設計判断記録（schema v6/v7）。ヒューリスティック方式を却下した理由と、現行の明示指名方式の経緯 |
 | [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、バージョン別実装ステータス、E2E 検証手順、未完タスク） |
+| [docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | **Codex 両対応 + rollback trim の統合実装計画 / TODO**。Claude contract 固定を先行し、Codex adapter と rollback trim spike を段階実装するための進捗管理表 |
+| [docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md](docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md) | Claude / Codex 両対応の architecture brief。Claude path を置き換えず、Codex support を adapter / projection として追加する方針 |
+| [docs/throughline-rollback-context-trim-insight.md](docs/throughline-rollback-context-trim-insight.md) | rollback を model-visible context の delete primitive と見る設計メモ。実装は統合計画の spike 結果に従う |
 | [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v7、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
 | [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録、npm publish 前のアクションメモ等）。歴史記述用 |
 
@@ -44,6 +47,8 @@
 | [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v7 migration。`node:sqlite` 組み込み、依存ゼロ |
 | [src/transcript-reader.mjs](src/transcript-reader.mjs) | transcript JSONL パーサー |
 | [src/transcript-usage.mjs](src/transcript-usage.mjs) | 最新 assistant の `message.usage` から実測トークン数を抽出、1M context 検出 |
+| [src/codex-handoff.mjs](src/codex-handoff.mjs) | `HandoffRecord` から Codex-facing `throughline_handoff` v1 JSON block を生成。`source='throughline'` / `trust='local'` / `kind='throughline_handoff'` を固定 |
+| [src/codex-sidecar.mjs](src/codex-sidecar.mjs) | `codex-sidecar diagnostics` / dry-run wrapper。`disabled` / `unavailable` / `configured` / `operational` / `work-capable` の status enum を持つ。diagnostics wrapper は exit 0 の時だけ `configured` とする |
 | [src/token-estimator.mjs](src/token-estimator.mjs) | 補助的なトークン数推定 (length/4) |
 
 ### Hook 実装（CLI 経由で呼ばれる）
@@ -54,15 +59,19 @@
 | [src/turn-processor.mjs](src/turn-processor.mjs) | `throughline process-turn` | Stop |
 | [src/prompt-submit.mjs](src/prompt-submit.mjs) | `throughline prompt-submit` | UserPromptSubmit |
 
+上記 hook module は `run()` を export し、直接実行時または [bin/throughline.mjs](bin/throughline.mjs) から呼ばれた時だけ hook body を実行する。import だけでは stdin 待ち、DB 作成、state 書き込みをしない。
+
 ### 記憶張り替え・注入共通
 
 | ファイル | 役割 |
 |---|---|
 | [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo`（`/tl` で書き、`save-inflight` で memo 付与、SessionStart で消費） |
+| [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と今後の Codex projection が共有する agent-neutral 中間表現。DB 永続化はせず、schema v7 の既存テーブルから組み立てる |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
-| [src/resume-context.mjs](src/resume-context.mjs) | 「中断地点からの再開」注入テキスト組み立て（in-flight メモ → 最終ターン thinking → L1 → L2 の順） |
+| [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画（in-flight メモ → 最終ターン thinking → L1 → L2 の順）。L2 は active work thread として読み方を明示し、冒頭と末尾の両方に current-work instruction を置く |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`)。`usage` フィールド (tokens/model/contextWindowSize) を Stop 完了時に固定保存 — monitor が JSONL を再スキャンせずに済むようにする。旧フォーマット (usage 無し) も読める |
-| [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | `claude -p --model claude-haiku-4-5-*` subprocess 呼び出し（再帰ガード 2 重） |
+| [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | L2 → L1 要約。`codex-sidecar` configured なら `summarize-l1` preset を使い、disabled / unavailable / run failure なら現行 `claude -p --model claude-haiku-4-5-*` 経路を維持する（再帰ガード 2 重） |
+| [src/trim-model.mjs](src/trim-model.mjs) | `throughline trim --dry-run` の plan builder。captured turns / keep-recent / rollback candidate / host boundary / curated memory preview を計算する。`--memo-stdin` の current-work memo を先頭に含められる。automatic rollback は未実装のため許可しない |
 | [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を自動プロビジョニング（token-monitor の folderOpen 自動起動）。`ensureMonitorTaskFile` は **SessionStart / Stop / UserPromptSubmit の 3 hook すべてから呼ばれる**（v0.3.18 以降）。冪等性ガード付きなので重複呼び出し安全。1 つの hook が発火しない環境でも残り 2 つのどれかが発火すれば tasks.json が生える。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内。**v0.3.23 以降**: `findMonitorTaskIndex` + `isMonitorTaskBroken` で「既存タスクの絶対パスが現環境に存在しない」を検知して `command` / `args` だけを差し替え修復する (`action: 'repaired'`)。クロス環境 (Windows ↔ WSL2 / Linux ↔ macOS) で commit された tasks.json が壊れる問題を解消。`label` / `presentation` 等のユーザーカスタマイズは保持する。**v0.3.24 以降**: `shouldRecommendGitignore` で「git リポジトリ内かつ `.gitignore` に `.vscode/tasks.json` 系エントリが無い」を判定し、created/merged/repaired 時に 1 度だけ stdout に `<system-reminder>` で除外推奨を出す（`.throughline-gitignore-noted` marker で再発抑止）|
 | [src/terminal-size.mjs](src/terminal-size.mjs) | OSC 18t (`\x1b[18t`) で端末に実幅を問い合わせるユーティリティ。Windows ConPTY + VSCode task terminal では `process.stdout.columns` が凍結するので、stdin を raw mode で listen して `\x1b[8;rows;cols t` 応答を parse する。Ctrl+C 検知 (0x03) と stop() での raw mode 解除も担当 |
 
@@ -72,9 +81,13 @@
 |---|---|
 | [bin/throughline.mjs](bin/throughline.mjs) | ディスパッチャ |
 | [src/cli/install.mjs](src/cli/install.mjs) | `install` / `uninstall`（デフォルト global、`--project` でローカル）。**v0.3.23 以降**: `resolveThroughlineOnPath` で install 完了時に PATH 上の `throughline` 解決を確認し、見つからなければ stderr に修復手順 (npm prefix → `~/.bashrc` 編集 → `doctor` 確認) を出す。`~/.npm-global/bin` を `.profile` だけに書いて bashrc に書き忘れる sudoless prefix 派の silent fail を防ぐ |
-| [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断（「モニターが止まって見える」時の切り分け用） |
+| [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断。`doctor --trim --host claude|codex|unknown` で trim host boundary を診断 |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/save-inflight.mjs](src/cli/save-inflight.mjs) | `save-inflight` — stdin の Markdown を現行バトンの memo_text に書き込む (`/tl` 直後に Claude 自身が呼ぶ) |
+| [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
+| [src/cli/codex-sidecar-diagnostics.mjs](src/cli/codex-sidecar-diagnostics.mjs) | `codex-sidecar-diagnostics` — `codex-sidecar diagnostics --project <repo> --preset <preset>` を実行し、JSON status を返す。failure は explicit `unavailable` |
+| [src/cli/codex-sidecar-dry-run.mjs](src/cli/codex-sidecar-dry-run.mjs) | `codex-sidecar-dry-run` — `review` / `risk-check` などの sidecar request を Codex App Server へ送らず正規化 JSON として確認する |
+| [src/cli/trim.mjs](src/cli/trim.mjs) | `trim --dry-run` — `/tl-trim` 用 dry-run surface。`--memo-stdin` で「今やっている作業」の memo を preview に入れる。non-dry-run は host rollback / inject 未検証のため明示拒否する |
 | [src/token-monitor.mjs](src/token-monitor.mjs) | `monitor` — マルチセッション対応トークンモニター。`--diag` で TTY/columns/env を出力（描画不具合の切り分け用） |
 | [src/sc-detail.mjs](src/sc-detail.mjs) | `/sc-detail <時刻>` スラッシュコマンド（[.claude/commands/sc-detail.md](.claude/commands/sc-detail.md) 経由） |
 
@@ -83,6 +96,7 @@
 | ファイル | 用途 |
 |---|---|
 | [.claude/commands/tl.md](.claude/commands/tl.md) | `/tl` — バトン設置 + Claude 自身に in-flight メモを `save-inflight` で書かせる |
+| [.claude/commands/tl-trim.md](.claude/commands/tl-trim.md) | `/tl-trim` — Claude 自身が current-work memo を書いて `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run slash command。自動 `/rewind` はしない |
 | [.claude/commands/sc-detail.md](.claude/commands/sc-detail.md) | `/sc-detail <時刻>` — L2+L3 詳細取得 |
 
 ### テスト
@@ -90,9 +104,20 @@
 | ファイル | 対象 |
 |---|---|
 | [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo` / TTL 動作 / memo_text 永続化 |
+| [src/codex-handoff.test.mjs](src/codex-handoff.test.mjs) | `toThroughlineHandoffBlock` の `throughline_handoff` v1 JSON shape |
+| [src/codex-sidecar.test.mjs](src/codex-sidecar.test.mjs) | `diagnoseCodexSidecar` の disabled / unavailable / configured status と sidecar dry-run request shape |
+| [src/codex-sidecar-cli.test.mjs](src/codex-sidecar-cli.test.mjs) | `throughline codex-sidecar-diagnostics` / `throughline codex-sidecar-dry-run` CLI 出力 |
+| [src/db-schema.test.mjs](src/db-schema.test.mjs) | schema v7 の Claude-facing table / field / index 名固定 |
+| [src/handoff-record.test.mjs](src/handoff-record.test.mjs) | `buildHandoffRecord` の stable projection、origin 除外、空 projection |
+| [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の `codex-sidecar` 使用、disabled 時の Haiku 互換経路、再帰ガード |
+| [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |
+| [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `save-inflight` / `session-start` / `process-turn` subprocess 動作 |
+| [src/trim-model.test.mjs](src/trim-model.test.mjs) | `buildTrimPlan` の captured turns / keep-recent / rollback candidate / host boundary / current-work memo preview |
+| [src/trim-cli.test.mjs](src/trim-cli.test.mjs) | `throughline trim --dry-run` JSON 出力、`--memo-stdin`、non-dry-run 明示拒否 |
+| [src/resume-context.test.mjs](src/resume-context.test.mjs) | `buildResumeContext` の注入順序（in-flight memo → thinking → L1 → L2 → footer）、空 context、current-origin 除外 |
 | [src/session-merger.test.mjs](src/session-merger.test.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor` |
 | [src/state-file.test.mjs](src/state-file.test.mjs) | `writeSessionState` / `readAllSessionStates` / `snapshotStateMtimes` / stale 閾値 / `usage` スナップショット / 旧フォーマット互換 |
-| [src/turn-processor.test.mjs](src/turn-processor.test.mjs) | `countDistinctBodyTurns` / `pickOldestUnsummarizedTurn` / 20 ターン境界。※ `main()` が stdin 待ちでテストファイル自体は 10s タイムアウトする（既存の既知問題、個別ケース 9/9 は pass）|
+| [src/turn-processor.test.mjs](src/turn-processor.test.mjs) | `countDistinctBodyTurns` / `pickOldestUnsummarizedTurn` / 20 ターン境界 |
 | [src/token-monitor.test.mjs](src/token-monitor.test.mjs) | CLI 引数、cell 幅、bar/色覚マーカー、`formatTimeAgo`、`shouldForceFullRedraw`、`formatLine` の ago 配置 |
 | [src/transcript-reader.test.mjs](src/transcript-reader.test.mjs) | transcript JSONL パーサー、`extractDetailBlocks` の全 kind 分類 |
 | [src/transcript-usage.test.mjs](src/transcript-usage.test.mjs) | `readLatestUsage` / `inferContextWindowSize` / 1M sticky / size+mtime キャッシュ |
@@ -102,11 +127,8 @@
 | [src/cli/install.test.mjs](src/cli/install.test.mjs) | `run` (install / uninstall) の冪等性、`--project` スコープ、Stop hook の `async: true` 登録、slash command 配置、`resolveThroughlineOnPath` の PATH 解決テスト (v0.3.23+) |
 
 ```bash
-# 個別ファイル推奨（turn-processor.test.mjs を含める場合 10 秒待つ）
-node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.mjs \
-            src/token-monitor.test.mjs src/transcript-reader.test.mjs src/transcript-usage.test.mjs \
-            src/vscode-task.test.mjs src/terminal-size.test.mjs \
-            src/cli/doctor.test.mjs src/cli/install.test.mjs
+# 全テスト
+npm test
 ```
 
 ### 削除済み
@@ -130,6 +152,8 @@ node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.m
 ```
 
 - **Stop は `async: true` で登録される (v0.3.22+)**。`throughline process-turn` は内部で `claude -p --model haiku` subprocess を起動するため同期実行だとターン完了 → ユーザー表示を数秒〜数十秒ブロックしていた。L1 要約は**次** SessionStart 注入用なので今ターンをブロックする必要がない → async 化。Claude Code 公式 hooks schema の正式フィールド（[公式 docs 確認済み](https://code.claude.com/docs/en/hooks.md)）。SessionStart / UserPromptSubmit は同期のまま（前者は resume-context 注入が次ターン本体に間に合う必要、後者は `/tl` バトン commit が次ターン開始前に必要）
+- L2 → L1 要約は現行実装で唯一の subagent 的 external model call。`codex-sidecar` が configured の環境では `summarize-l1` preset を使い、使えない場合は従来通り Claude Haiku 経路を使う。`/tl` の in-flight memo はメイン Claude が slash command 手順で書くため sidecar 移行対象ではない
+- Claude CLI を実際に呼ぶテスト / smoke は、明示的に必要な場合だけ実行し、モデルは Haiku を使う。他モデルを使う必要がある場合は根拠を残してから実行する
 - 既存ユーザーの async フラグ昇格は `throughline uninstall && throughline install` 経由でしか起きない。install の dedup は command 文字列一致で判定するため、既存の async 無しエントリが残っていると再 install でも skip される
 - **UserPromptSubmit** は `/tl` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 2 役 (v0.3.18+)。Claude への注入は一切しない（SessionStart 側との重複注入回避のため）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **PostToolUse** は登録しない（schema v4 で廃止）
@@ -166,11 +190,8 @@ node bin/throughline.mjs install --project
 # hooks 削除
 node bin/throughline.mjs uninstall --project
 
-# テスト（turn-processor.test.mjs は main() stdin 待ちで 10s タイムアウトする既知問題のため除外）
-node --test src/baton.test.mjs src/session-merger.test.mjs src/state-file.test.mjs \
-            src/token-monitor.test.mjs src/transcript-reader.test.mjs src/transcript-usage.test.mjs \
-            src/vscode-task.test.mjs src/terminal-size.test.mjs \
-            src/cli/doctor.test.mjs src/cli/install.test.mjs
+# テスト
+npm test
 
 # モニター（別ターミナルで常駐、VSCode タスクが自動起動するので通常は手動不要）
 node src/token-monitor.mjs
@@ -180,6 +201,21 @@ node bin/throughline.mjs doctor --session <id-prefix>
 
 # DB 統計
 node bin/throughline.mjs status
+
+# Codex-facing handoff JSON preview
+node bin/throughline.mjs handoff-preview --session <id>
+
+# Codex sidecar diagnostics (configured 以外は exit 1)
+node bin/throughline.mjs codex-sidecar-diagnostics --project .
+
+# Codex sidecar dry-run (review / risk-check request shape)
+node bin/throughline.mjs codex-sidecar-dry-run --project . --preset risk-check --context-file docs/throughline-handoff-context.example.json
+
+# Trim dry-run (automatic rollback/inject は未実装)
+printf '**次の一手**: ...\n' | node bin/throughline.mjs trim --dry-run --host claude --memo-stdin --json
+
+# Trim host boundary diagnosis
+node bin/throughline.mjs doctor --trim --host claude
 
 # DB を直接覗く
 node --input-type=module <<'EOF'
@@ -204,6 +240,6 @@ EOF
 ## 作業上の規律
 
 - **設計書と実装が食い違っていたら、どちらかが古い**。まずソースを確認する。ソースが正。設計書を更新する
-- **進捗を docs に残す**。計画書のチェックボックスと README / CLAUDE.md のステータス行を同時に更新する
+- **進捗を docs に残す**。計画書のチェックボックスと CLAUDE.md のステータス行を同時に更新する。README は [docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) の Phase 9 まで更新しない
 - **新しい .md ファイルを作る前に、既存ファイルに追記できないか考える**。docs フォルダが肥大化する原因はほぼこれ
 - **破棄された設計は `docs/archive/` に移動**。現行 docs と歴史記述を同じ階層に混在させない

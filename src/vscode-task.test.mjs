@@ -16,7 +16,13 @@ import {
   shouldRecommendGitignore,
 } from './vscode-task.mjs';
 
-const VSCODE_ENV = { TERM_PROGRAM: 'vscode' };
+const VSCODE_ENV = {
+  TERM_PROGRAM: 'vscode',
+  THROUGHLINE_SUPPRESS_VSCODE_NOTICES: '1',
+};
+// Production notices are Claude-facing additional context. Tests keep them
+// silent by default and opt in only when asserting notice text.
+const VSCODE_NOTICE_ENV = { TERM_PROGRAM: 'vscode' };
 // 実在する絶対パスを使う。`isMonitorTaskBroken` が「絶対パス + 非存在」で broken 判定するので、
 // 架空パスを使うと意図せず repaired ブランチに落ちてしまう。
 const FAKE_BIN = process.execPath;
@@ -577,7 +583,7 @@ test('ensureMonitorTaskFile: created emits gitignore recommendation when .git ex
     mkdirSync(join(dir, '.git'));
     const result = ensureMonitorTaskFile({
       cwd: dir,
-      env: VSCODE_ENV,
+      env: VSCODE_NOTICE_ENV,
       throughlineBin: FAKE_BIN,
     });
     assert.equal(result.action, 'created');
@@ -601,7 +607,7 @@ test('ensureMonitorTaskFile: created does NOT emit gitignore recommendation when
   try {
     const result = ensureMonitorTaskFile({
       cwd: dir,
-      env: VSCODE_ENV,
+      env: VSCODE_NOTICE_ENV,
       throughlineBin: FAKE_BIN,
     });
     assert.equal(result.action, 'created');
@@ -628,7 +634,7 @@ test('ensureMonitorTaskFile: gitignore recommendation is emitted only once per p
       // 1 回目: created → gitignore 推奨が出る
       const r1 = ensureMonitorTaskFile({
         cwd: dir,
-        env: VSCODE_ENV,
+        env: VSCODE_NOTICE_ENV,
         throughlineBin: FAKE_BIN,
       });
       assert.equal(r1.action, 'created');
@@ -795,7 +801,7 @@ test('ensureMonitorTaskFile: repaired emits notice on stdout', () => {
 
     const result = ensureMonitorTaskFile({
       cwd: dir,
-      env: VSCODE_ENV,
+      env: VSCODE_NOTICE_ENV,
       throughlineBin: FAKE_BIN,
     });
     assert.equal(result.action, 'repaired');
@@ -871,7 +877,7 @@ test('ensureMonitorTaskFile: jsonc_unsupported marker suppresses stderr on 2nd c
     try {
       const r1 = ensureMonitorTaskFile({
         cwd: dir,
-        env: VSCODE_ENV,
+        env: VSCODE_NOTICE_ENV,
         throughlineBin: FAKE_BIN,
       });
       assert.equal(r1.action, 'skipped');
@@ -960,13 +966,13 @@ test('buildSetupNotice: ensureMonitorTaskFile writes notice to stdout on first c
   try {
     const r1 = ensureMonitorTaskFile({
       cwd: dir,
-      env: VSCODE_ENV,
+      env: VSCODE_NOTICE_ENV,
       throughlineBin: FAKE_BIN,
     });
     assert.equal(r1.action, 'created');
     const r2 = ensureMonitorTaskFile({
       cwd: dir,
-      env: VSCODE_ENV,
+      env: VSCODE_NOTICE_ENV,
       throughlineBin: FAKE_BIN,
     });
     assert.equal(r2.action, 'already_present');

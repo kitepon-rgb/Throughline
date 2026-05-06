@@ -22,11 +22,14 @@
     "bin/",
     "src/",
     ".claude/commands/",
+    ".codex-sidecar.yml",
+    "docs/",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test src/*.test.mjs"
+    "test": "node --test src/*.test.mjs src/cli/*.test.mjs"
   },
   "engines": {
     "node": ">=22.5"

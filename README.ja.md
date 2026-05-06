@@ -97,7 +97,7 @@ flowchart LR
 
 | 層 | 名称 | 保存先 | 内容 | ターンあたりコスト |
 | --- | --- | --- | --- | --- |
-| **L1** | スケルトン | 古いターンとして注入 | Haiku が生成する一行要約 | 約 10 トークン |
+| **L1** | スケルトン | 古いターンとして注入 | ターンの一行要約（既定は Claude Haiku、設定時は Codex sidecar も可） | 約 10 トークン |
 | **L2** | ボディ | 直近ターンとして注入 | ユーザー本文 + アシスタント返答そのまま | 自然なフルサイズ |
 | **L3** | ディテール | SQLite のみ | ツール I/O、システムメッセージ、画像、**拡張思考** (オンデマンド) | 重い、退避済 |
 
@@ -114,10 +114,11 @@ flowchart LR
 - **それ以前** は L1 (`skeletons`) の一行要約として注入
 - L3 は SQLite に残り、`/sc-detail <時刻>` でオンデマンド取得
 
-L1 要約は `claude -p --model claude-haiku-4-5-*` サブプロセスで
-**Claude Haiku 4.5** が生成します。Claude Max のログイン認証を流用するため
-API キー不要です。要約は遅延実行で、20 ターン未満で終わるセッションでは
-Haiku は一度も呼ばれず、短いタスクの要約コストはゼロです。
+L1 要約は遅延実行で、20 ターン未満で終わるセッションでは外部要約器を呼ばず、
+短いタスクの要約コストはゼロです。既定では
+`claude -p --model claude-haiku-4-5-*` サブプロセスで **Claude Haiku 4.5** が生成します。
+Claude Max のログイン認証を流用するため API キー不要です。
+`codex-sidecar` が `summarize-l1` preset で明示設定されている場合は、そちらを使えます。
 
 3 層 (L1/L2/L3) の書き込みパスは schema v5 から動作しています。
 `/sc-detail HH:MM:SS` はユーザー / アシスタント本文 (L2) と、そのターンで
@@ -178,6 +179,33 @@ S1 (4 ターン) --/tl,/clear--> S2 (S1 をマージ + 3 ターン追加) --/tl,
 
 ---
 
+## Codex sidecar と `/tl-trim` プレビュー
+
+Throughline の主軸は引き続き **Claude Code** です。Codex 対応は、Claude hooks /
+slash command / transcript / baton / resume behavior を置き換えるものではなく、
+adapter / projection として追加されます。
+
+現時点で core Throughline が外部モデルを呼ぶのは L2→L1 要約だけです。
+`codex-sidecar` が `summarize-l1` preset で設定されている場合はその要約に
+Codex sidecar を使えます。使えない場合は、従来どおり Claude Haiku 経路を使います。
+
+`/tl-trim` は現在 **dry-run のみ** です。何ターンを trim 候補にするか、
+どの recent context を残すか、どの curated memory を戻す必要があるかを表示します。
+automatic rollback / inject は host primitive の検証が終わるまで無効です。
+
+```bash
+throughline doctor --trim --host claude
+printf '**次の一手**: 今の実装を続ける\n' \
+  | throughline trim --dry-run --host claude --memo-stdin
+```
+
+重要なのは current-work framing です。L1/L2 をそのまま戻すだけだと、
+モデルがそれを「過去ログ」として読んでしまうことがあります。Throughline は recent L2 を
+active work thread として構造化し、古い仮説は後続の判断で上書きされ得ること、
+そして中断地点から続行することを、注入 memory の先頭と末尾で明示します。
+
+---
+
 ## マルチセッション トークン監視
 
 実行:
@@ -212,6 +240,11 @@ throughline monitor --session <id-prefix>
 | `throughline detail <時刻>` | あるターンの L2 本文と L3 ツール I/O を取得 (Claude が使う) |
 | `throughline save-inflight` | `/tl` から呼ばれ、現バトンに in-flight メモを添付 (stdin 経由) |
 | `throughline doctor` | Node バージョン、hook 登録状況、DB、PATH をチェック |
+| `throughline doctor --trim --host claude` | trim boundary と手動手順を診断 |
+| `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
+| `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
+| `throughline codex-sidecar-dry-run` | App Server を呼ばずに read-only sidecar request を正規化表示 |
+| `throughline trim --dry-run` | `/tl-trim` 用の dry-run preview。自動 rollback はしない |
 | `throughline doctor --session <id-prefix>` | 特定セッションの state/transcript ズレを診断 |
 | `throughline status` | DB 統計表示 (sessions / skeletons / bodies / details) |
 | `throughline --version` | インストール済みバージョンを表示 |
@@ -221,6 +254,7 @@ throughline monitor --session <id-prefix>
 | コマンド | 役割 |
 | --- | --- |
 | `/tl` | 引き継ぎバトンを書き込み + Claude に in-flight メモを書かせる |
+| `/tl-trim` | 現 Claude が current-work memo を書き、trim dry-run を実行 |
 | `/sc-detail <時刻>` | 過去ターンの L2 本文と L3 ツール I/O を取得 |
 
 > `/tl` 発火時、Claude は Bash 経由で `throughline save-inflight` を呼びます。
@@ -244,6 +278,9 @@ throughline monitor --session <id-prefix>
 
 - [`docs/L1_L2_L3_REDESIGN.md`](docs/L1_L2_L3_REDESIGN.md) — L1/L2/L3 差分階層モデルの **設計仕様書** (schema v4 ベース + v5 L3 分類拡張)。記憶階層化ルールの正典
 - [`docs/INHERITANCE_ON_CLEAR_ONLY.md`](docs/INHERITANCE_ON_CLEAR_ONLY.md) — `/tl` バトン引き継ぎ方式の設計判断記録 (schema v6–v7)
+- [`docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md`](docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md) — Claude 主軸を維持したまま Codex 対応を足すための architecture brief
+- [`docs/throughline-rollback-context-trim-insight.md`](docs/throughline-rollback-context-trim-insight.md) — rollback / trim 設計 insight。復元 memory を current work として読ませる制約も記録
+- [`docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md`](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) — Claude/Codex 両対応と rollback trim の統合 TODO 計画
 - [`docs/PUBLIC_RELEASE_PLAN.md`](docs/PUBLIC_RELEASE_PLAN.md) — 公開配布化プラン、§ 0 フォールバック禁止ルール、バージョン別実装ステータス
 - [`CHANGELOG.md`](CHANGELOG.md) — リリース履歴
 - [`docs/archive/`](docs/archive/) — 破棄済み旧設計 (CONCEPT 初期案、session-linking 実験記録など)
