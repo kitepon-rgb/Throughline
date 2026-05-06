@@ -144,6 +144,27 @@ test('buildTrimPlan: explicit Codex thread id is carried separately from Claude 
   assert.equal(plan.trim.automaticExecutionAllowed, false);
 });
 
+test('buildTrimPlan: env Codex thread id is marked non-explicit', () => {
+  const db = makeDb();
+  seedTurns(db, { count: 3 });
+
+  const plan = buildTrimPlan(db, {
+    sessionId: 'sess-trim',
+    host: 'codex',
+    codexThreadId: '019dfabf-thread',
+    codexThreadIdSource: 'env:THROUGHLINE_CODEX_THREAD_ID',
+    trimAll: true,
+  });
+
+  assert.deepEqual(plan.hostIdentity, {
+    host: 'codex',
+    codexThreadId: '019dfabf-thread',
+    explicit: false,
+    reason: 'env_codex_thread_id',
+    source: 'env:THROUGHLINE_CODEX_THREAD_ID',
+  });
+});
+
 test('buildTrimPlan: current-work memo is placed in curated memory preview', () => {
   const db = makeDb();
   seedTurns(db, { count: 3 });

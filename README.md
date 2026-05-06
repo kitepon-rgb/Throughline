@@ -217,13 +217,17 @@ trimmed, what recent turns would remain, and what curated memory would need to
 be injected back. Codex also has a guarded preflight and experimental execute
 path, but automatic rollback / inject remains disabled. Throughline never
 guesses the active Codex thread: use `throughline codex-threads` to inspect
-read-only rollout candidates, then pass the chosen id explicitly. When that
-explicit Codex thread has a current-project rollout, `throughline trim` can use
-the rollout as the trim source even if the Throughline DB has no captured Codex
-turn bodies; rollback events in the rollout are applied before the active work
-memory preview is built. During Codex preflight / guarded execute, Throughline
-also compares the rollout active-turn count with app-server `thread/read` /
-`thread/resume` counts and refuses to mutate the thread if they differ.
+read-only rollout candidates, then pass the chosen id explicitly. If a wrapper
+or host exports `THROUGHLINE_CODEX_THREAD_ID` or `CODEX_THREAD_ID`, `throughline
+trim --host codex` treats that as a current-thread identity signal; the CLI flag
+still wins when both are present. Throughline does not fall back to "latest
+rollout" guessing. When the chosen Codex thread has a current-project rollout,
+`throughline trim` can use the rollout as the trim source even if the
+Throughline DB has no captured Codex turn bodies; rollback events in the rollout
+are applied before the active work memory preview is built. During Codex
+preflight / guarded execute, Throughline also compares the rollout active-turn
+count with app-server `thread/read` / `thread/resume` counts and refuses to
+mutate the thread if they differ.
 
 ```bash
 throughline doctor --trim --host claude
@@ -232,6 +236,7 @@ printf '**Next move**: continue the current implementation\n' \
 throughline codex-threads --json --limit 5
 throughline trim --dry-run --host codex --codex-thread-id <id>
 throughline trim --preflight --host codex --codex-thread-id <id>
+CODEX_THREAD_ID=<id> throughline trim --preflight --host codex
 THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1 \
   throughline trim --execute --host codex --codex-thread-id <id>
 ```

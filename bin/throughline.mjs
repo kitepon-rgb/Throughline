@@ -102,11 +102,13 @@ Usage:
   throughline codex-sidecar-dry-run
                               Print normalized read-only sidecar request
   throughline trim --dry-run   Preview same-session context trim plan
-                              (Codex: accepts --codex-thread-id <id>)
+                              (Codex: accepts --codex-thread-id <id> or
+                              THROUGHLINE_CODEX_THREAD_ID / CODEX_THREAD_ID)
   throughline trim --preflight
                               Codex-only app-server read/resume guard; does not rollback
   throughline trim --execute  Experimental Codex rollback/inject guard; requires
-                              THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1 and --codex-thread-id
+                              THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1 and a
+                              Codex thread id
   throughline doctor            Check environment
   throughline doctor --trim     Show trim host boundary diagnostics
   throughline status            Show DB statistics

@@ -218,6 +218,7 @@ export function buildTrimPlan(
     trimAll = false,
     inflightMemo = null,
     codexThreadId = null,
+    codexThreadIdSource = null,
     trimSource = null,
     previewMaxChars = 1_500,
   } = {},
@@ -276,6 +277,7 @@ export function buildTrimPlan(
     hostIdentity: buildHostIdentity({
       host: normalizedHost,
       codexThreadId,
+      codexThreadIdSource,
     }),
     trim: {
       source: normalizedTrimSource?.source ?? 'throughline-db',
@@ -376,7 +378,7 @@ function buildPlanSession({ resolvedSessionId, session, trimSource, projectPath 
   };
 }
 
-function buildHostIdentity({ host, codexThreadId }) {
+function buildHostIdentity({ host, codexThreadId, codexThreadIdSource = null }) {
   if (host !== 'codex') {
     return {
       host,
@@ -387,6 +389,16 @@ function buildHostIdentity({ host, codexThreadId }) {
   }
 
   if (typeof codexThreadId === 'string' && codexThreadId.length > 0) {
+    if (typeof codexThreadIdSource === 'string' && codexThreadIdSource.startsWith('env:')) {
+      return {
+        host,
+        codexThreadId,
+        explicit: false,
+        reason: 'env_codex_thread_id',
+        source: codexThreadIdSource,
+      };
+    }
+
     return {
       host,
       codexThreadId,

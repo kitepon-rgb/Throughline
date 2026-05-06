@@ -99,6 +99,11 @@ export async function run(args) {
     process.exit(1);
   }
 
+  parsed = {
+    ...parsed,
+    ...resolveCodexThreadIdentity(parsed, process.env),
+  };
+
   const inflightMemo = parsed.memoStdin ? await readStdin() : null;
   const db = getDb();
   const trimSource =
@@ -106,6 +111,10 @@ export async function run(args) {
       ? buildCodexRolloutTrimSource({
           threadId: parsed.codexThreadId,
           projectPath: process.cwd(),
+          sourceReason:
+            parsed.codexThreadIdSource && parsed.codexThreadIdSource.startsWith('env:')
+              ? 'env_codex_thread_rollout'
+              : 'explicit_codex_thread_rollout',
         })
       : null;
   const plan = buildTrimPlan(db, {
@@ -116,6 +125,7 @@ export async function run(args) {
     trimAll: parsed.trimAll,
     inflightMemo,
     codexThreadId: parsed.codexThreadId,
+    codexThreadIdSource: parsed.codexThreadIdSource,
     trimSource,
   });
 
@@ -273,6 +283,30 @@ function hasInjectableMemory(text) {
 
 function expectedCodexAppServerTurns(plan) {
   return plan?.trim?.source === 'codex-rollout' ? plan.trim.capturedTurns : null;
+}
+
+export function resolveCodexThreadIdentity(parsed, env = process.env) {
+  if (parsed.codexThreadId) {
+    return {
+      codexThreadId: parsed.codexThreadId,
+      codexThreadIdSource: 'arg:--codex-thread-id',
+    };
+  }
+
+  for (const name of ['THROUGHLINE_CODEX_THREAD_ID', 'CODEX_THREAD_ID']) {
+    const value = typeof env[name] === 'string' ? env[name].trim() : '';
+    if (value) {
+      return {
+        codexThreadId: value,
+        codexThreadIdSource: `env:${name}`,
+      };
+    }
+  }
+
+  return {
+    codexThreadId: null,
+    codexThreadIdSource: null,
+  };
 }
 
 function renderTrimActionReport(result) {

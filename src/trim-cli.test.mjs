@@ -223,10 +223,106 @@ test('trim CLI uses explicit Codex rollout source when DB has no captured turns'
     const plan = JSON.parse(result.stdout);
     assert.equal(plan.session.id, 'sess-empty-codex');
     assert.equal(plan.trim.source, 'codex-rollout');
+    assert.equal(plan.trim.sourceReason, 'explicit_codex_thread_rollout');
     assert.equal(plan.trim.capturedTurns, 22);
     assert.equal(plan.trim.rollbackTurns, 2);
     assert.match(plan.memoryPreview.text, /Active Work Thread \(Codex Rollout\)/);
     assert.match(plan.memoryPreview.text, /codex user turn 22/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI uses env Codex thread id when no explicit thread id is passed', async () => {
+  const home = makeTempHome();
+  const codexHome = makeTempHome();
+  const project = makeTempProject();
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  try {
+    await seedEmptyDb(home, project);
+    writeCodexRollout(codexHome, {
+      project,
+      threadId,
+      turnCount: 22,
+    });
+
+    const result = runTrim(
+      home,
+      project,
+      ['--dry-run', '--host', 'codex', '--json'],
+      null,
+      {
+        CODEX_HOME: codexHome,
+        THROUGHLINE_CODEX_THREAD_ID: threadId,
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.deepEqual(plan.hostIdentity, {
+      host: 'codex',
+      codexThreadId: threadId,
+      explicit: false,
+      reason: 'env_codex_thread_id',
+      source: 'env:THROUGHLINE_CODEX_THREAD_ID',
+    });
+    assert.equal(plan.trim.source, 'codex-rollout');
+    assert.equal(plan.trim.sourceReason, 'env_codex_thread_rollout');
+    assert.equal(plan.trim.capturedTurns, 22);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI explicit Codex thread id overrides env thread id', async () => {
+  const home = makeTempHome();
+  const codexHome = makeTempHome();
+  const project = makeTempProject();
+  const explicitThreadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  try {
+    await seedEmptyDb(home, project);
+    writeCodexRollout(codexHome, {
+      project,
+      threadId: explicitThreadId,
+      turnCount: 22,
+    });
+    writeCodexRollout(codexHome, {
+      project,
+      threadId: '019dfabb-1111-7111-8111-111111111111',
+      turnCount: 30,
+    });
+
+    const result = runTrim(
+      home,
+      project,
+      [
+        '--dry-run',
+        '--host',
+        'codex',
+        '--codex-thread-id',
+        explicitThreadId,
+        '--json',
+      ],
+      null,
+      {
+        CODEX_HOME: codexHome,
+        THROUGHLINE_CODEX_THREAD_ID: '019dfabb-1111-7111-8111-111111111111',
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.deepEqual(plan.hostIdentity, {
+      host: 'codex',
+      codexThreadId: explicitThreadId,
+      explicit: true,
+      reason: 'explicit_codex_thread_id',
+    });
+    assert.equal(plan.trim.capturedTurns, 22);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -355,6 +451,51 @@ test('trim CLI preflight checks Codex rollout source against app-server turns', 
       readTurns: 22,
       resumedTurns: 22,
     });
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(codexHome, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI preflight accepts env Codex thread id', async () => {
+  const home = makeTempHome();
+  const codexHome = makeTempHome();
+  const project = makeTempProject();
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  try {
+    await seedEmptyDb(home, project);
+    writeCodexRollout(codexHome, {
+      project,
+      threadId,
+      turnCount: 22,
+    });
+    const { script } = makeFakeCodexAppServer(project, { threadId, turnCount: 22 });
+    const result = runTrim(
+      home,
+      project,
+      [
+        '--host',
+        'codex',
+        '--preflight',
+        '--codex-app-server-bin',
+        script,
+        '--json',
+      ],
+      null,
+      {
+        CODEX_HOME: codexHome,
+        CODEX_THREAD_ID: threadId,
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'preflight-ready');
+    assert.equal(payload.plan.hostIdentity.reason, 'env_codex_thread_id');
+    assert.equal(payload.plan.hostIdentity.source, 'env:CODEX_THREAD_ID');
+    assert.equal(payload.preflight.threadId, threadId);
+    assert.equal(payload.preflight.turnCountCheck.status, 'match');
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

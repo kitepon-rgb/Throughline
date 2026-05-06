@@ -11,6 +11,7 @@ export function buildCodexRolloutTrimSource({
   codexHome = defaultCodexHome(),
   projectPath = process.cwd(),
   previewMaxChars = DEFAULT_PREVIEW_MAX_CHARS,
+  sourceReason = 'explicit_codex_thread_rollout',
 } = {}) {
   if (typeof threadId !== 'string' || threadId.length === 0) {
     throw new Error('threadId is required');
@@ -33,7 +34,7 @@ export function buildCodexRolloutTrimSource({
 
   return {
     source: 'codex-rollout',
-    sourceReason: 'explicit_codex_thread_rollout',
+    sourceReason,
     threadId,
     projectPath: candidate.cwd ?? projectPath,
     capturedTurns: parsed.activeTurnCount,
