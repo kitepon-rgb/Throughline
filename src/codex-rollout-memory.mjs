@@ -53,6 +53,7 @@ export function parseCodexRolloutFile(path) {
     taskComplete: 0,
     rollbackEvents: 0,
     rolledBackTurns: 0,
+    injectedDeveloperMessages: 0,
     skippedMessages: 0,
   };
 
@@ -68,6 +69,18 @@ export function parseCodexRolloutFile(path) {
     }
 
     const payload = row?.payload;
+    if (row?.type === 'response_item') {
+      const injectedMessage = responseItemToMemoryMessage(payload, row.timestamp);
+      if (injectedMessage) {
+        activeTurns.push({
+          number: `injected-${stats.injectedDeveloperMessages + 1}`,
+          messages: [injectedMessage],
+        });
+        stats.injectedDeveloperMessages++;
+      }
+      continue;
+    }
+
     if (row?.type !== 'event_msg' || !payload?.type) continue;
 
     if (payload.type === 'task_started') {
@@ -151,6 +164,31 @@ function eventPayloadToMemoryMessage(payload, timestamp) {
   return null;
 }
 
+function responseItemToMemoryMessage(payload, timestamp) {
+  if (payload?.type !== 'message' || payload.role !== 'developer') return null;
+  const text = normalizeMessageText(messageContentToText(payload.content));
+  if (!text.startsWith('## Throughline Trim Memory Preview')) return null;
+  if (!text) return null;
+  return {
+    time: timestamp ?? null,
+    role: 'developer',
+    text,
+  };
+}
+
+function messageContentToText(content) {
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((item) => {
+      if (typeof item?.text === 'string') return item.text;
+      if (typeof item?.input_text === 'string') return item.input_text;
+      if (typeof item?.output_text === 'string') return item.output_text;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 function shouldSkipUserMessage(text) {
   return text.startsWith('# AGENTS.md instructions') || text.startsWith('<hook_prompt');
 }
@@ -213,6 +251,7 @@ function renderCodexRolloutMemoryPreview({ candidate, parsed, previewMaxChars })
       recentEntries: parsed.entries.length,
       rollbackEvents: parsed.stats.rollbackEvents,
       rolledBackTurns: parsed.stats.rolledBackTurns,
+      injectedDeveloperMessages: parsed.stats.injectedDeveloperMessages,
       skippedMessages: parsed.stats.skippedMessages,
     },
   };

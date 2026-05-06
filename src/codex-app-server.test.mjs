@@ -12,6 +12,7 @@ import {
   buildThreadResumeRequest,
   buildThreadRollbackRequest,
   buildTurnStartRequest,
+  compareTurnCounts,
   encodeAppServerMessage,
   parseAppServerLine,
   runCodexTrimPreflight,
@@ -145,6 +146,46 @@ test('buildThreadRollbackRequest rejects numTurns below the documented minimum',
   assert.throws(
     () => buildThreadRollbackRequest({ id: 1, threadId: 'thread-1', numTurns: 0 }),
     /numTurns must be an integer >= 1/,
+  );
+});
+
+test('compareTurnCounts: reports match, mismatch, unchecked, and unknown states', () => {
+  assert.deepEqual(
+    compareTurnCounts({
+      expectedTurns: 2,
+      readTurns: 2,
+      resumedTurns: 2,
+    }),
+    {
+      status: 'match',
+      reason: 'rollout_and_app_server_turn_counts_match',
+      expectedTurns: 2,
+      readTurns: 2,
+      resumedTurns: 2,
+    },
+  );
+
+  assert.equal(
+    compareTurnCounts({
+      expectedTurns: 3,
+      readTurns: 2,
+      resumedTurns: 2,
+    }).status,
+    'mismatch',
+  );
+  assert.equal(compareTurnCounts({ readTurns: 2, resumedTurns: 2 }).status, 'unchecked');
+  assert.equal(compareTurnCounts({ expectedTurns: 2, readTurns: null, resumedTurns: 2 }).status, 'unknown');
+});
+
+test('compareTurnCounts: rejects invalid expected turn count', () => {
+  assert.throws(
+    () =>
+      compareTurnCounts({
+        expectedTurns: -1,
+        readTurns: 2,
+        resumedTurns: 2,
+      }),
+    /expectedTurns must be a non-negative integer/,
   );
 });
 

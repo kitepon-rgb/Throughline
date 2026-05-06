@@ -59,7 +59,9 @@ shipped to npm but were not individually tagged on GitHub.
   the Claude/Throughline `session_id`, avoiding latest-rollout guessing.
 - `throughline trim --preflight --host codex --codex-thread-id <id>` now
   performs a guarded Codex app-server initialize/read/resume check and stops
-  before sending rollback or inject.
+  before sending rollback or inject. When the plan source is `codex-rollout`,
+  preflight compares rollout active turns with app-server read/resume turns and
+  refuses the plan if they differ.
 - `throughline trim --execute --host codex --codex-thread-id <id>` now has an
   experimental guarded execution path behind
   `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1`. It sends app-server read/resume,
@@ -75,6 +77,9 @@ shipped to npm but were not individually tagged on GitHub.
 - Codex trim memory previews now apply `thread_rolled_back` rollout events
   before building the active work thread, so rolled-back tail turns are not
   reintroduced as current memory.
+- Guarded Codex execute now performs the same rollout/app-server turn-count
+  check before rollback; mismatch or unavailable app-server counts refuse
+  execution before any rollback or inject request is sent.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual

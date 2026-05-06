@@ -221,7 +221,9 @@ read-only rollout candidates, then pass the chosen id explicitly. When that
 explicit Codex thread has a current-project rollout, `throughline trim` can use
 the rollout as the trim source even if the Throughline DB has no captured Codex
 turn bodies; rollback events in the rollout are applied before the active work
-memory preview is built.
+memory preview is built. During Codex preflight / guarded execute, Throughline
+also compares the rollout active-turn count with app-server `thread/read` /
+`thread/resume` counts and refuses to mutate the thread if they differ.
 
 ```bash
 throughline doctor --trim --host claude

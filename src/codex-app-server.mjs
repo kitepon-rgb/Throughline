@@ -228,6 +228,7 @@ export async function runCodexTrimPreflight({
   threadId,
   cwd,
   rollbackTurns,
+  expectedTurns = null,
   command = 'codex',
   commandArgs = ['app-server', '--listen', 'stdio://'],
   timeoutMs = 30_000,
@@ -239,6 +240,7 @@ export async function runCodexTrimPreflight({
   if (!Number.isInteger(rollbackTurns) || rollbackTurns < 1) {
     throw new Error('runCodexTrimPreflight: rollbackTurns must be an integer >= 1');
   }
+  assertOptionalTurnCount(expectedTurns, 'runCodexTrimPreflight: expectedTurns');
   if (!Array.isArray(commandArgs)) {
     throw new Error('runCodexTrimPreflight: commandArgs must be an array');
   }
@@ -276,14 +278,21 @@ export async function runCodexTrimPreflight({
         excludeTurns: false,
       }),
     );
+    const readTurns = countTurns(beforeRead);
+    const resumedTurns = countTurns(resumed);
 
     return {
       status: 'preflight-ready',
       threadId,
       rollbackSent: false,
       injectSent: false,
-      readTurns: countTurns(beforeRead),
-      resumedTurns: countTurns(resumed),
+      readTurns,
+      resumedTurns,
+      turnCountCheck: compareTurnCounts({
+        expectedTurns,
+        readTurns,
+        resumedTurns,
+      }),
       rollbackRequestPreview: buildThreadRollbackRequest({
         id: 'rollback-preview',
         threadId,
@@ -302,6 +311,7 @@ export async function runCodexTrimExecution({
   cwd,
   rollbackTurns,
   memoryText,
+  expectedTurns = null,
   command = 'codex',
   commandArgs = ['app-server', '--listen', 'stdio://'],
   timeoutMs = 30_000,
@@ -314,6 +324,7 @@ export async function runCodexTrimExecution({
   if (!Number.isInteger(rollbackTurns) || rollbackTurns < 1) {
     throw new Error('runCodexTrimExecution: rollbackTurns must be an integer >= 1');
   }
+  assertOptionalTurnCount(expectedTurns, 'runCodexTrimExecution: expectedTurns');
   if (!Array.isArray(commandArgs)) {
     throw new Error('runCodexTrimExecution: commandArgs must be an array');
   }
@@ -351,6 +362,29 @@ export async function runCodexTrimExecution({
         excludeTurns: false,
       }),
     );
+    const readTurns = countTurns(beforeRead);
+    const resumedTurns = countTurns(resumed);
+    const turnCountCheck = compareTurnCounts({
+      expectedTurns,
+      readTurns,
+      resumedTurns,
+    });
+    if (turnCountCheck.status === 'mismatch' || turnCountCheck.status === 'unknown') {
+      return {
+        status: 'refused',
+        reason: 'codex_rollout_app_server_turn_mismatch',
+        threadId,
+        rollbackSent: false,
+        injectSent: false,
+        injectedItems: 0,
+        readTurns,
+        resumedTurns,
+        rollbackRequestedTurns: rollbackTurns,
+        turnCountCheck,
+        notifications: [...new Set(client.notifications)],
+        stderr: client.stderr,
+      };
+    }
     const rollback = await client.request(
       buildThreadRollbackRequest({
         id: randomUUID(),
@@ -379,12 +413,13 @@ export async function runCodexTrimExecution({
       rollbackSent: true,
       injectSent: true,
       injectedItems: 1,
-      readTurns: countTurns(beforeRead),
-      resumedTurns: countTurns(resumed),
+      readTurns,
+      resumedTurns,
       rollbackRequestedTurns: rollbackTurns,
       rollbackResultTurns: countTurns(rollback),
       injectResultTurns: countTurns(inject),
       afterTurns: countTurns(afterRead),
+      turnCountCheck,
       notifications: [...new Set(client.notifications)],
       stderr: client.stderr,
     };
@@ -520,6 +555,40 @@ function countTurns(result) {
   return isRecord(thread) && Array.isArray(thread.turns) ? thread.turns.length : null;
 }
 
+export function compareTurnCounts({ expectedTurns = null, readTurns = null, resumedTurns = null } = {}) {
+  assertOptionalTurnCount(expectedTurns, 'compareTurnCounts: expectedTurns');
+  const counts = { expectedTurns, readTurns, resumedTurns };
+  if (expectedTurns === null || expectedTurns === undefined) {
+    return {
+      status: 'unchecked',
+      reason: 'expected_turns_not_available',
+      ...counts,
+    };
+  }
+
+  if (!Number.isInteger(readTurns) || !Number.isInteger(resumedTurns)) {
+    return {
+      status: 'unknown',
+      reason: 'app_server_turn_count_unavailable',
+      ...counts,
+    };
+  }
+
+  if (readTurns === expectedTurns && resumedTurns === expectedTurns) {
+    return {
+      status: 'match',
+      reason: 'rollout_and_app_server_turn_counts_match',
+      ...counts,
+    };
+  }
+
+  return {
+    status: 'mismatch',
+    reason: 'rollout_and_app_server_turn_counts_differ',
+    ...counts,
+  };
+}
+
 function compactNullish(value) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== null && entry !== undefined),
@@ -535,6 +604,13 @@ function assertRequestId(id, caller) {
 function assertNonEmptyString(value, label) {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${label} must be a non-empty string`);
+  }
+}
+
+function assertOptionalTurnCount(value, label) {
+  if (value === null || value === undefined) return;
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer when provided`);
   }
 }
 

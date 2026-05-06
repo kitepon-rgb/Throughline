@@ -29,6 +29,21 @@ test('parseCodexRolloutFile: applies rollback events before rendering active wor
         event('agent_message', { message: 'rolled back answer' }),
         event('task_complete'),
         event('thread_rolled_back', { num_turns: 1 }),
+        responseItem({
+          type: 'message',
+          role: 'developer',
+          content: [
+            {
+              type: 'input_text',
+              text: '## Throughline Trim Memory Preview\n\ninjected trim memory',
+            },
+          ],
+        }),
+        responseItem({
+          type: 'message',
+          role: 'developer',
+          content: [{ type: 'input_text', text: '[caveat] unrelated developer notice' }],
+        }),
         event('user_message', { message: 'new request after rollback' }),
         event('task_started'),
         event('agent_message', { message: 'new answer after rollback' }),
@@ -38,8 +53,9 @@ test('parseCodexRolloutFile: applies rollback events before rendering active wor
 
     const parsed = parseCodexRolloutFile(rollout);
 
-    assert.equal(parsed.activeTurnCount, 3);
+    assert.equal(parsed.activeTurnCount, 4);
     assert.equal(parsed.stats.rolledBackTurns, 1);
+    assert.equal(parsed.stats.injectedDeveloperMessages, 1);
     assert.deepEqual(
       parsed.entries.map((entry) => entry.text),
       [
@@ -47,6 +63,7 @@ test('parseCodexRolloutFile: applies rollback events before rendering active wor
         'turn one answer',
         'continue active task',
         'turn two answer',
+        '## Throughline Trim Memory Preview injected trim memory',
         'new request after rollback',
         'new answer after rollback',
       ],
@@ -120,5 +137,13 @@ function event(type, payload = {}) {
       type,
       ...payload,
     },
+  };
+}
+
+function responseItem(payload) {
+  return {
+    timestamp: '2026-05-06T00:40:51.500Z',
+    type: 'response_item',
+    payload,
   };
 }

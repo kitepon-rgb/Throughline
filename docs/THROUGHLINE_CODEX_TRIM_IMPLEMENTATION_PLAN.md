@@ -436,8 +436,10 @@ Phase 8 partial implementation result (2026-05-06):
 - `src/codex-app-server.mjs` を追加し、newline JSON framing、initialize / read / resume / rollback / inject / turn-start request builder、server line parser をテストで固定した。これは実行統合の足場であり、まだ non-dry-run trim を有効化しない。
 - shell 環境には現在 Codex thread id が安定して出ていないため、当面は `--codex-thread-id` の明示入力だけを信頼する。最新 rollout 推測による automatic trim は行わない。
 - `throughline trim --preflight --host codex --codex-thread-id <id> [--json]` を追加した。これは `thread/read` と `thread/resume` が対象 thread に届くことを確認し、`rollbackRequestPreview` を返すが、`thread/rollback` / `thread/inject_items` は送らない。
+- `codex-rollout` source の場合、preflight は rollout 側 active turn count と app-server `thread/read` / `thread/resume` の turn count を突き合わせる。不一致または app-server count 不明なら `preflight-refused` として止まり、rollback / inject は送らない。
 - 同日、検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` に実 app-server preflight を当て、`readTurns: 1` / `resumedTurns: 1` / `rollbackSent: false` / `injectSent: false` を確認した。
 - `throughline trim --execute --host codex --codex-thread-id <id> [--json]` を追加した。これは `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` がある場合だけ、app-server の `thread/read`、`thread/resume`、`thread/rollback`、`thread/inject_items`、確認用 `thread/read` を順に送る。
+- `codex-rollout` source の guarded execute は rollback 前に同じ turn count check を実行する。不一致または app-server count 不明なら `execute-refused` として止まり、`thread/rollback` / `thread/inject_items` は送らない。
 - `--execute` が注入する item は `role: "developer"` の raw Responses message item で、中身は `memoryPreview.text`。`memoryPreview.text` は Reading Contract、Active Work Thread、Continuation Instruction を含むため、L2 を単なる過去ログではなく現在タスクの作業文脈として読む前提を維持する。
 - `--execute` は model turn を開始しない。つまり実行直後の「注入内容が次 turn で model-visible か」は Phase 6 の実測 spike で確認済みだが、この CLI path ではユーザー実 thread を mutate する実機 smoke はまだ行っていない。
 - fake app-server テストで、env 無しでは app-server を起動せず拒否すること、preflight は rollback / inject を送らないこと、execute は `read -> resume -> rollback -> inject -> read` の順で curated memory を注入することを固定した。
@@ -465,6 +467,7 @@ Current-work framing research note (2026-05-06):
 - [ ] 対応 host では同一 session / thread の context trim が動く。
 - [x] Codex では guarded execute path が fake app-server 上で rollback / inject 順序を満たす。
 - [x] Codex では明示 thread id の rollout JSONL から active turns / memory preview を作り、DB 未捕捉の Codex 作業でも dry-run / preflight / guarded execute の plan source にできる。
+- [x] Codex では `codex-rollout` active turn count と app-server read/resume turn count を突き合わせ、差分がある場合は mutation 前に拒否する。
 - [x] 非対応 host では、何が足りないかを明示して止まる。
 - [x] Claude の既存 `/tl` baton handoff は残る。
 
