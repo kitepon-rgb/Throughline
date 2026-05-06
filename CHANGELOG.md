@@ -63,6 +63,9 @@ shipped to npm but were not individually tagged on GitHub.
   rollback, then curated-memory inject, and never starts a model turn.
 - Codex app-server helpers now report spawn failures explicitly instead of
   waiting for a request timeout.
+- `throughline codex-threads` lists read-only Codex rollout/thread candidates
+  for the current project so users can pass an explicit `--codex-thread-id`
+  without Throughline guessing the active thread.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual
