@@ -72,6 +72,9 @@ shipped to npm but were not individually tagged on GitHub.
   experimental guarded execution path behind
   `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1`. It sends app-server read/resume,
   rollback, then curated-memory inject, and never starts a model turn.
+- Codex guarded execute now polls post-inject `thread/read` until the injected
+  memory item is visible, and reports `postInjectVisibilityCheck` so stale
+  immediate app-server reads are explicit.
 - Codex app-server helpers now report spawn failures explicitly instead of
   waiting for a request timeout.
 - `throughline codex-threads` lists read-only Codex rollout/thread candidates

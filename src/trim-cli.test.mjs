@@ -22,6 +22,7 @@ function makeFakeCodexAppServer(
     allowMutation = false,
     threadId = '019dfabf-thread',
     turnCount = 2,
+    delayedInjectVisibilityReads = 0,
   } = {},
 ) {
   const script = join(dir, 'fake-codex-app-server.mjs');
@@ -36,6 +37,8 @@ const log = ${JSON.stringify(log)};
 const allowMutation = ${JSON.stringify(allowMutation)};
 const threadId = ${JSON.stringify(threadId)};
 let turns = Array.from({ length: ${JSON.stringify(turnCount)} }, (_, index) => ({ id: 'turn-' + (index + 1) }));
+let pendingInjectedTurn = null;
+let delayedInjectVisibilityReads = ${JSON.stringify(delayedInjectVisibilityReads)};
 const rl = createInterface({ input: process.stdin });
 
 function send(message) {
@@ -49,6 +52,12 @@ rl.on('line', (line) => {
   if (msg.method === 'initialize') {
     send({ id: msg.id, result: { userAgent: 'fake-codex', codexHome: '/tmp/codex' } });
   } else if (msg.method === 'thread/read') {
+    if (pendingInjectedTurn && delayedInjectVisibilityReads <= 0) {
+      turns = [...turns, pendingInjectedTurn];
+      pendingInjectedTurn = null;
+    } else if (pendingInjectedTurn) {
+      delayedInjectVisibilityReads--;
+    }
     send({ id: msg.id, result: { thread: { id: threadId, turns } } });
   } else if (msg.method === 'thread/resume') {
     send({ id: msg.id, result: { thread: { id: threadId, turns } } });
@@ -68,7 +77,11 @@ rl.on('line', (line) => {
     }
     const injected = msg.params.items?.[0]?.content?.[0]?.text ?? '';
     appendFileSync(log, 'INJECT_TEXT:' + injected.replace(/\\n/g, ' ') + '\\n');
-    turns = [...turns, { id: 'injected-memory' }];
+    pendingInjectedTurn = { id: 'injected-memory' };
+    if (delayedInjectVisibilityReads <= 0) {
+      turns = [...turns, pendingInjectedTurn];
+      pendingInjectedTurn = null;
+    }
     send({ id: msg.id, result: { thread: { id: threadId, turns } } });
   } else {
     send({ id: msg.id, error: { code: -32601, message: 'unknown method' } });
@@ -591,6 +604,10 @@ test('trim CLI guarded execute rolls back then injects curated memory', async ()
     assert.equal(payload.execution.rollbackSent, true);
     assert.equal(payload.execution.injectSent, true);
     assert.equal(payload.execution.injectedItems, 1);
+    assert.equal(payload.execution.afterTurns, 1);
+    assert.equal(payload.execution.postInjectReadAttempts, 1);
+    assert.equal(payload.execution.postInjectVisibilityCheck.status, 'match');
+    assert.equal(payload.execution.postInjectVisibilityCheck.expectedTurns, 1);
     assert.equal(payload.plan.mode, 'execute');
 
     const calledMethods = readFileSync(log, 'utf8');
@@ -604,6 +621,63 @@ test('trim CLI guarded execute rolls back then injects curated memory', async ()
     ]);
     assert.match(calledMethods, /INJECT_TEXT:## Throughline Trim Memory Preview/);
     assert.match(calledMethods, /Active Work Thread \(Recent L2\)/);
+    assert.doesNotMatch(calledMethods, /UNEXPECTED_MUTATION/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('trim CLI guarded execute waits until injected Codex memory is visible', async () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    await seedDb(home, project);
+    const { script, log } = makeFakeCodexAppServer(project, {
+      allowMutation: true,
+      delayedInjectVisibilityReads: 1,
+    });
+    const result = runTrim(
+      home,
+      project,
+      [
+        '--host',
+        'codex',
+        '--codex-thread-id',
+        '019dfabf-thread',
+        '--execute',
+        '--codex-app-server-bin',
+        script,
+        '--json',
+      ],
+      null,
+      { THROUGHLINE_EXPERIMENTAL_CODEX_TRIM: '1' },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'executed');
+    assert.equal(payload.execution.afterTurns, 1);
+    assert.equal(payload.execution.postInjectReadAttempts, 2);
+    assert.deepEqual(payload.execution.postInjectVisibilityCheck, {
+      status: 'match',
+      reason: 'post_inject_turn_count_visible',
+      expectedTurns: 1,
+      actualTurns: 1,
+    });
+
+    const calledMethods = readFileSync(log, 'utf8');
+    assertInOrder(calledMethods, [
+      'initialize\n',
+      'thread/read\n',
+      'thread/resume\n',
+      'thread/rollback\n',
+      'thread/inject_items\n',
+      'thread/read\n',
+      'thread/read\n',
+    ]);
+    assert.equal([...calledMethods.matchAll(/^thread\/read$/gm)].length, 3);
+    assert.match(calledMethods, /INJECT_TEXT:## Throughline Trim Memory Preview/);
     assert.doesNotMatch(calledMethods, /UNEXPECTED_MUTATION/);
   } finally {
     rmSync(project, { recursive: true, force: true });
