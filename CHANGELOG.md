@@ -25,6 +25,9 @@ shipped to npm but were not individually tagged on GitHub.
 - Codex app-server protocol helpers for the verified trim flow: newline JSON
   framing, initialize / resume / rollback / inject / turn-start request
   builders, and parser coverage.
+- Codex rollout-backed trim source for explicit `--codex-thread-id` plans.
+  This lets Codex dry-run / preflight / guarded execute use the active rollout
+  even when the Throughline DB has no Codex `bodies` rows.
 
 ### Changed
 - Resume context now frames recent L2 as an active work thread with explicit
@@ -69,6 +72,9 @@ shipped to npm but were not individually tagged on GitHub.
 - `throughline codex-threads` now sorts candidates by rollout file mtime, not
   stale `session_index.jsonl` timestamps, so actively written threads appear
   before old probe threads.
+- Codex trim memory previews now apply `thread_rolled_back` rollout events
+  before building the active work thread, so rolled-back tail turns are not
+  reintroduced as current memory.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual

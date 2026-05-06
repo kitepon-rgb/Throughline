@@ -49,6 +49,47 @@ export function listCodexThreadCandidates({
   return candidates.slice(0, limit);
 }
 
+export function findCodexThreadCandidate({
+  threadId,
+  codexHome = defaultCodexHome(),
+  projectPath = process.cwd(),
+  requireProjectMatch = true,
+} = {}) {
+  if (typeof threadId !== 'string' || threadId.length === 0) {
+    throw new Error('threadId is required');
+  }
+
+  const index = readSessionIndex(codexHome);
+  const rollouts = findRolloutFiles(join(codexHome, 'sessions'));
+  const normalizedProject = normalizePath(projectPath);
+
+  const matches = rollouts
+    .filter((rollout) => rollout.threadId === threadId)
+    .map((rollout) => {
+      const meta = readSessionMeta(rollout.path);
+      const indexed = index.get(rollout.threadId) ?? {};
+      const cwd = meta?.cwd ?? null;
+      const matchesProject = cwd ? normalizePath(cwd) === normalizedProject : false;
+      return {
+        id: rollout.threadId,
+        threadName: indexed.thread_name ?? null,
+        updatedAt: rollout.mtimeIso,
+        indexedUpdatedAt: indexed.updated_at ?? null,
+        rolloutStartedAt: rollout.startedAt,
+        rolloutPath: rollout.path,
+        cwd,
+        source: meta?.source ?? null,
+        cliVersion: meta?.cli_version ?? null,
+        matchesProject,
+        mtimeMs: rollout.mtimeMs,
+      };
+    })
+    .filter((candidate) => !requireProjectMatch || candidate.matchesProject)
+    .sort(compareCandidates);
+
+  return matches[0] ?? null;
+}
+
 export function readSessionIndex(codexHome = defaultCodexHome()) {
   const path = join(codexHome, 'session_index.jsonl');
   const index = new Map();

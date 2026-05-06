@@ -1,4 +1,5 @@
 import { runCodexTrimExecution, runCodexTrimPreflight } from '../codex-app-server.mjs';
+import { buildCodexRolloutTrimSource } from '../codex-rollout-memory.mjs';
 import { getDb } from '../db.mjs';
 import {
   DEFAULT_TRIM_KEEP_RECENT,
@@ -100,6 +101,13 @@ export async function run(args) {
 
   const inflightMemo = parsed.memoStdin ? await readStdin() : null;
   const db = getDb();
+  const trimSource =
+    parsed.host === 'codex' && parsed.codexThreadId
+      ? buildCodexRolloutTrimSource({
+          threadId: parsed.codexThreadId,
+          projectPath: process.cwd(),
+        })
+      : null;
   const plan = buildTrimPlan(db, {
     sessionId: parsed.sessionId,
     projectPath: process.cwd(),
@@ -108,6 +116,7 @@ export async function run(args) {
     trimAll: parsed.trimAll,
     inflightMemo,
     codexThreadId: parsed.codexThreadId,
+    trimSource,
   });
 
   if (!parsed.dryRun) {

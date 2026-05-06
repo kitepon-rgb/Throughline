@@ -217,7 +217,11 @@ trimmed, what recent turns would remain, and what curated memory would need to
 be injected back. Codex also has a guarded preflight and experimental execute
 path, but automatic rollback / inject remains disabled. Throughline never
 guesses the active Codex thread: use `throughline codex-threads` to inspect
-read-only rollout candidates, then pass the chosen id explicitly.
+read-only rollout candidates, then pass the chosen id explicitly. When that
+explicit Codex thread has a current-project rollout, `throughline trim` can use
+the rollout as the trim source even if the Throughline DB has no captured Codex
+turn bodies; rollback events in the rollout are applied before the active work
+memory preview is built.
 
 ```bash
 throughline doctor --trim --host claude

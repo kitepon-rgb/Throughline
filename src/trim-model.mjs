@@ -218,12 +218,14 @@ export function buildTrimPlan(
     trimAll = false,
     inflightMemo = null,
     codexThreadId = null,
+    trimSource = null,
     previewMaxChars = 1_500,
   } = {},
 ) {
   const normalizedHost = TRIM_HOSTS.includes(host) ? host : 'unknown';
+  const normalizedTrimSource = normalizeTrimSource(trimSource);
   const resolvedSessionId = sessionId ?? findLatestSessionIdForProject(db, projectPath);
-  if (!resolvedSessionId) {
+  if (!resolvedSessionId && !normalizedTrimSource) {
     return {
       status: 'unavailable',
       reason: 'no_session',
@@ -232,8 +234,8 @@ export function buildTrimPlan(
     };
   }
 
-  const session = loadSession(db, resolvedSessionId);
-  if (!session) {
+  const session = resolvedSessionId ? loadSession(db, resolvedSessionId) : null;
+  if (resolvedSessionId && !session && !normalizedTrimSource) {
     return {
       status: 'unavailable',
       reason: 'session_not_found',
@@ -245,34 +247,39 @@ export function buildTrimPlan(
   const effectiveKeepRecent = trimAll ? 0 : keepRecent;
   assertKeepRecent(effectiveKeepRecent);
 
-  const capturedTurns = countDistinctCapturedTurns(db, resolvedSessionId);
+  const capturedTurns =
+    normalizedTrimSource?.capturedTurns ?? countDistinctCapturedTurns(db, resolvedSessionId);
   const rollbackTurns = Math.max(0, capturedTurns - effectiveKeepRecent);
   const keepTurns = capturedTurns - rollbackTurns;
-  const record = buildHandoffRecord(db, {
-    sessionId: resolvedSessionId,
-    isInheritance: false,
-    inflightMemo,
-    recentTurnLimit: DEFAULT_TRIM_KEEP_RECENT,
-  });
-  const memoryPreview = collectMemoryPreview(record, previewMaxChars);
+  const record = normalizedTrimSource
+    ? null
+    : buildHandoffRecord(db, {
+        sessionId: resolvedSessionId,
+        isInheritance: false,
+        inflightMemo,
+        recentTurnLimit: DEFAULT_TRIM_KEEP_RECENT,
+      });
+  const memoryPreview = normalizedTrimSource?.memoryPreview ?? collectMemoryPreview(record, previewMaxChars);
   const hostInfo = describeTrimHost(normalizedHost);
 
   return {
     status: rollbackTurns === 0 ? 'noop' : hostInfo.status,
     reason: rollbackTurns === 0 ? 'nothing_to_trim' : hostInfo.reason,
     mode: 'dry-run',
-    session: {
-      id: resolvedSessionId,
-      projectPath: session.project_path,
-      status: session.status,
-      mergedInto: session.merged_into ?? null,
-    },
+    session: buildPlanSession({
+      resolvedSessionId,
+      session,
+      trimSource: normalizedTrimSource,
+      projectPath,
+    }),
     host: hostInfo,
     hostIdentity: buildHostIdentity({
       host: normalizedHost,
       codexThreadId,
     }),
     trim: {
+      source: normalizedTrimSource?.source ?? 'throughline-db',
+      sourceReason: normalizedTrimSource?.sourceReason ?? 'throughline_db_session',
       capturedTurns,
       keepRecent: effectiveKeepRecent,
       keepTurns,
@@ -305,6 +312,9 @@ export function renderTrimDryRunReport(plan) {
   if (plan.hostIdentity?.codexThreadId) {
     lines.push(`Codex thread: ${plan.hostIdentity.codexThreadId}`);
   }
+  if (plan.trim.source) {
+    lines.push(`Trim source: ${plan.trim.source}`);
+  }
   lines.push(`Captured turns: ${plan.trim.capturedTurns}`);
   lines.push(`Keep recent turns: ${plan.trim.keepRecent}`);
   lines.push(`Rollback candidate turns: ${plan.trim.rollbackTurns}`);
@@ -328,6 +338,42 @@ export function renderTrimDryRunReport(plan) {
   lines.push(plan.memoryPreview.text);
 
   return lines.join('\n');
+}
+
+function normalizeTrimSource(trimSource) {
+  if (!trimSource) return null;
+  if (!Number.isInteger(trimSource.capturedTurns) || trimSource.capturedTurns < 0) {
+    throw new Error('trimSource.capturedTurns must be a non-negative integer');
+  }
+  if (!trimSource.memoryPreview || typeof trimSource.memoryPreview.text !== 'string') {
+    throw new Error('trimSource.memoryPreview.text is required');
+  }
+
+  return {
+    ...trimSource,
+    source: trimSource.source ?? 'external',
+    sourceReason: trimSource.sourceReason ?? 'external_trim_source',
+  };
+}
+
+function buildPlanSession({ resolvedSessionId, session, trimSource, projectPath }) {
+  if (session) {
+    return {
+      id: resolvedSessionId,
+      projectPath: session.project_path,
+      status: session.status,
+      mergedInto: session.merged_into ?? null,
+      source: 'throughline-db',
+    };
+  }
+
+  return {
+    id: trimSource?.threadId ?? resolvedSessionId ?? null,
+    projectPath: trimSource?.projectPath ?? projectPath ?? null,
+    status: 'external',
+    mergedInto: null,
+    source: trimSource?.source ?? 'external',
+  };
 }
 
 function buildHostIdentity({ host, codexThreadId }) {
