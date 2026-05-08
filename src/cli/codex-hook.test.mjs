@@ -121,7 +121,7 @@ test('codex-hook stop captures rollout using Codex stdin payload fields', async 
   }
 });
 
-test('codex-hook stop runs auto refresh when verified usage reaches 90%', async () => {
+test('codex-hook stop runs auto refresh when verified usage reaches 80%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';

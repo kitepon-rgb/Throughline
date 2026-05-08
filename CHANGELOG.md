@@ -10,6 +10,22 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.7] — 2026-05-09
+
+### Changed
+
+- Codex Stop hook auto-refresh now uses an 80% verified-usage threshold instead
+  of 90%, so Throughline can refresh before Codex native auto-compact while
+  still staying above the monitor's 70% warning band. Estimate-only usage and
+  estimated context windows still do not mutate the thread.
+- Token monitor now discovers active Codex rollout files directly from
+  `~/.codex/sessions/**/rollout-*.jsonl`, so current Codex sessions appear even
+  when the Codex Stop hook has not written a Throughline state file.
+- Token monitor now displays Codex session ids as the raw first 8 thread-id
+  characters (`019e085c`) instead of the confusing prefixed slice (`codex:01`).
+  Codex in-flight turns still overlay transient `output_tokens` in the token
+  count, but the model column no longer adds a separate `live+<tokens>` marker.
+
 ## [0.4.6] — 2026-05-09
 
 ### Changed

@@ -278,7 +278,7 @@ Codex 側 v0.3.25 の以下は本計画で **完全に無変更**:
 - `codex-capture` / `codex-summarize` / `codex-resume` (Codex primary L1/L2/L3 path)
 - `codex-resume --format handoff` (新規 Codex thread 用 prompt)
 - `trim --execute --host codex` / `--preflight --host codex` (app-server `thread/rollback` + `thread/inject_items`)
-- Codex Stop hook 90% auto-refresh
+- Codex Stop hook 80% auto-refresh
 - restore-safety / host primitive audit diagnostics
 - Codex skill ([codex/skills/throughline](../codex/skills/throughline)) の trim 機能 (= 機能自体は無変更、SKILL.md 内の `/tl-trim` 言及があれば 4 TODO で update)
 - [src/codex-app-server.mjs](../src/codex-app-server.mjs), [src/codex-rollout-memory.mjs](../src/codex-rollout-memory.mjs)

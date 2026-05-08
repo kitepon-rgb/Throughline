@@ -372,13 +372,13 @@ Phase 6 result (2026-05-06):
 - `thread/inject_items` に raw Responses API item `{ type: "message", role: "developer", content: [{ type: "input_text", text: "..." }] }` を渡し、次の `turn/start` で injected memory が model-visible になることを確認した。marker `TL_PHASE6_INJECT_OK` を正しく返した。
 - その後の Codex primary 実装で、`codex-resume` が描画する active-work developer message も実 Codex host で model-visible になることを確認した。marker `TL_CODEX_VISIBLE_REAL_20260506_C` が `item/agentMessage/delta` に出た。詳細な実測値は [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) の Phase 3 result を正とする。
 - さらに `thread/inject_items` 後にもう一度 `thread/resume` してから `turn/start` を呼ぶ smoke も追加し、実 Codex host で marker `TL_CODEX_RESUME_AFTER_INJECT_REAL_20260506` が `item/agentMessage/delta` に出ることを確認した。
-- Codex host primitive は live app-server 上では実測済み。ただし restart-safe durability は未証明。現在は明示 `--codex-thread-id` または env thread identity と rollout/app-server turn count guard が live mutation の最低条件であり、durable success は別分類で扱う。2026-05-06 incident 後はいったん Codex Stop hook 後の automatic refresh mutation を blocked としたが、2026-05-08 unblock 後は verified usage 90% 以上で guarded rollback / inject を試行する。
+- Codex host primitive は live app-server 上では実測済み。ただし restart-safe durability は未証明。現在は明示 `--codex-thread-id` または env thread identity と rollout/app-server turn count guard が live mutation の最低条件であり、durable success は別分類で扱う。2026-05-06 incident 後はいったん Codex Stop hook 後の automatic refresh mutation を blocked としたが、2026-05-08 unblock 後は guarded rollback / inject を試行する。2026-05-09 以降は Codex native auto-compact より先に Throughline refresh を走らせるため、verified usage 80% 以上を既定閾値にする。
 - Claude `/rewind conversation only` は手動 UX として扱う。外部ツールからの自動化 surface は未確認。Claude host の automatic rollback / inject は `manual-only`。
 - Phase 8 では dry-run / preflight を本線にしつつ、Codex だけ guarded execute を追加した。Claude は manual-only のまま扱う。
 
 完了条件:
 
-- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。Codex は 2026-05-08 unblock 後、verified usage 90% 以上の Stop hook auto-refresh と明示 execute を許可する。Claude は manual-only。
+- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。Codex は 2026-05-08 unblock 後、Stop hook auto-refresh と明示 execute を許可する。2026-05-09 以降の auto-refresh 既定閾値は verified usage 80%。Claude は manual-only。
 
 ## Phase 7: Trim Handoff Model
 

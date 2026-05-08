@@ -2,6 +2,9 @@
 
 Status: implemented
 Date: 2026-05-06
+Amended: 2026-05-09 — monitor now also discovers Codex rollouts directly
+from `~/.codex/sessions/**/rollout-*.jsonl`, so Codex visibility no longer
+depends on the Stop hook writing a Throughline state file.
 
 この計画は、既存の Claude-primary monitor 経路を置き換えずに、
 `throughline monitor` へ Codex 対応を追加するためのもの。
@@ -24,6 +27,10 @@ Codex 対応では、既存 monitor contract の周辺に Codex adapter / projec
 Claude hooks、transcript parsing、slash command、baton、resume behavior は rename / 劣化
 させない。
 
+2026-05-09 以降は、Codex Stop hook が state を書く経路に加えて、
+monitor reader 自体が Codex rollout index を直接 discovery する。これにより、
+host が Stop hook をまだ dispatch していない現在 thread でも monitor に表示される。
+
 ## 非目的
 
 - Claude transcript usage parsing を置き換えない。
@@ -39,6 +46,8 @@ Monitor reader:
 
 - `throughline monitor` は `src/token-monitor.mjs` に dispatch される。
 - `~/.throughline/state/` の session state files を読む。
+- Codex については `~/.codex/sessions/**/rollout-*.jsonl` から現在 project の
+  rollout candidates も読む。`--all` または `--session` 時は全 project 候補を読む。
 - 現在の state file は主に次を持つ。
   `sessionId`, `projectPath`, `transcriptPath`, `pid`, `updatedAt`, optional `usage`
 - `state.usage` があれば monitor はそれをそのまま表示する。
@@ -50,6 +59,9 @@ Monitor reader:
 - `pid` は既存 state schema に残っているが、現行 stale 判定は `updatedAt` ベース。
   Codex Stop hook は短命 process なので、Codex の active 判定に hook process PID を
   意味づけない。
+- state file が無い Codex rollout candidate は、monitor 内で synthetic state として扱う。
+  既存 state がある場合は、state の `usage` snapshot を保持しつつ discovered
+  `rolloutPath` / `updatedAt` を合流する。
 
 Claude writer:
 
@@ -148,6 +160,8 @@ adapter 側に置く。
 - Claude state + real usage: 既存どおり表示。
 - Codex state + estimated usage: token bar を表示し、`est` marker を付ける。
 - Codex state + usage 無し: active session として表示し、token usage は未取得扱い。
+- Codex discovered rollout + state 無し: synthetic Codex state として表示し、live rollout
+  usage を読む。表示 ID は `codex:` prefix を外した raw thread id 先頭 8 桁にする。
 
 ### 5. VSCode monitor task provision を Codex にも接続する
 
@@ -181,6 +195,9 @@ Codex Stop hook でも、Claude hooks と同じく
 - [x] Codex context window が未検証の場合は `contextWindowEstimated: true` を保持する。
 - [x] `src/cli/codex-hook.mjs` で Codex Stop hook state writing を追加する。
 - [x] monitor session id は `codex:<thread_id>` にする。
+- [x] monitor が Codex rollout を直接 discovery し、state 未生成の current thread も表示する。
+- [x] discovered rollout と既存 Codex state を merge し、state の usage snapshot を保持する。
+- [x] Codex 表示 ID は `codex:` prefix を外した raw thread id 先頭 8 桁にする。
 - [x] Codex state の `pid` を active 判定に使わないことを test / docs で固定する。
 - [x] Codex state では `transcriptPath: null` とし、rollout path は `rolloutPath` に保存する。
 - [x] Codex Stop hook から `ensureMonitorTaskFile` を呼ぶ。
@@ -203,6 +220,8 @@ Codex Stop hook でも、Claude hooks と同じく
 ## 受け入れ条件
 
 - Codex Stop hook capture 後、`throughline monitor` に現在の Codex session が出る。
+- Codex Stop hook state が無くても、現在 project の Codex rollout があれば
+  `throughline monitor` に現在の Codex session が出る。
 - Claude monitor behavior は既存どおり。
 - Codex session は Codex と分かる。
 - Codex token usage が estimate の場合、estimate と分かる。

@@ -18,13 +18,13 @@
 
 ```bash
 npm install -g throughline
-throughline install     # ~/.claude/settings.json に hook を登録
+throughline install     # hook / Codex skill / VS Code monitor task を登録
 ```
 
 これだけ。Claude Code のセッションを開けば、以後すべてのターンが
 `~/.throughline/throughline.db` に自動で流れていく。50 ターン作業した後、
-次のセッションへ記憶を引き継ぎたければ `/clear` の前に `/tl` を打つ。新セッションは
-ゼロからのスタートではなく、**思考の途中から再開** される。
+`/clear` を打てば新セッションはゼロからではなく、**思考の途中から再開** される。
+`/clear` を経由しない新規 chat / VS Code 再起動では `/tl` で前任を指名できる。
 
 ## 他の手段との比較
 
@@ -32,10 +32,10 @@ throughline install     # ~/.claude/settings.json に hook を登録
 |---|---|---|---|
 | **圧縮の軸** | コンテンツの **種類** (テキスト vs ツール I/O) | **新旧** (古い → 要約) | 無し |
 | **コーディング用途への適合** | 高 — ツール I/O こそ重い 80% | 中 — 残したい部分まで圧縮される | — |
-| **`/clear` 後の生存** | ✅ SQLite + `/tl` バトン | ホスト依存 | ❌ |
-| **誤継承リスク** | ゼロ (明示的な `/tl`) | 高 | — |
+| **`/clear` 後の生存** | ✅ SQLite + typed `/clear` / `/tl` バトン | ホスト依存 | ❌ |
+| **誤継承リスク** | 低 (typed `/clear` / `/tl` が前任を指名) | 高 | — |
 | **ランタイム依存** | **ゼロ** (Node 22.5+ 同梱の `node:sqlite`) | 多数 | — |
-| **マルチセッション トークン監視** | ✅ 実測 `message.usage`、`len/4` 推定なし | — | — |
+| **マルチセッション トークン監視** | ✅ Claude 実測 `message.usage`、Codex rollout `token_count` | — | — |
 
 <details>
 <summary><b>なぜこれが効くのか — 80% ツール I/O 問題</b></summary>
@@ -126,33 +126,34 @@ L3 に保存された `kind` 別 (ツール入力 / ツール出力 / hook 出�
 
 ---
 
-## 引き継ぎ: `/clear` で自動、env で OFF、`/tl` で明示
+## 引き継ぎ: typed `/clear` / `/tl` が前任を指名、source-`clear` は補助
 
-Throughline 0.4.0 から引き継ぎは 2 経路:
+Throughline 0.4.1+ の引き継ぎは 2 経路です。主経路は typed `/clear` または
+`/tl` が書く baton で、`source='clear'` の auto path は `/clear` が
+UserPromptSubmit hook に届かない場合の補助です。
 
-### auto path (デフォルト): `/clear` で自動引き継ぎ
+### baton path (primary): typed `/clear` または `/tl`
 
-Claude Code 2.1.128 以降は `/clear` 直後の SessionStart hook に
-`source='clear'` が確実に乗ります。Throughline がこれを検出して、前セッションの
-メモリを新セッションに自動 merge します。**ユーザー操作不要** — `/clear`
-だけで新チャットが「途中から」再開されます。
+ユーザーが prompt に `/clear` または `/tl` を打つと、UserPromptSubmit hook が
+**そのセッションの** `session_id` を `handoff_batons` に書きます。次の
+SessionStart は 1 時間以内の baton を消費し、その前任を確定的に merge します。
+複数ウィンドウで「最新更新セッション」と「今 `/clear` したセッション」が違っても、
+指名された前任だけを引き継ぎます。
 
-`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` を環境変数に立てると auto path を OFF にできます。
+### auto path (fallback): `source='clear'`
 
-### baton path (`/tl`): 明示意思マーカー
+baton が無く、SessionStart の `source='clear'` が届いた場合だけ、同 project の
+最新 Claude predecessor を選んで merge します。これは VS Code 拡張メニューなど、
+typed `/clear` が UserPromptSubmit hook に届かない経路のための補助です。
 
-次のいずれかのユーザー向け:
-
-- `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` を立てている、**または**
-- `/clear` 経由しないで引き継ぎたい (新 chat / VSCode 再起動など)
-
-新セッションを開く前に `/tl` を打つと `UserPromptSubmit` hook が baton を書き、
-次の `SessionStart` (1 時間以内) が baton を消費して merge します。
-`source` 値関係なく発火します。
+`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` はこの fallback path だけを OFF にします。
+typed `/clear` と `/tl` はユーザーの明示意思なので、この env に関係なく baton を
+書いて引き継ぎます。
 
 ```
-auto path:    Session A → /clear → Session B (A を auto-merge)
-baton path:   Session A → /tl → (新 chat / 再起動) → Session B (baton を消費して A を merge)
+typed /clear: Session A → /clear → Session B (A の baton を消費して merge)
+typed /tl:    Session A → /tl    → 新 chat / 再起動 → Session B (A の baton を消費して merge)
+fallback:     baton 無し + source='clear' → latest predecessor を merge
 ```
 
 ### 注入されるもの
@@ -214,10 +215,12 @@ throughline monitor --session <id-prefix>
 ```
 
 監視中は Claude transcript / Codex rollout をライブに読み、Stop hook の state
-snapshot はライブ usage が取れない場合の控えとして使います。これにより表示更新は
-Stop 完了待ちではなくなります。
-Codex は open turn 中だけ `input_tokens + output_tokens` を表示し、モデル欄に
-`live+<tokens>` を付けます。`task_complete` 後は verified `input_tokens` のみに戻ります。
+snapshot はライブ usage が取れない場合の控えとして使います。Codex については
+`~/.codex/sessions/**/rollout-*.jsonl` も直接 discovery するため、Stop hook が
+Throughline state をまだ書いていない現在セッションも表示できます。Codex は open turn
+中だけ `input_tokens + output_tokens` を表示し、`task_complete` 後は verified
+`input_tokens` のみに戻ります。表示 ID は `codex:01` ではなく、raw thread id の
+先頭 8 桁 (`019e085c` など) です。
 
 詳細仕様 (resize 追従、1M context 検出、ステイル隠し、Stop hook の非同期化など) は
 [英語版 README](README.md#multi-session-token-monitor) を参照してください。

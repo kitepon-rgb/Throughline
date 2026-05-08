@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -22,6 +22,8 @@ const {
   setMeasuredColumns,
   withLiveActivity,
   resolveMonitorUsage,
+  discoverCodexSessionStates,
+  mergeCodexDiscoveredStates,
 } = _internal;
 
 // state-file は projectPath を resolve + lowercase 正規化する。
@@ -244,6 +246,73 @@ test('resolveMonitorUsage: live Codex rollout overrides stale Stop snapshot', ()
   }
 });
 
+test('discoverCodexSessionStates: finds Codex rollout without a monitor state file', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-monitor-codex-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-monitor-codex-project-'));
+  const oldHome = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME = home;
+    const threadId = '019e085c-d3b9-7b43-8445-0efe32416e3d';
+    const dir = join(home, 'sessions', '2026', '05', '09');
+    mkdirSync(dir, { recursive: true });
+    const rollout = join(dir, `rollout-2026-05-09T01-12-41-${threadId}.jsonl`);
+    writeFileSync(
+      rollout,
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          id: threadId,
+          cwd: project,
+          source: 'vscode',
+          cli_version: '0.129.0-alpha.15',
+        },
+      }) + '\n',
+    );
+
+    const states = discoverCodexSessionStates({ all: false, session: null }, project);
+
+    assert.equal(states.length, 1);
+    assert.equal(states[0].sessionId, `codex:${threadId}`);
+    assert.equal(states[0].host, 'codex');
+    assert.equal(states[0].projectPath, normalizeProjectPath(project));
+    assert.equal(states[0].rolloutPath, rollout);
+    assert.equal(states[0].discoveredFrom, 'codex-rollout-discovery');
+  } finally {
+    if (oldHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = oldHome;
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('mergeCodexDiscoveredStates: discovered rollout updates an existing Codex state entry', () => {
+  const existing = {
+    sessionId: 'codex:thread-a',
+    host: 'codex',
+    projectPath: CWD_FOO,
+    transcriptPath: null,
+    rolloutPath: '/old/rollout.jsonl',
+    updatedAt: 100,
+    usage: { tokens: 1 },
+  };
+  const discovered = {
+    sessionId: 'codex:thread-a',
+    host: 'codex',
+    projectPath: CWD_FOO,
+    transcriptPath: null,
+    rolloutPath: '/new/rollout.jsonl',
+    updatedAt: 200,
+    discoveredFrom: 'codex-rollout-discovery',
+  };
+
+  const states = mergeCodexDiscoveredStates([existing], [discovered]);
+
+  assert.equal(states.length, 1);
+  assert.equal(states[0].rolloutPath, '/new/rollout.jsonl');
+  assert.equal(states[0].updatedAt, 200);
+  assert.deepEqual(states[0].usage, { tokens: 1 });
+});
+
 // ─── cellWidth ─────────────────────────────────────────────────────
 
 test('cellWidth: ASCII は 1 セル', () => {
@@ -451,7 +520,18 @@ test('formatLine: Codex estimated usage は host と est marker を表示する'
   assert.ok(out.includes('codex est win?'));
 });
 
-test('formatLine: Codex live turn usage は transient output marker を表示する', () => {
+test('formatLine: Codex session id は host prefix を外して 8 桁表示する', () => {
+  const args = makeLineArgs(0.5);
+  args.state.host = 'codex';
+  args.state.sessionId = 'codex:019e085c-d3b9-7b43-8445-0efe32416e3d';
+
+  const out = stripColors(formatLine(args));
+
+  assert.ok(out.includes('019e085c'), `expected raw Codex short id in output: ${out}`);
+  assert.ok(!out.includes('codex:01'), `did not expect prefixed short id in output: ${out}`);
+});
+
+test('formatLine: Codex live turn usage は transient output marker を表示しない', () => {
   const args = makeLineArgs(0.5);
   args.state.host = 'codex';
   args.usage = {
@@ -469,7 +549,8 @@ test('formatLine: Codex live turn usage は transient output marker を表示す
   const out = stripColors(formatLine(args));
   assert.ok(out.includes('Codex'));
   assert.ok(out.includes('101.2k / 200.0k'));
-  assert.ok(out.includes('gpt-5.5 live+1.2k'));
+  assert.ok(out.includes('gpt-5.5'));
+  assert.ok(!out.includes('live+'));
 });
 
 test('formatLine: 70% 以上で "!" マーカーと弱めの文言', () => {

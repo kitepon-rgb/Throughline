@@ -25,6 +25,7 @@ import { statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjectPath, STALE_HIDE_MS } from './state-file.mjs';
 import { buildCodexMonitorUsage } from './codex-usage.mjs';
+import { listCodexThreadCandidates } from './codex-thread-index.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
 import { startSizeQuery } from './terminal-size.mjs';
 
@@ -290,7 +291,7 @@ export function resolveColumns() {
 
 function formatLine({ state, usage, isActive, now = Date.now() }) {
   const project = basename(state.projectPath || '?');
-  const shortId = state.sessionId.slice(0, 8);
+  const shortId = formatShortSessionId(state);
   const host = state.host === 'codex' ? 'Codex' : state.host === 'unknown' ? 'Unknown' : 'Claude';
   const tokens = usage?.tokens ?? 0;
   const max = usage?.contextWindowSize ?? 200_000;
@@ -318,11 +319,8 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
   const tokCol = `${formatNumber(tokens).padStart(6)} / ${formatNumber(max).padStart(6)}`;
   const estimateMark = usage?.estimated ? ' est' : '';
   const windowMark = usage?.contextWindowEstimated ? ' win?' : '';
-  const liveMark = usage?.liveTurn && usage?.transientOutputTokens
-    ? ` live+${formatNumber(usage.transientOutputTokens)}`
-    : '';
   const modelCol = usage?.model
-    ? color(ANSI.dim, `${usage.model}${estimateMark}${windowMark}${liveMark}`)
+    ? color(ANSI.dim, `${usage.model}${estimateMark}${windowMark}`)
     : color(ANSI.dim, '(未取得)');
   // 最終更新からの経過: 表示が「止まって見える」とき、それが idle なのか障害なのかを
   // 即座に判別できるようにする。updatedAt は state.writeSessionState 時の Date.now()。
@@ -335,6 +333,14 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
   const agoCol = color(ANSI.dim, padCellsEnd(agoText, 8));
 
   return `${marker} ${projectCol} ${hostCol} ${idCol} ${agoCol} ${barCol} ${tokCol}  ${modelCol}${warn}`;
+}
+
+function formatShortSessionId(state) {
+  const sessionId = String(state?.sessionId ?? '');
+  if (state?.host === 'codex' && sessionId.startsWith('codex:')) {
+    return sessionId.slice('codex:'.length, 'codex:'.length + 8);
+  }
+  return sessionId.slice(0, 8);
 }
 
 function statFile(path) {
@@ -375,6 +381,82 @@ function resolveMonitorUsage(state) {
   return state.usage ?? null;
 }
 
+let lastCodexDiscoveryError = null;
+
+function reportCodexDiscoveryError(err) {
+  const msg = err instanceof Error ? err.message : 'unknown error';
+  if (msg === lastCodexDiscoveryError) return;
+  lastCodexDiscoveryError = msg;
+  process.stderr.write(`[Throughline] codex discovery error: ${msg}\n`);
+}
+
+function codexDiscoveryOptions(args = {}, cwd = process.cwd()) {
+  const allProjects = Boolean(args.all || args.session);
+  return {
+    projectPath: cwd,
+    allProjects,
+    limit: allProjects ? 100 : 30,
+  };
+}
+
+function discoverCodexSessionStates(args = {}, cwd = process.cwd()) {
+  let candidates;
+  try {
+    candidates = listCodexThreadCandidates(codexDiscoveryOptions(args, cwd));
+  } catch (err) {
+    reportCodexDiscoveryError(err);
+    return [];
+  }
+
+  lastCodexDiscoveryError = null;
+  return candidates.map((candidate) => ({
+    sessionId: `codex:${candidate.id}`,
+    host: 'codex',
+    projectPath: normalizeProjectPath(candidate.cwd ?? cwd),
+    transcriptPath: null,
+    rolloutPath: candidate.rolloutPath,
+    pid: null,
+    updatedAt: codexCandidateUpdatedAt(candidate),
+    discoveredFrom: 'codex-rollout-discovery',
+  }));
+}
+
+function codexCandidateUpdatedAt(candidate) {
+  const mtime = Number(candidate?.mtimeMs);
+  if (Number.isFinite(mtime) && mtime > 0) return mtime;
+  const parsed = Date.parse(candidate?.updatedAt ?? '');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mergeCodexDiscoveredStates(states, discovered) {
+  const bySession = new Map();
+  for (const state of states) bySession.set(state.sessionId, state);
+
+  for (const state of discovered) {
+    const existing = bySession.get(state.sessionId);
+    if (!existing) {
+      bySession.set(state.sessionId, state);
+      continue;
+    }
+
+    bySession.set(state.sessionId, {
+      ...existing,
+      host: existing.host ?? state.host,
+      projectPath: existing.projectPath || state.projectPath,
+      rolloutPath: state.rolloutPath ?? existing.rolloutPath,
+      updatedAt: Math.max(Number(existing.updatedAt) || 0, Number(state.updatedAt) || 0),
+      discoveredFrom: state.discoveredFrom,
+    });
+  }
+
+  return Array.from(bySession.values());
+}
+
+function readMonitorStates(args = {}, cwd = process.cwd()) {
+  const states = readAllSessionStates();
+  return mergeCodexDiscoveredStates(states, discoverCodexSessionStates(args, cwd));
+}
+
 // --- フィルタ ---
 /**
  * セッション一覧に表示フィルタを適用する。
@@ -406,7 +488,7 @@ let lastRenderKey = '';
  * 注: state-file の mtime は Stop hook のタイミングで更新されるが、
  * transcript / rollout は実行中に太る。その live file 変化も render key に含める。
  */
-function computeRenderKey() {
+function computeRenderKey(args = {}, cwd = process.cwd()) {
   const parts = [];
   // state mtimes
   const mtimes = snapshotStateMtimes();
@@ -414,7 +496,7 @@ function computeRenderKey() {
   for (const name of names) parts.push(`s:${name}:${mtimes.get(name)}`);
   // live transcript / rollout sizes（state ファイルを読まずに直接 stat、IO 最小化）
   try {
-    const states = readAllSessionStates();
+    const states = readMonitorStates(args, cwd);
     for (const st of states) {
       for (const [kind, path] of [['t', st.transcriptPath], ['r', st.rolloutPath]]) {
         if (!path || !existsSync(path)) continue;
@@ -435,8 +517,8 @@ function computeRenderKey() {
 /**
  * 前回と比べてキーが変化していれば true。副作用として lastRenderKey を更新する。
  */
-function needsRerender() {
-  const key = computeRenderKey();
+function needsRerender(args = {}, cwd = process.cwd()) {
+  const key = computeRenderKey(args, cwd);
   if (key !== lastRenderKey) {
     lastRenderKey = key;
     return true;
@@ -451,7 +533,7 @@ function resetRenderKeyCache() {
 
 function renderFrame(args) {
   const now = Date.now();
-  const states = readAllSessionStates().map((state) => withLiveActivity(state, now));
+  const states = readMonitorStates(args).map((state) => withLiveActivity(state, now));
   const filtered = filterStates(states, args, process.cwd()).sort(
     (a, b) => b.updatedAt - a.updatedAt,
   );
@@ -665,7 +747,7 @@ export function main() {
       safeRenderFrame(args);
       return;
     }
-    if (needsRerender()) safeRenderFrame(args);
+    if (needsRerender(args)) safeRenderFrame(args);
     if (Date.now() - lastTimeAgoRefresh > TIME_AGO_REFRESH_MS) {
       lastTimeAgoRefresh = Date.now();
       safeRenderFrame(args);
@@ -741,6 +823,10 @@ export const _internal = {
   liveActivityMs,
   withLiveActivity,
   resolveMonitorUsage,
+  codexDiscoveryOptions,
+  discoverCodexSessionStates,
+  mergeCodexDiscoveredStates,
+  readMonitorStates,
 };
 
 // --- エントリポイント自動起動 ---

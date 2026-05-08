@@ -2,7 +2,7 @@ import { runCodexTrimExecution } from './codex-app-server.mjs';
 import { buildCodexRolloutTrimSource } from './codex-rollout-memory.mjs';
 import { buildTrimPlan } from './trim-model.mjs';
 
-export const CODEX_AUTO_REFRESH_THRESHOLD = 0.9;
+export const CODEX_AUTO_REFRESH_THRESHOLD = 0.8;
 
 export function evaluateCodexAutoRefreshUsage(usage, { threshold = CODEX_AUTO_REFRESH_THRESHOLD } = {}) {
   if (!usage) {

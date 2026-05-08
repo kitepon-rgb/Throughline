@@ -250,7 +250,9 @@ reconnect, but controlled model-visible rollback smokes did not reproduce that
 path. `throughline trim --execute --host codex` now sends the guarded
 rollback + Throughline DB memory injection when app-server turn-count guards and
 injectable DB memory are available. Codex Stop hook auto-refresh also attempts
-the same live refresh when verified usage reaches the 90% threshold.
+the same live refresh when verified usage reaches the 80% threshold, which runs
+before Codex native auto-compact while staying above the monitor's 70% warning
+band.
 
 `throughline codex-host-primitive-audit` can inspect the installed Codex
 app-server schema read-only. On the current tested Codex CLI, it finds
@@ -508,7 +510,7 @@ Example output:
 ```
 [Throughline] 1 セッション
 ▶ Throughline       Claude 2ed5039c just now ██░░░░░░░░  205.1k /   1.0M  claude-opus-4-6
-  Throughline       Codex  codex:01 just now ██████░░░░  151.9k / 258.4k  gpt-5.5
+  Throughline       Codex  019e085c just now ██████░░░░  151.9k / 258.4k  gpt-5.5
 ```
 
 - **Claude token counts are accurate.** Read straight from the latest
@@ -517,15 +519,17 @@ Example output:
   (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`).
   No `length / 4` approximation.
 - **Codex token counts use the rollout `token_count` event when present.** The
-  Codex Stop hook writes `codex:<thread_id>` monitor state with the rollout
-  path. While the monitor is running it reads the live rollout every tick and
-  prefers the latest verified `token_count` sample. During an open Codex turn,
-  the monitor overlays transient `output_tokens` on top of `input_tokens` and
-  marks the model with `live+<tokens>`; when `task_complete` arrives it drops
-  back to verified `input_tokens` only. If a Codex rollout has no token-count
-  event, Throughline can show an explicit estimate with `estimated: true` and
-  the monitor marks it with `est`; it is not presented as exact usage.
-- **Codex auto-refresh mutates at the verified 90% threshold.** The Codex Stop
+  monitor discovers live Codex rollouts directly from
+  `~/.codex/sessions/**/rollout-*.jsonl`, so a current Codex session can appear
+  even before the Codex Stop hook writes `codex:<thread_id>` monitor state.
+  While the monitor is running it reads the live rollout every tick and prefers
+  the latest verified `token_count` sample. During an open Codex turn, the
+  monitor overlays transient `output_tokens` on top of `input_tokens`; when
+  `task_complete` arrives it drops back to verified `input_tokens` only. If a
+  Codex rollout has no token-count event, Throughline can show an explicit
+  estimate with `estimated: true` and the monitor marks it with `est`; it is not
+  presented as exact usage.
+- **Codex auto-refresh mutates at the verified 80% threshold.** The Codex Stop
   hook captures DB memory, writes monitor state, and when verified usage reaches
   the threshold it attempts rollback + Throughline DB memory injection for the
   current thread.
@@ -533,11 +537,13 @@ Example output:
   transcript, falls back to string matching on `1M context`, and finally
   promotes to 1M if observed usage exceeds 200k.
 - **Multi-session view.** Each Claude Code or Codex session writes its own
-  state file (`~/.throughline/state/<session_id>.json`). Codex session ids are
-  stored as `codex:<thread_id>` in the JSON payload; filenames are URL-encoded
-  so the state directory remains portable. The monitor scans the directory every
-  second and displays one row per live session, sorted by last activity. The
-  most recent one is highlighted with `▶`.
+  state file (`~/.throughline/state/<session_id>.json`), and active Codex
+  rollouts are discovered directly from the Codex session directory. Codex
+  session ids are stored as `codex:<thread_id>` in JSON state, while the display
+  shows the raw first 8 thread-id characters (for example `019e085c`) to avoid
+  the ambiguous `codex:01` prefix slice. The monitor scans every second and
+  displays one row per live session, sorted by last activity. The most recent
+  one is highlighted with `▶`.
 - **Stale hiding.** Sessions that haven't been touched in 15 minutes drop out of
   the default view; files older than 24 hours are deleted entirely. This is the
   only time threshold in the system and is used solely for display hygiene — no
