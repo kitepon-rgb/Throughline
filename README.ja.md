@@ -216,6 +216,8 @@ throughline monitor --session <id-prefix>
 監視中は Claude transcript / Codex rollout をライブに読み、Stop hook の state
 snapshot はライブ usage が取れない場合の控えとして使います。これにより表示更新は
 Stop 完了待ちではなくなります。
+Codex は open turn 中だけ `input_tokens + output_tokens` を表示し、モデル欄に
+`live+<tokens>` を付けます。`task_complete` 後は verified `input_tokens` のみに戻ります。
 
 詳細仕様 (resize 追従、1M context 検出、ステイル隠し、Stop hook の非同期化など) は
 [英語版 README](README.md#multi-session-token-monitor) を参照してください。

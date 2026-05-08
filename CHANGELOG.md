@@ -10,6 +10,15 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.6] — 2026-05-09
+
+### Changed
+
+- Codex monitor usage now overlays transient `output_tokens` while a Codex turn
+  is open. During an in-flight turn the row displays `input_tokens +
+  output_tokens` and marks the model with `live+<tokens>`; after `task_complete`
+  the row drops back to verified `input_tokens` only.
+
 ## [0.4.5] — 2026-05-09
 
 ### Fixed

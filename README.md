@@ -519,10 +519,12 @@ Example output:
 - **Codex token counts use the rollout `token_count` event when present.** The
   Codex Stop hook writes `codex:<thread_id>` monitor state with the rollout
   path. While the monitor is running it reads the live rollout every tick and
-  prefers the latest verified `token_count` sample. If a Codex rollout has no
-  token-count event, Throughline can show an explicit estimate with
-  `estimated: true` and the monitor marks it with `est`; it is not presented as
-  exact usage.
+  prefers the latest verified `token_count` sample. During an open Codex turn,
+  the monitor overlays transient `output_tokens` on top of `input_tokens` and
+  marks the model with `live+<tokens>`; when `task_complete` arrives it drops
+  back to verified `input_tokens` only. If a Codex rollout has no token-count
+  event, Throughline can show an explicit estimate with `estimated: true` and
+  the monitor marks it with `est`; it is not presented as exact usage.
 - **Codex auto-refresh mutates at the verified 90% threshold.** The Codex Stop
   hook captures DB memory, writes monitor state, and when verified usage reaches
   the threshold it attempts rollback + Throughline DB memory injection for the

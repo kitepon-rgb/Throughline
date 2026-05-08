@@ -18,6 +18,7 @@ export function readLatestCodexUsage(rolloutPath) {
   let latest = null;
   let model = 'codex';
   let provider = null;
+  let openTaskCount = 0;
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     let row;
@@ -39,24 +40,43 @@ export function readLatestCodexUsage(rolloutPath) {
       continue;
     }
 
-    if (row?.type !== 'event_msg' || payload?.type !== 'token_count') continue;
+    if (row?.type !== 'event_msg') continue;
+
+    if (payload?.type === 'task_started') {
+      openTaskCount++;
+      continue;
+    }
+
+    if (payload?.type === 'task_complete') {
+      openTaskCount = Math.max(0, openTaskCount - 1);
+      continue;
+    }
+
+    if (payload?.type !== 'token_count') continue;
     const info = payload.info ?? {};
     const last = info.last_token_usage ?? {};
-    const tokens = Number(last.input_tokens);
-    if (!Number.isFinite(tokens) || tokens < 0) continue;
+    const inputTokens = Number(last.input_tokens);
+    if (!Number.isFinite(inputTokens) || inputTokens < 0) continue;
+    const outputTokens = Number.isFinite(Number(last.output_tokens)) ? Number(last.output_tokens) : 0;
+    const transientOutputTokens = openTaskCount > 0 ? outputTokens : 0;
 
     const windowSize = Number(info.model_context_window);
     latest = {
-      tokens,
+      tokens: inputTokens + transientOutputTokens,
+      inputTokens,
       model: model === 'codex' && provider ? provider : model,
       contextWindowSize:
         Number.isFinite(windowSize) && windowSize > 0
           ? windowSize
           : DEFAULT_CODEX_CONTEXT_WINDOW_SIZE,
       contextWindowEstimated: !(Number.isFinite(windowSize) && windowSize > 0),
-      outputTokens: Number.isFinite(Number(last.output_tokens)) ? Number(last.output_tokens) : 0,
+      outputTokens,
+      transientOutputTokens,
+      liveTurn: openTaskCount > 0,
       estimated: false,
-      source: 'codex-rollout-token-count',
+      source: openTaskCount > 0
+        ? 'codex-rollout-token-count-live-turn'
+        : 'codex-rollout-token-count',
     };
   }
 

@@ -451,6 +451,27 @@ test('formatLine: Codex estimated usage は host と est marker を表示する'
   assert.ok(out.includes('codex est win?'));
 });
 
+test('formatLine: Codex live turn usage は transient output marker を表示する', () => {
+  const args = makeLineArgs(0.5);
+  args.state.host = 'codex';
+  args.usage = {
+    tokens: 101_200,
+    inputTokens: 100_000,
+    model: 'gpt-5.5',
+    contextWindowSize: 200_000,
+    contextWindowEstimated: false,
+    outputTokens: 1200,
+    transientOutputTokens: 1200,
+    liveTurn: true,
+    estimated: false,
+    source: 'codex-rollout-token-count-live-turn',
+  };
+  const out = stripColors(formatLine(args));
+  assert.ok(out.includes('Codex'));
+  assert.ok(out.includes('101.2k / 200.0k'));
+  assert.ok(out.includes('gpt-5.5 live+1.2k'));
+});
+
 test('formatLine: 70% 以上で "!" マーカーと弱めの文言', () => {
   const out = stripColors(formatLine(makeLineArgs(0.75)));
   assert.ok(out.includes('!'), 'should include ! marker');

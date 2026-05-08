@@ -318,8 +318,11 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
   const tokCol = `${formatNumber(tokens).padStart(6)} / ${formatNumber(max).padStart(6)}`;
   const estimateMark = usage?.estimated ? ' est' : '';
   const windowMark = usage?.contextWindowEstimated ? ' win?' : '';
+  const liveMark = usage?.liveTurn && usage?.transientOutputTokens
+    ? ` live+${formatNumber(usage.transientOutputTokens)}`
+    : '';
   const modelCol = usage?.model
-    ? color(ANSI.dim, `${usage.model}${estimateMark}${windowMark}`)
+    ? color(ANSI.dim, `${usage.model}${estimateMark}${windowMark}${liveMark}`)
     : color(ANSI.dim, '(未取得)');
   // 最終更新からの経過: 表示が「止まって見える」とき、それが idle なのか障害なのかを
   // 即座に判別できるようにする。updatedAt は state.writeSessionState 時の Date.now()。
