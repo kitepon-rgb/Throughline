@@ -7,6 +7,16 @@ A 案 (= /clear で自動引継ぎ + /tl は逃げ道として残す + /tl-trim 
 > 過去の経緯 (なぜ `/tl` バトンを採用したか) は [INHERITANCE_ON_CLEAR_ONLY.md](INHERITANCE_ON_CLEAR_ONLY.md) を参照。
 > 本書は **2026-05-08 時点の現状検証 + 新理想設計** を扱う。
 
+> **2026-05-09 (v0.4.1) update**: 2 経路の優先順位を **入れ替えた**。
+> baton path が **primary**、auto path は **fallback**。理由: typed `/clear`
+> は UserPromptSubmit に届くので baton 書き込みで確定的に当該セッションを
+> 指名できる。一方 VSCode 拡張のメニュー由来 `/clear` は UserPromptSubmit
+> に届かない (= `findLatestClaudePredecessor` heuristic が誤った前任を選ぶ
+> リスクあり) ため、auto path を残してフォールバック化した。typed `/clear`
+> も UserPromptSubmit hook で baton を書く ([src/prompt-submit.mjs](../src/prompt-submit.mjs))。
+> `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` は **fallback path のみに作用** する
+> ようになった (typed `/clear` / `/tl` には効かない)。
+
 ---
 
 ## 1. 確定した事実 (実機検証済み)
@@ -57,28 +67,33 @@ source: [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks)
 
 ## 2. 採用する理想設計
 
-### 2.1 引継ぎ発火条件 (2 経路)
+### 2.1 引継ぎ発火条件 (2 経路、v0.4.1 で baton primary に変更)
 
 | 経路 | 条件 | 起動 |
 |---|---|---|
-| **auto path** | `source='clear'` かつ env `THROUGHLINE_DISABLE_AUTO_HANDOFF` の値が `'1'` でない | 自動引継ぎ |
-| **baton path** | `handoff_batons` テーブルに TTL (1 時間) 内 baton あり (= ユーザーが `/tl` を打った) | `source` 値関係なく引継ぎ |
+| **baton path (primary)** | `handoff_batons` テーブルに TTL (1 時間) 内 baton あり (= ユーザーが `/tl` または `/clear` を打った) | `source` 値関係なく確定的に引継ぎ |
+| **auto path (fallback)** | baton 不在 + `source='clear'` + env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でない | `findLatestClaudePredecessor` heuristic で引継ぎ |
 
 判定ロジック (擬似コード):
 
 ```
+on UserPromptSubmit(prompt, session_id, project_path):
+  if isBatonCommand(prompt) or isClearCommand(prompt):
+    writeBaton(project_path, session_id, now)  // typed /clear / /tl が確定的に baton を書く
+
 on SessionStart(source, session_id, project_path):
   baton = consumeBaton(project_path)  // atomic SELECT + DELETE, TTL 超過は sessionId=null で返る
   if baton.sessionId:
-    inject(curated_memory)  // baton path
+    inject(curated_memory_from(baton.sessionId))  // baton path (primary, env 関係なく発火)
     return
   if source == 'clear' and env.THROUGHLINE_DISABLE_AUTO_HANDOFF != '1':
-    inject(curated_memory)  // auto path
+    predecessor = findLatestClaudePredecessor(project_path, session_id)
+    inject(curated_memory_from(predecessor))  // auto path (fallback)
     return
   // 何もしない
 ```
 
-`consumeBaton` が先発なので「両方同時成立」は構造上発生しない (= baton ありなら baton 経路、無ければ source 判定)。
+`consumeBaton` が先発なので「両方同時成立」は構造上発生しない (= baton ありなら baton 経路、無ければ source 判定)。typed `/clear` も UserPromptSubmit hook で baton を書くため、通常はほぼ常に baton path が走る。auto path は VSCode 拡張のメニュー由来 `/clear` のように UserPromptSubmit に届かない経路のためのフォールバック。
 
 ### 2.2 注入内容: L1 + L2 + L3 refs のみ (baton/auto どちらの経路でも同一)
 
@@ -105,10 +120,13 @@ on SessionStart(source, session_id, project_path):
   - `handoff_batons.memo_text` 列を **drop** (schema v8 migration)
   - `src/baton.mjs` の `updateBatonMemo` 関数を **削除** (memo_text 列が drop されるため)
 - `prompt-submit.mjs` の baton 書き込み path は **維持** (`UserPromptSubmit` hook で `/tl` 検出 + writeBaton)
+- v0.4.1 で `/clear` も同じ hook で baton を書くように拡張 ([src/prompt-submit.mjs](../src/prompt-submit.mjs) `isClearCommand`)
 
 ユーザーから見た `/tl` の使い方:
-- 自動引継ぎ ON (デフォルト): `/tl` を打たなくても `/clear` で自動引継ぎ。打っても挙動は同じ
-- 自動引継ぎ OFF (env で disable): `/tl` を打ってから新セッションスタートすれば baton 経由で引継ぎ
+- typed `/clear` (デフォルト): `/clear` を打った時点で baton が書かれ、次セッションが確定的に引継ぐ。`/tl` を打つ必要なし
+- VSCode メニュー `/clear` 経由: UserPromptSubmit に届かないので baton は書かれず、auto path (fallback) が `findLatestClaudePredecessor` で前任を選ぶ
+- 非 `/clear` 境界 (新規 chat / VSCode 再起動): `/tl` で baton を立ててから新セッションを開く
+- env で auto OFF: typed `/clear` / `/tl` は引き続き動く (env は fallback 専用)
 
 ### 2.4 `/tl-trim` 廃止 (Codex 側を壊さない)
 

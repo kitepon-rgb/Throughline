@@ -10,6 +10,45 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-05-09
+
+### Changed
+
+- **`/clear` も baton を書き込むように変更**。UserPromptSubmit hook で `/clear`
+  を検出した時点で当該セッションの `session_id` を `handoff_batons` に書き、
+  次の新規 SessionStart が確定的にそのセッションを引き継ぐ。これにより、複数
+  VSCode ウィンドウなどで「最新更新セッション ≠ /clear したセッション」になる
+  シナリオで `findLatestClaudePredecessor` heuristic が誤った前任を選ぶ問題を
+  解消。
+- **2 経路の優先順位を入れ替え**: baton path が **primary**、`source='clear'`
+  の auto path は **fallback**。auto path は `/clear` が UserPromptSubmit hook
+  に届かない経路 (例: VSCode 拡張のメニュー由来) のためのフォールバック扱い。
+
+### Added
+
+- `src/prompt-submit.mjs`: `isClearCommand` 判定 (`/clear`, `/clear ...`,
+  前後空白許容、`/cleared` / `/clearcache` 等の prefix 偽陽性は拒否)。
+- `~/.throughline/logs/baton-write.log` の `trigger` フィールドに
+  `'tl' | 'clear'` を記録。
+- `src/prompt-submit.test.mjs`: `isBatonCommand` / `isClearCommand` の判定
+  テスト 14 件。
+- `src/hook-entrypoints.test.mjs`: `/clear` baton の subprocess+DB 実体テスト
+  3 件 (`/clear` 書き込み / `/tl` → `/clear` 後勝ち上書き / 通常 prompt は no-op)。
+
+### Notes
+
+- 既存の `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` env は **fallback path のみに作用**
+  するようになった。typed `/clear` は env に関係なく baton 書き込み → 引継ぎ発火
+  する (= ユーザーが明示的に `/clear` を打った時点で「続けたい」という意思表示
+  と解釈する)。auto path (VSCode メニュー由来) には引き続き env が効く。
+
+### Repository hygiene
+
+- `.vscode/tasks.json` を git 追跡から外す (`.gitignore` に追加)。
+  `ensureMonitorTaskFile` が hook 発火ごとに絶対パスを書き換えるため、追跡
+  対象に置くと別 OS / 別マシンで毎回 dirty diff が出続けていた。各マシンでは
+  初回 hook 発火時に自動生成される。
+
 ## [0.4.0] — 2026-05-08
 
 ### Breaking changes

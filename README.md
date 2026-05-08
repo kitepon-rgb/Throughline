@@ -22,10 +22,10 @@ throughline install     # registers Claude hooks, Codex Stop hook, and Codex ski
 ```
 
 That's it. Open any Claude Code session and your turns flow into
-`~/.throughline/throughline.db` automatically. After 50 turns of work, type
-`/clear` (or just open a new chat), then `/tl` first if you want the next
-session to inherit the memory — the new session resumes mid-thought instead
-of starting from zero.
+`~/.throughline/throughline.db` automatically. After 50 turns of work, just
+type `/clear` — the new session resumes mid-thought instead of starting from
+zero. (For non-`/clear` boundaries such as a brand-new chat or a VSCode
+restart, type `/tl` first to mark the predecessor.)
 
 Global install also registers a Codex Stop hook in `~/.codex/hooks.json` and
 enables `[features].codex_hooks = true` in `~/.codex/config.toml`. The Codex
@@ -42,8 +42,8 @@ status, resume, summarize, or trim without typing the full guarded command.
 |---|---|---|---|
 | **Compression axis** | content **type** (text vs tool I/O) | **recency** (old → summarized) | none |
 | **Coding-assistant fit** | high — tool I/O is the heavy 80% | medium — also compresses what you want to keep | — |
-| **`/clear` survival** | ✅ via SQLite + `/tl` baton | depends on host | ❌ |
-| **Auto-inheritance risk** | zero (explicit `/tl`) | high | — |
+| **`/clear` survival** | ✅ via SQLite + typed `/clear` / `/tl` baton | depends on host | ❌ |
+| **Auto-inheritance risk** | low (typed `/clear` or `/tl` names the predecessor) | high | — |
 | **Runtime deps** | **zero** (Node 22.5+ built-in `node:sqlite`) | many | — |
 | **Multi-session token monitor** | ✅ Claude real `message.usage`; Codex rollout `token_count` when available | — | — |
 
@@ -141,34 +141,42 @@ of tool inputs, tool outputs, and hook output captured at L3 for that turn.
 
 ---
 
-## Inheritance: auto via `/clear`, opt-out via env, opt-in via `/tl`
+## Inheritance: typed `/clear` and `/tl` write a baton, source-`clear` is the fallback
 
-Throughline 0.4.0+ supports two inheritance paths:
+Throughline 0.4.1+ supports two inheritance paths. The **baton path is the
+primary route**; the source-`clear` auto path is the fallback for cases where
+the user's `/clear` does not reach the `UserPromptSubmit` hook (for example
+the VSCode extension's menu-driven `/clear`).
 
-### auto path (default): `/clear` → automatic inheritance
+### baton path (primary): typed `/clear` or `/tl` → deterministic inheritance
+
+When the user types `/clear` or `/tl` in the prompt, the `UserPromptSubmit`
+hook writes a handoff baton with **that session's `session_id`** into the
+`handoff_batons` table. The next `SessionStart` (within the 1-hour TTL)
+consumes the baton and merges that exact predecessor's memory into the new
+session, regardless of the `source` value.
+
+This path is deterministic: it names the predecessor by id rather than
+guessing, so multi-window scenarios where "most recently updated session"
+does not equal "the session you just `/clear`-ed" still inherit correctly.
+
+```
+typed /clear: Session A → /clear → Session B (consumes A's baton, merges A)
+typed /tl:    Session A → /tl    → (new chat / restart) → Session B (consumes baton, merges A)
+```
+
+### auto path (fallback): `source='clear'` → heuristic inheritance
 
 Since Claude Code 2.1.128, the SessionStart hook receives `source='clear'`
-reliably after `/clear`. Throughline detects this and automatically merges the
-previous session's memory into the new one. **No user action required** —
-just type `/clear` and the new chat resumes mid-thought.
+reliably after `/clear`. When no baton is present (for example because the
+`/clear` was triggered by the VSCode extension's menu and never reached
+`UserPromptSubmit`), Throughline falls back to `findLatestClaudePredecessor`
+to pick the most recent unmerged session for the same project and merges it.
 
-Set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` in your environment to opt out.
-
-### baton path (`/tl`): explicit inheritance signal
-
-For users who:
-
-- have `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` set, **or**
-- want to inherit across a non-`/clear` boundary (new chat / VSCode restart),
-
-type `/tl` before opening the new session. The `UserPromptSubmit` hook writes
-a handoff baton; the next `SessionStart` (within 1 hour) consumes the baton
-and merges the previous session's memory, regardless of the `source` value.
-
-```
-auto path:    Session A → /clear → Session B (auto-merges A)
-baton path:   Session A → /tl → (new chat / restart) → Session B (consumes baton, merges A)
-```
+Set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` in your environment to opt out of
+this fallback. **The env var only affects the fallback**; typed `/clear` and
+`/tl` still write a baton and inherit because the user explicitly signalled
+"continue this work".
 
 ### What gets injected
 
@@ -667,17 +675,20 @@ Slash commands (invoked by the user in Claude Code):
 
 | Command       | What it does                                                      |
 | ------------- | ----------------------------------------------------------------- |
-| `/tl`         | Write a handoff baton (used as opt-in inheritance signal when `/clear` auto path is OFF or you skip `/clear`) |
+| `/tl`         | Write a handoff baton (explicit inheritance signal across non-`/clear` boundaries — new chat / VSCode restart) |
+| `/clear`      | Built-in Claude Code reset. Throughline's `UserPromptSubmit` hook also writes a baton so the next session inherits the cleared session's memory |
 | `/sc-detail <time>` | Retrieve L2 body text and L3 tool I/O for a past turn       |
 
-> Auto-handoff is ON by default since v0.4.0: just type `/clear` and the new
-> chat resumes mid-thought. Set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` in your
-> environment to opt out. `/tl` is for users who opt out, or who want to
-> inherit across non-`/clear` boundaries (new chat / VSCode restart).
+> Since v0.4.1, both `/clear` and `/tl` typed in the prompt write a baton
+> identifying the current session, so the next `SessionStart` deterministically
+> inherits that exact predecessor. The `source='clear'` auto path remains as a
+> fallback for `/clear` triggered outside `UserPromptSubmit` (for example via
+> the VSCode extension menu); `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` only opts
+> out of that fallback.
 
 Hook subcommands (invoked by Claude Code, not by humans):
 `session-start` (SessionStart), `process-turn` (Stop),
-`prompt-submit` (UserPromptSubmit — detects `/tl` and writes baton).
+`prompt-submit` (UserPromptSubmit — detects `/tl` and `/clear` and writes a baton).
 
 ### `throughline detail` — for AI, not humans
 
@@ -727,7 +738,7 @@ Schema v7:
 - `skeletons` — L1 one-liners, keyed by `(session_id, origin_session_id, turn, role)`
 - `bodies` — L2 verbatim text (user + assistant), same key shape
 - `details` — L3 records with `kind` column (`tool_input` / `tool_output` / `system` / `image` / `thinking`) and `source_id` for idempotent re-processing
-- `handoff_batons` — one row per `project_path`, with `session_id` and `created_at`. Consumed and deleted by the next `SessionStart` if within the 1-hour TTL. (v8 dropped the `memo_text` column when memo was retired in v0.4.0.)
+- `handoff_batons` — one row per `project_path`, with `session_id` and `created_at`. Written by the `UserPromptSubmit` hook when the user types `/tl` or `/clear`. Consumed and deleted by the next `SessionStart` if within the 1-hour TTL. (v8 dropped the `memo_text` column when memo was retired in v0.4.0.)
 - `injection_log` — audit trail of injection events
 
 All memory tables carry an `origin_session_id` so rebonded rows keep their
@@ -879,9 +890,15 @@ and `~/.throughline/state/*.json`. A fresh database with schema v7 is created on
 the next hook fire.
 
 **New session didn't inherit memory from the previous one**
-This is the designed behavior — inheritance requires an explicit `/tl` in the
-previous session. If you forgot to type it before `/clear`, the memory is still
-in SQLite but won't auto-inject. You can still retrieve specific turns with
+Since v0.4.1, both typed `/clear` and `/tl` write a baton, and the auto path
+falls back on `source='clear'` for menu-driven `/clear`. If inheritance still
+did not happen, the most likely cause is one of: (a) the previous session was
+never recorded (no Stop hook fired — check `throughline status`), (b) the
+1-hour baton TTL expired before the new session opened, (c) the new session's
+`project_path` (cwd) differs from the previous one, so they live in different
+session chains, or (d) you set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` and the
+`/clear` came from the VSCode menu which never reaches `UserPromptSubmit`.
+Memory is still in SQLite — you can retrieve specific turns with
 `/sc-detail <time>`.
 
 ---
@@ -902,8 +919,11 @@ Run the monitor directly without a global install:
 node src/token-monitor.mjs
 ```
 
-The `.vscode/tasks.json` in this repo auto-launches the monitor when you open
-the folder in VS Code.
+When any Throughline hook fires for the first time in a folder, it
+auto-generates `.vscode/tasks.json` with an absolute path to the monitor
+executable for the current machine. The file is **gitignored** (since v0.4.1)
+because the absolute path is per-machine. Reload the VS Code window after
+the first generation to pick up the auto-start task.
 
 ---
 

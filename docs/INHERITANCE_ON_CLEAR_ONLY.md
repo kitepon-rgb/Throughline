@@ -1,17 +1,26 @@
 # 引き継ぎ発火条件の絞り込み調査 & 実装計画
 
-> **Status (2026-05-08 update): 本書は履歴扱い**
+> **Status (2026-05-09 update): 本書は履歴扱い**
 >
 > 当時 (2026-04-18) は VSCode 拡張 2.1.112 で `/clear` 後も `source='startup'` に
 > 潰される問題があり、バトン方式 (案 E) を採用した。その後 Claude Code 2.1.105
 > (VSCode `/clear` not clearing context fix) と 2.1.126 (Windows env fix) で
-> 段階的に修正され、**2.1.128 で `source='clear'` が reliable**になっている。
+> 段階的に修正され、**2.1.128 で `source='clear'` が reliable**になった。
 >
-> 現行仕様 (v0.4.0): auto path (`/clear` で自動引継ぎ) + baton path (`/tl` 明示
-> マーカー) の 2 経路。`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` で auto path を OFF
-> にできる。詳細は [THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md)。
+> 現行仕様 (v0.4.1): **baton path (primary)** + auto path (fallback) の 2 経路。
+> typed `/clear` / `/tl` はどちらも UserPromptSubmit hook で baton を書き、次
+> SessionStart が確定的にそのセッションを引き継ぐ。auto path は VSCode 拡張
+> メニュー由来 `/clear` のように UserPromptSubmit に届かない経路のための
+> fallback で、`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` で OFF にできる (typed
+> `/clear` / `/tl` は env と無関係に引き続き発火する)。詳細は
+> [THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md)。
 >
-> 本書は当時のバトン採用判断を残す履歴ドキュメント。
+> 本書は当時のバトン採用判断を残す履歴ドキュメント。「結局 baton primary に
+> 戻った」という結末は皮肉だが、当時の判断は VSCode 拡張側 source バグへの
+> 適切な対応だった。今回 baton primary を再採択した理由は (a) typed `/clear`
+> が UserPromptSubmit に確実に届く、(b) multi-window で「最新更新セッション
+> ≠ /clear したセッション」になる場合に heuristic が誤った前任を選ばない、
+> の 2 点。
 
 ## Status (2026-04-18 更新)
 
