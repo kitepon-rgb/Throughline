@@ -356,6 +356,12 @@ CODEX_THREAD_ID=<id> throughline trim --preflight --host codex
 throughline trim --execute --host codex --all --codex-thread-id <id>
 ```
 
+For Codex trim, the default memory session is the current Codex thread:
+`codex:<CODEX_THREAD_ID>` / `codex:<THROUGHLINE_CODEX_THREAD_ID>`. Throughline
+does not fall back to the latest project session for Codex injection, because
+that can mix Claude-side memory into a Codex rollback. Pass `--session` only
+when deliberately injecting a different captured session.
+
 That current-work framing matters: the original `/tl` design learned that L1/L2
 memory alone can read like past logs rather than "the work in progress". The
 memo is one strong signal, but the broader mechanism is explicit structure:

@@ -46,6 +46,14 @@ export function findLatestSessionIdForProject(db, projectPath) {
   }
 }
 
+function resolveDefaultSessionId({ sessionId, host, codexThreadId, db, projectPath }) {
+  if (sessionId) return sessionId;
+  if (host === 'codex') {
+    return codexThreadId ? `codex:${codexThreadId}` : null;
+  }
+  return findLatestSessionIdForProject(db, projectPath);
+}
+
 function countDistinctCapturedTurns(db, sessionId) {
   try {
     const row = db
@@ -244,7 +252,13 @@ export function buildTrimPlan(
 ) {
   const normalizedHost = TRIM_HOSTS.includes(host) ? host : 'unknown';
   const normalizedTrimSource = normalizeTrimSource(trimSource);
-  const resolvedSessionId = sessionId ?? findLatestSessionIdForProject(db, projectPath);
+  const resolvedSessionId = resolveDefaultSessionId({
+    sessionId,
+    host: normalizedHost,
+    codexThreadId,
+    db,
+    projectPath,
+  });
   if (!resolvedSessionId && !normalizedTrimSource) {
     return {
       status: 'unavailable',
@@ -538,7 +552,7 @@ function buildPlanSession({ resolvedSessionId, session, trimSource, projectPath 
   }
 
   return {
-    id: trimSource?.threadId ?? resolvedSessionId ?? null,
+    id: resolvedSessionId ?? trimSource?.threadId ?? null,
     projectPath: trimSource?.projectPath ?? projectPath ?? null,
     status: 'external',
     mergedInto: null,

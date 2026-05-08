@@ -191,12 +191,24 @@ async function seedDb(home, project) {
       `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
        VALUES ('sess-trim-cli', ?, 'active', 1, 2)`,
     ).run(project);
-    for (let turn = 1; turn <= 22; turn++) {
-      db.prepare(
-        `INSERT INTO bodies
-           (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
-         VALUES ('sess-trim-cli', 'sess-trim-cli', ?, 'assistant', ?, 1, ?)`,
-      ).run(turn, `assistant body ${turn}`, turn * 1000);
+    for (const sessionId of [
+      'sess-trim-cli',
+      'codex:019dfabf-thread',
+      'codex:019dfaba-f87e-7f41-a144-d5ca7c6dd7f9',
+    ]) {
+      if (sessionId !== 'sess-trim-cli') {
+        db.prepare(
+          `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+           VALUES (?, ?, 'active', 1, 1)`,
+        ).run(sessionId, project);
+      }
+      for (let turn = 1; turn <= 22; turn++) {
+        db.prepare(
+          `INSERT INTO bodies
+             (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+           VALUES (?, ?, ?, 'assistant', ?, 1, ?)`,
+        ).run(sessionId, sessionId, turn, `assistant body ${turn}`, turn * 1000);
+      }
     }
     db.close();
   } finally {
@@ -284,6 +296,7 @@ test('trim CLI carries explicit Codex thread id in dry-run JSON', async () => {
       explicit: true,
       reason: 'explicit_codex_thread_id',
     });
+    assert.equal(plan.session.id, 'codex:019dfabf-thread');
     assert.equal(plan.trim.automaticExecutionAllowed, true);
   } finally {
     rmSync(project, { recursive: true, force: true });
@@ -361,7 +374,8 @@ test('trim CLI uses explicit Codex rollout source when DB has no captured turns'
 
     assert.equal(result.status, 0, result.stderr);
     const plan = JSON.parse(result.stdout);
-    assert.equal(plan.session.id, 'sess-empty-codex');
+    assert.equal(plan.session.id, 'codex:019dfaba-f87e-7f41-a144-d5ca7c6dd7f9');
+    assert.equal(plan.session.source, 'codex-rollout');
     assert.equal(plan.trim.source, 'codex-rollout');
     assert.equal(plan.trim.sourceReason, 'explicit_codex_thread_rollout');
     assert.equal(plan.trim.capturedTurns, 22);

@@ -10,6 +10,16 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-05-09
+
+### Fixed
+
+- Codex trim no longer falls back to the latest project session when `--session`
+  is omitted. For `--host codex`, the default memory session is now the current
+  Codex thread (`codex:<thread_id>` from `--codex-thread-id`,
+  `CODEX_THREAD_ID`, or `THROUGHLINE_CODEX_THREAD_ID`), so Claude-side work
+  cannot accidentally become the injected memory for a Codex rollback.
+
 ## [0.4.1] — 2026-05-09
 
 ### Changed

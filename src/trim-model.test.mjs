@@ -89,6 +89,26 @@ function seedSkeleton(db, { turn = 1, summary = 'old L1 summary' } = {}) {
   ).run(turn, summary, turn * 1000 + 500);
 }
 
+function seedSessionTurns(db, { sessionId, projectPath = '/repo', updatedAt = 2, textPrefix, count = 2 }) {
+  db.prepare(
+    `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+     VALUES (?, ?, 'active', 1, ?)`,
+  ).run(sessionId, projectPath, updatedAt);
+
+  for (let turn = 1; turn <= count; turn++) {
+    db.prepare(
+      `INSERT INTO bodies
+         (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES (?, ?, ?, 'user', ?, 1, ?)`,
+    ).run(sessionId, sessionId, turn, `${textPrefix} user ${turn}`, turn * 1000);
+    db.prepare(
+      `INSERT INTO bodies
+         (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES (?, ?, ?, 'assistant', ?, 1, ?)`,
+    ).run(sessionId, sessionId, turn, `${textPrefix} assistant ${turn}`, turn * 1000 + 100);
+  }
+}
+
 test('buildTrimPlan: default dry-run keeps recent 20 and marks Claude as manual-only', () => {
   const db = makeDb();
   seedTurns(db);
@@ -220,6 +240,54 @@ test('buildTrimPlan: env Codex thread id is marked non-explicit', () => {
   });
 });
 
+test('buildTrimPlan: Codex defaults memory session to the current Codex thread, not latest project session', () => {
+  const db = makeDb();
+  const threadId = '019dfabf-thread';
+  seedSessionTurns(db, {
+    sessionId: 'claude-latest',
+    updatedAt: 999,
+    textPrefix: 'claude latest memory',
+  });
+  seedSessionTurns(db, {
+    sessionId: `codex:${threadId}`,
+    updatedAt: 100,
+    textPrefix: 'codex current memory',
+  });
+
+  const plan = buildTrimPlan(db, {
+    projectPath: '/repo',
+    host: 'codex',
+    codexThreadId: threadId,
+    trimAll: true,
+  });
+
+  assert.equal(plan.status, 'ready');
+  assert.equal(plan.session.id, `codex:${threadId}`);
+  assert.equal(plan.session.source, 'throughline-db');
+  assert.equal(plan.trim.capturedTurns, 2);
+  assert.match(plan.memoryPreview.text, /codex current memory assistant 2/);
+  assert.doesNotMatch(plan.memoryPreview.text, /claude latest memory/);
+});
+
+test('buildTrimPlan: Codex without a thread id does not fall back to latest project session', () => {
+  const db = makeDb();
+  seedSessionTurns(db, {
+    sessionId: 'claude-latest',
+    updatedAt: 999,
+    textPrefix: 'claude latest memory',
+  });
+
+  const plan = buildTrimPlan(db, {
+    projectPath: '/repo',
+    host: 'codex',
+    trimAll: true,
+  });
+
+  assert.equal(plan.status, 'unavailable');
+  assert.equal(plan.reason, 'no_session');
+  assert.equal(plan.session, null);
+});
+
 test('buildTrimPlan: current-work memo is placed in curated memory preview', () => {
   const db = makeDb();
   seedTurns(db, { count: 3 });
@@ -345,7 +413,7 @@ test('buildTrimPlan: external Codex rollout source can stand in when DB session 
   });
 
   assert.equal(plan.status, 'ready');
-  assert.equal(plan.session.id, '019dfabf-thread');
+  assert.equal(plan.session.id, 'codex:019dfabf-thread');
   assert.equal(plan.session.status, 'external');
   assert.equal(plan.session.source, 'codex-rollout');
   assert.equal(plan.trim.rollbackTurns, 2);
