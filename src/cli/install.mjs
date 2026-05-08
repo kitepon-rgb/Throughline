@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFi
 import { join, dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { ensureMonitorTaskFile, shouldRecommendGitignore } from '../vscode-task.mjs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SLASH_COMMANDS_SRC = join(PACKAGE_ROOT, '.claude', 'commands');
@@ -400,6 +401,10 @@ export async function run(args = []) {
   const { installed: installedCommands, skipped } = installSlashCommands(commandsDir);
   const codex = args.includes('--project') ? null : installCodexHooks();
   const codexSkills = args.includes('--project') ? { installed: [], skipped: null } : installCodexSkills(codexSkillsDir);
+  const monitorTask = ensureMonitorTaskFile({
+    cwd: process.cwd(),
+    env: { ...process.env, THROUGHLINE_SUPPRESS_VSCODE_NOTICES: '1' },
+  });
 
   const scope = args.includes('--project') ? 'プロジェクトローカル' : 'グローバル（全プロジェクト）';
   console.log(`Throughline hooks をインストールしました [${scope}]`);
@@ -434,6 +439,15 @@ export async function run(args = []) {
     console.log('');
   } else if (codexSkills.skipped === 'source-missing') {
     console.log('注意: パッケージ内に Codex skills のソースが見つからないためスキップしました。');
+    console.log('');
+  }
+  if (monitorTask.action === 'created' || monitorTask.action === 'merged' || monitorTask.action === 'repaired') {
+    console.log(`VSCode monitor task を${monitorTask.action === 'repaired' ? '修復' : '配置'}しました:`);
+    console.log(`  ${monitorTask.path}`);
+    console.log('  既に VSCode でこのフォルダを開いている場合は Developer: Reload Window を 1 回実行してください。');
+    if (shouldRecommendGitignore(process.cwd())) {
+      console.log('  共有リポジトリでは .vscode/tasks.json を .gitignore に追加することを推奨します。');
+    }
     console.log('');
   }
   console.log('  アンインストール: throughline uninstall');

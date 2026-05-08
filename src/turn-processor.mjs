@@ -279,9 +279,8 @@ export async function run() {
     }
   }
 
-  // monitor が JSONL を毎フレーム再スキャンせずに済むよう、現在確定している usage を
-  // state ファイルに固定する。Stop 完了時点で assistant エントリは transcript に
-  // 書き出し済みなので readLatestUsage が最新値を返す。
+  // monitor の fallback 用に、Stop 完了時点で確定している usage を state ファイルにも
+  // 保存する。通常表示はライブ transcript を優先し、読めない時だけ snapshot を使う。
   // 取得失敗は致命ではないので try/catch で握る（stderr には出す）。
   try {
     const usage = transcript_path ? readLatestUsage(transcript_path) : null;

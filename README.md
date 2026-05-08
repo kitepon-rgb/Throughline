@@ -18,7 +18,7 @@
 
 ```bash
 npm install -g throughline
-throughline install     # registers Claude hooks, Codex Stop hook, and Codex skill
+throughline install     # registers hooks/skills and provisions the VS Code monitor task
 ```
 
 That's it. Open any Claude Code session and your turns flow into
@@ -517,9 +517,10 @@ Example output:
   (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`).
   No `length / 4` approximation.
 - **Codex token counts use the rollout `token_count` event when present.** The
-  Codex Stop hook writes `codex:<thread_id>` monitor state and snapshots the
-  latest verified rollout `token_count` sample. If a Codex rollout has no
-  token-count event, Throughline can store an explicit estimate with
+  Codex Stop hook writes `codex:<thread_id>` monitor state with the rollout
+  path. While the monitor is running it reads the live rollout every tick and
+  prefers the latest verified `token_count` sample. If a Codex rollout has no
+  token-count event, Throughline can show an explicit estimate with
   `estimated: true` and the monitor marks it with `est`; it is not presented as
   exact usage.
 - **Codex auto-refresh mutates at the verified 90% threshold.** The Codex Stop
@@ -554,17 +555,17 @@ Example output:
   frame so the previous, wrongly-sized frame can't stack beneath it.
 - **Per-row "last updated" stamp.** Each session row carries an 8-cell
   `just now` / `24m ago` stamp right after the session id, placed before the
-  bar so narrow terminals don't truncate it. It resets to `just now` on every
-  Stop hook, so a growing stamp means the session is truly idle — not the
-  monitor stuck. When you need more detail,
+  bar so narrow terminals don't truncate it. It follows the newest state,
+  transcript, or Codex rollout mtime, so active sessions stay visible and the
+  stamp can move before the next Stop hook completes. When you need more detail,
   `throughline doctor --session <id-prefix>` compares the state file against
   the actual transcript JSONL and flags drift, idle time, and
   `/clear`-induced transcript path staleness.
-- **State-backed usage snapshot.** When the Stop hook finishes a turn it
-  persists the latest `tokens / model / contextWindowSize` back into the state
-  file. The monitor prefers this snapshot over re-reading the JSONL, which
-  removes a source of flicker when the transcript path in state drifts from
-  the one Claude Code is currently appending to.
+- **Live usage first, state snapshot as fallback.** When the Stop hook finishes
+  a turn it persists the latest `tokens / model / contextWindowSize` back into
+  the state file. The monitor now prefers live Claude transcript / Codex rollout
+  reads and uses the snapshot only when the live file cannot provide usage, so
+  the display no longer waits for Stop to update.
 - **Host-aware state.** Missing `host` means an older Claude state file.
   Codex states use `host: "codex"`, keep `transcriptPath: null`, and store the
   Codex rollout path separately as `rolloutPath` so the Claude transcript parser
@@ -581,15 +582,17 @@ Example output:
 
 ### VS Code auto-start (automatic)
 
-After `throughline install`, any VS Code / Cursor / VSCodium project you work in
-gets `.vscode/tasks.json` provisioned automatically on the first session event.
-The file configures `runOn: folderOpen` so the monitor appears in a dedicated
-terminal panel the next time you open that folder.
+After `throughline install`, the current VS Code / Cursor / VSCodium project
+gets `.vscode/tasks.json` provisioned immediately when VS Code environment
+variables are present. Any other VS Code project you work in also gets the file
+on the first session event. The file configures `runOn: folderOpen` so the
+monitor appears in a dedicated terminal panel the next time you open that
+folder.
 
-**How it works.** `ensureMonitorTaskFile` is called from **all three hooks
-(SessionStart, UserPromptSubmit, Stop)** as of v0.3.18. Whichever one fires
-first in your environment creates the file; the rest are idempotent no-ops.
-Once per project it inspects `.vscode/tasks.json`:
+**How it works.** `ensureMonitorTaskFile` is called from `throughline install`
+and from **all three hooks (SessionStart, UserPromptSubmit, Stop)**. Whichever
+one fires first in your environment creates the file; the rest are idempotent
+no-ops. Once per project it inspects `.vscode/tasks.json`:
 
 - **No file yet** → creates one with a single `Throughline Monitor` task, and
   emits a one-time `<system-reminder>` to stdout so Claude tells you a
@@ -647,7 +650,7 @@ entry to the `tasks` array yourself:
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
-| `throughline install`                          | Register Claude user hooks/slash commands, the global Codex Stop hook, and the global `$throughline` Codex skill |
+| `throughline install`                          | Register Claude user hooks/slash commands, the global Codex Stop hook, the global `$throughline` Codex skill, and the current VS Code monitor task when applicable |
 | `throughline install --project`                | Register Claude hooks/slash commands in this repo only       |
 | `throughline uninstall`                        | Remove Throughline-managed Claude hooks/slash commands, only the Throughline-managed Codex hook, and the `$throughline` Codex skill |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |

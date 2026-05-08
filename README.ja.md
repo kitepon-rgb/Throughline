@@ -213,6 +213,10 @@ throughline monitor --session <id-prefix>
 ▶ Throughline       2ed5039c  ████░░░░░░░░░░░░░░░░  205.1k /  21%  残 794.9k  claude-opus-4-6
 ```
 
+監視中は Claude transcript / Codex rollout をライブに読み、Stop hook の state
+snapshot はライブ usage が取れない場合の控えとして使います。これにより表示更新は
+Stop 完了待ちではなくなります。
+
 詳細仕様 (resize 追従、1M context 検出、ステイル隠し、Stop hook の非同期化など) は
 [英語版 README](README.md#multi-session-token-monitor) を参照してください。
 
@@ -222,7 +226,7 @@ throughline monitor --session <id-prefix>
 
 | コマンド | 役割 |
 | --- | --- |
-| `throughline install` | `~/.claude/settings.json` (ユーザー全体) に hook を登録 |
+| `throughline install` | hook / Codex skill を登録し、VS Code 配下なら現プロジェクトの monitor task も配置 |
 | `throughline install --project` | 現リポジトリの `.claude/settings.json` だけに hook を登録 |
 | `throughline uninstall` | hook を削除 |
 | `throughline monitor` | マルチセッション監視を起動 |

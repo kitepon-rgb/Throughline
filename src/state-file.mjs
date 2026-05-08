@@ -47,10 +47,9 @@ export function normalizeProjectPath(p) {
  *   host?: 'claude'|'codex',
  * }} data
  *
- * usage: monitor が表示する tokens/model/contextWindowSize をここに固定保存する。
- * Stop hook が readLatestUsage の結果を載せることで、monitor 側が毎フレーム JSONL を
- * 再スキャンする必要がなくなる。旧バージョン互換のため optional (無ければ monitor が
- * transcriptPath を読んでフォールバック)。
+ * usage: Stop hook 完了時点の tokens/model/contextWindowSize fallback snapshot。
+ * monitor はライブ transcript / rollout を優先して読み、ライブ usage が取れない場合だけ
+ * この snapshot を使う。旧バージョン互換のため optional。
  */
 export function writeSessionState({
   sessionId,

@@ -10,6 +10,18 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-05-09
+
+### Changed
+
+- Token monitor now treats Claude transcript and Codex rollout files as live
+  inputs. State-file `usage` snapshots remain a fallback, but the display and
+  stale hiding no longer wait for Stop hook completion when the live files are
+  still changing.
+- `throughline install` now provisions or repairs the current project's VS Code
+  `Throughline Monitor` task when running under VS Code / Cursor / VSCodium, so
+  monitor auto-start setup no longer depends solely on the first hook event.
+
 ## [0.4.3] — 2026-05-09
 
 ### Changed

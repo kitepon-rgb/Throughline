@@ -30,13 +30,16 @@ function silence() {
   const origLog = console.log;
   const origErr = console.error;
   const origStderrWrite = process.stderr.write.bind(process.stderr);
+  const origStdoutWrite = process.stdout.write.bind(process.stdout);
   console.log = () => {};
   console.error = () => {};
   process.stderr.write = () => true;
+  process.stdout.write = () => true;
   return () => {
     console.log = origLog;
     console.error = origErr;
     process.stderr.write = origStderrWrite;
+    process.stdout.write = origStdoutWrite;
   };
 }
 
@@ -141,6 +144,37 @@ test('global install copies Throughline Codex skill to ~/.codex/skills/', async 
   } finally {
     unsilence();
     home.restore();
+  }
+});
+
+test('global install provisions VSCode monitor task for the current project when running under VSCode', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  const projectDir = mkdtempSync(join(tmpdir(), 'tl-install-monitor-'));
+  const origCwd = process.cwd();
+  const origVscodePid = process.env.VSCODE_PID;
+  process.chdir(projectDir);
+  process.env.VSCODE_PID = '12345';
+  const unsilence = silence();
+  try {
+    await run([]);
+    const tasksPath = join(projectDir, '.vscode', 'tasks.json');
+    assert.ok(existsSync(tasksPath), 'install should create current-project VSCode tasks.json');
+    const tasks = JSON.parse(readFileSync(tasksPath, 'utf8'));
+    const task = tasks.tasks.find((t) => t.label === 'Throughline Monitor');
+    assert.ok(task, 'Throughline Monitor task should be present');
+    assert.deepEqual(task.args.slice(1), ['monitor']);
+    assert.deepEqual(task.runOptions, { runOn: 'folderOpen' });
+  } finally {
+    unsilence();
+    if (origVscodePid === undefined) delete process.env.VSCODE_PID;
+    else process.env.VSCODE_PID = origVscodePid;
+    process.chdir(origCwd);
+    home.restore();
+    rmSync(projectDir, { recursive: true, force: true });
   }
 });
 

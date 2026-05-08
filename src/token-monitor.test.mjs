@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { _internal } from './token-monitor.mjs';
 import { normalizeProjectPath } from './state-file.mjs';
@@ -17,6 +20,8 @@ const {
   shouldForceFullRedraw,
   resolveColumns,
   setMeasuredColumns,
+  withLiveActivity,
+  resolveMonitorUsage,
 } = _internal;
 
 // state-file は projectPath を resolve + lowercase 正規化する。
@@ -126,6 +131,117 @@ test('filterStates: cwd 不一致は除外（--session も --all もなし）', 
   const result = filterStates(states, { all: false, session: null }, CWD_FOO);
   assert.equal(result.length, 1);
   assert.equal(result[0].sessionId, 'a');
+});
+
+test('withLiveActivity: transcript mtime keeps a long-running session visible before Stop', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tl-monitor-live-activity-'));
+  try {
+    const transcript = join(dir, 'session.jsonl');
+    writeFileSync(transcript, '{"type":"user","message":{"content":"working"}}\n');
+    const now = Date.now();
+    const old = now - (20 * 60 * 1000);
+    const state = withLiveActivity({
+      sessionId: 'live-session',
+      host: 'claude',
+      projectPath: CWD_FOO,
+      transcriptPath: transcript,
+      rolloutPath: null,
+      updatedAt: old,
+      stale: true,
+    }, now);
+
+    assert.equal(state.stale, false);
+    assert.ok(state.updatedAt > old);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveMonitorUsage: live Claude transcript overrides stale Stop snapshot', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tl-monitor-live-usage-'));
+  try {
+    const transcript = join(dir, 'session.jsonl');
+    writeFileSync(transcript, [
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-4-6',
+          usage: {
+            input_tokens: 1234,
+            cache_creation_input_tokens: 200,
+            cache_read_input_tokens: 300,
+            output_tokens: 10,
+          },
+        },
+      }),
+      '',
+    ].join('\n'));
+
+    const usage = resolveMonitorUsage({
+      sessionId: 'claude-session',
+      host: 'claude',
+      projectPath: CWD_FOO,
+      transcriptPath: transcript,
+      rolloutPath: null,
+      updatedAt: Date.now(),
+      usage: {
+        tokens: 1,
+        model: 'old-snapshot',
+        contextWindowSize: 200_000,
+        outputTokens: 0,
+      },
+    });
+
+    assert.equal(usage.tokens, 1734);
+    assert.equal(usage.model, 'claude-opus-4-6');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveMonitorUsage: live Codex rollout overrides stale Stop snapshot', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tl-monitor-live-codex-'));
+  try {
+    const rollout = join(dir, 'rollout.jsonl');
+    writeFileSync(rollout, [
+      JSON.stringify({
+        type: 'turn_context',
+        payload: { model: 'gpt-5.5' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: { input_tokens: 4567, output_tokens: 89 },
+            model_context_window: 258400,
+          },
+        },
+      }),
+      '',
+    ].join('\n'));
+
+    const usage = resolveMonitorUsage({
+      sessionId: 'codex:thread',
+      host: 'codex',
+      projectPath: CWD_FOO,
+      transcriptPath: null,
+      rolloutPath: rollout,
+      updatedAt: Date.now(),
+      usage: {
+        tokens: 1,
+        model: 'old-snapshot',
+        contextWindowSize: 200_000,
+        outputTokens: 0,
+      },
+    });
+
+    assert.equal(usage.tokens, 4567);
+    assert.equal(usage.model, 'gpt-5.5');
+    assert.equal(usage.estimated, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ─── cellWidth ─────────────────────────────────────────────────────

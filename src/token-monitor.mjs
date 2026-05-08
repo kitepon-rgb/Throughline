@@ -13,16 +13,18 @@
  *   - 状態ファイルはセッション単位 (~/.throughline/state/<session_id>.json)
  *   - setInterval (1s) + mtime 差分検知で更新を捕捉
  *   - updatedAt 降順ソート、先頭行を ▶ でハイライト
- *   - stale は PID 生存チェックで判定
+ *   - stale は state 更新時刻 + live transcript / rollout mtime で判定
  *   - Claude は transcript JSONL の最新 assistant usage を直読
- *   - Codex は Stop hook が state.usage に固定した rollout usage / estimate を表示
+ *   - Codex は rollout JSONL の token_count / active-text estimate を直読
+ *   - state.usage は live ファイルが読めない場合の最後の既知値としてだけ使う
  */
 
 import { basename, dirname, join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjectPath } from './state-file.mjs';
+import { getStateDir, readAllSessionStates, snapshotStateMtimes, normalizeProjectPath, STALE_HIDE_MS } from './state-file.mjs';
+import { buildCodexMonitorUsage } from './codex-usage.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
 import { startSizeQuery } from './terminal-size.mjs';
 
@@ -332,6 +334,44 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
   return `${marker} ${projectCol} ${hostCol} ${idCol} ${agoCol} ${barCol} ${tokCol}  ${modelCol}${warn}`;
 }
 
+function statFile(path) {
+  if (!path || !existsSync(path)) return null;
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
+}
+
+function liveActivityMs(state) {
+  const transcript = statFile(state.transcriptPath);
+  const rollout = statFile(state.rolloutPath);
+  return Math.max(
+    Number(state.updatedAt) || 0,
+    transcript?.mtimeMs ?? 0,
+    rollout?.mtimeMs ?? 0,
+  );
+}
+
+function withLiveActivity(state, now = Date.now()) {
+  const updatedAt = liveActivityMs(state);
+  return {
+    ...state,
+    updatedAt,
+    stale: now - updatedAt > STALE_HIDE_MS,
+  };
+}
+
+function resolveMonitorUsage(state) {
+  if (state.host === 'codex' && state.rolloutPath) {
+    return buildCodexMonitorUsage(state.rolloutPath) ?? state.usage ?? null;
+  }
+  if (state.transcriptPath) {
+    return readLatestUsage(state.transcriptPath) ?? state.usage ?? null;
+  }
+  return state.usage ?? null;
+}
+
 // --- フィルタ ---
 /**
  * セッション一覧に表示フィルタを適用する。
@@ -356,12 +396,12 @@ let lastRenderedLines = 0;
 let lastRenderKey = '';
 
 /**
- * 再描画要否の判定キー。state ファイル群の mtime と transcript JSONL の size を
+ * 再描画要否の判定キー。state ファイル群の mtime と transcript / rollout JSONL の
+ * size + mtime を
  * 1 本の文字列にまとめてハッシュキーとする。キーが前回と同じなら描画スキップ。
  *
- * 注: transcript は JSONL append-only なので size 変化 = 新しい usage エントリ到来と
- * 同義。mtime だけでは transcript 更新を検出できない（state-file の mtime は
- * Stop hook のタイミングで更新され、transcript は Claude の stream 中に太る）。
+ * 注: state-file の mtime は Stop hook のタイミングで更新されるが、
+ * transcript / rollout は実行中に太る。その live file 変化も render key に含める。
  */
 function computeRenderKey() {
   const parts = [];
@@ -369,16 +409,18 @@ function computeRenderKey() {
   const mtimes = snapshotStateMtimes();
   const names = Array.from(mtimes.keys()).sort();
   for (const name of names) parts.push(`s:${name}:${mtimes.get(name)}`);
-  // transcript sizes（state ファイルを読まずに直接 stat、IO 最小化）
+  // live transcript / rollout sizes（state ファイルを読まずに直接 stat、IO 最小化）
   try {
     const states = readAllSessionStates();
     for (const st of states) {
-      if (!st.transcriptPath || !existsSync(st.transcriptPath)) continue;
-      try {
-        const size = statSync(st.transcriptPath).size;
-        parts.push(`t:${st.sessionId}:${size}`);
-      } catch {
-        // stat 失敗は無視（次フレームで回復）
+      for (const [kind, path] of [['t', st.transcriptPath], ['r', st.rolloutPath]]) {
+        if (!path || !existsSync(path)) continue;
+        try {
+          const stat = statSync(path);
+          parts.push(`${kind}:${st.sessionId}:${stat.size}:${stat.mtimeMs}`);
+        } catch {
+          // stat 失敗は無視（次フレームで回復）
+        }
       }
     }
   } catch {
@@ -405,7 +447,8 @@ function resetRenderKeyCache() {
 }
 
 function renderFrame(args) {
-  const states = readAllSessionStates();
+  const now = Date.now();
+  const states = readAllSessionStates().map((state) => withLiveActivity(state, now));
   const filtered = filterStates(states, args, process.cwd()).sort(
     (a, b) => b.updatedAt - a.updatedAt,
   );
@@ -428,15 +471,9 @@ function renderFrame(args) {
       `[Throughline] ${filtered.length} セッション${args.all ? ' (--all)' : ''}`,
     );
     lines.push(header);
-    const now = Date.now();
     for (let i = 0; i < filtered.length; i++) {
       const state = filtered[i];
-      // Stop hook が state.usage に固定値を入れていればそれを使う（JSONL 再スキャン不要）。
-      // 旧バージョンが書いた Claude state や usage スナップショットが取れなかったターンでは
-      // transcriptPath を直読。state 側の情報が 1 本化されると
-      // 「state が古い JSONL を指している」時の表示ブレが減る。
-      const usage = state.usage
-        ?? (state.transcriptPath ? readLatestUsage(state.transcriptPath) : null);
+      const usage = resolveMonitorUsage(state);
       lines.push(formatLine({ state, usage, isActive: i === 0, now }));
     }
   }
@@ -698,6 +735,9 @@ export const _internal = {
   shouldForceFullRedraw,
   resolveColumns,
   setMeasuredColumns,
+  liveActivityMs,
+  withLiveActivity,
+  resolveMonitorUsage,
 };
 
 // --- エントリポイント自動起動 ---
