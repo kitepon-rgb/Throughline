@@ -54,6 +54,8 @@ const SC_HOOKS = {
 
 const CODEX_COMMANDS = [
   'throughline codex-hook stop',
+  'throughline codex-hook user-prompt-submit',
+  'throughline codex-hook post-tool-use',
 ];
 
 function quoteCommandPath(p) {
@@ -67,6 +69,36 @@ export function buildCodexStopHookCommand({
   return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook stop`;
 }
 
+export function buildCodexUserPromptSubmitHookCommand({
+  nodePath = process.execPath,
+  cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
+} = {}) {
+  return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook user-prompt-submit`;
+}
+
+export function buildCodexPostToolUseHookCommand({
+  nodePath = process.execPath,
+  cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
+} = {}) {
+  return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook post-tool-use`;
+}
+
+export function isThroughlineCodexHookCommand(command) {
+  if (typeof command !== 'string') return false;
+  const normalized = command.replace(/["']/g, '');
+  return (
+    normalized === 'throughline codex-hook stop' ||
+    normalized === 'throughline codex-hook user-prompt-submit' ||
+    normalized === 'throughline codex-hook post-tool-use' ||
+    normalized.includes('throughline codex-hook stop') ||
+    normalized.includes('throughline codex-hook user-prompt-submit') ||
+    normalized.includes('throughline codex-hook post-tool-use') ||
+    normalized.includes('throughline.mjs codex-hook stop') ||
+    normalized.includes('throughline.mjs codex-hook user-prompt-submit') ||
+    normalized.includes('throughline.mjs codex-hook post-tool-use')
+  );
+}
+
 export function isThroughlineCodexStopCommand(command) {
   if (typeof command !== 'string') return false;
   const normalized = command.replace(/["']/g, '');
@@ -77,8 +109,40 @@ export function isThroughlineCodexStopCommand(command) {
   );
 }
 
+export function isThroughlineCodexPostToolUseCommand(command) {
+  if (typeof command !== 'string') return false;
+  const normalized = command.replace(/["']/g, '');
+  return (
+    normalized === 'throughline codex-hook post-tool-use' ||
+    normalized.includes('throughline codex-hook post-tool-use') ||
+    normalized.includes('throughline.mjs codex-hook post-tool-use')
+  );
+}
+
 function createCodexHooks() {
   return {
+    UserPromptSubmit: {
+      hooks: [
+        {
+          type: 'command',
+          command: buildCodexUserPromptSubmitHookCommand(),
+          timeoutSec: 30,
+          async: false,
+          statusMessage: null,
+        },
+      ],
+    },
+    PostToolUse: {
+      hooks: [
+        {
+          type: 'command',
+          command: buildCodexPostToolUseHookCommand(),
+          timeoutSec: 30,
+          async: false,
+          statusMessage: null,
+        },
+      ],
+    },
     Stop: {
       hooks: [
         {
@@ -253,11 +317,19 @@ function ensureCodexHooksFeature(configPath) {
   const existing = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
   const lines = existing.split(/\r?\n/);
   const sectionStart = lines.findIndex((line) => line.trim() === '[features]');
+  const ensureFeatureLine = (featureLines, name) => {
+    const idx = featureLines.findIndex((line) => new RegExp(`^\\s*${name}\\s*=`).test(line));
+    if (idx === -1) {
+      featureLines.push(`${name} = true`);
+    } else {
+      featureLines[idx] = `${name} = true`;
+    }
+  };
   let updated;
 
   if (sectionStart === -1) {
     const prefix = existing.trimEnd();
-    updated = `${prefix}${prefix ? '\n\n' : ''}[features]\ncodex_hooks = true\n`;
+    updated = `${prefix}${prefix ? '\n\n' : ''}[features]\ncodex_hooks = true\nhooks = true\n`;
   } else {
     let sectionEnd = lines.length;
     for (let i = sectionStart + 1; i < lines.length; i++) {
@@ -267,14 +339,10 @@ function ensureCodexHooksFeature(configPath) {
       }
     }
 
-    const codexHooksLine = lines
-      .slice(sectionStart + 1, sectionEnd)
-      .findIndex((line) => /^\s*codex_hooks\s*=/.test(line));
-    if (codexHooksLine === -1) {
-      lines.splice(sectionStart + 1, 0, 'codex_hooks = true');
-    } else {
-      lines[sectionStart + 1 + codexHooksLine] = 'codex_hooks = true';
-    }
+    const featureLines = lines.slice(sectionStart + 1, sectionEnd);
+    ensureFeatureLine(featureLines, 'codex_hooks');
+    ensureFeatureLine(featureLines, 'hooks');
+    lines.splice(sectionStart + 1, sectionEnd - sectionStart - 1, ...featureLines);
     updated = lines.join('\n').replace(/\n*$/, '\n');
   }
 
@@ -294,7 +362,7 @@ function installCodexHooks() {
     const list = existingHooks[key] ?? [];
     const preserved = [];
     for (const group of list) {
-      const hooks = (group.hooks ?? []).filter(h => !isThroughlineCodexStopCommand(h.command));
+      const hooks = (group.hooks ?? []).filter(h => !isThroughlineCodexHookCommand(h.command));
       if (hooks.length > 0) preserved.push({ ...group, hooks });
     }
     existingHooks[key] = [entry, ...preserved];
@@ -323,7 +391,7 @@ function uninstallCodexHooks() {
         const hooks = (group.hooks ?? []).filter((hook) => {
           const shouldRemove =
             CODEX_COMMANDS.includes(hook.command) ||
-            isThroughlineCodexStopCommand(hook.command);
+            isThroughlineCodexHookCommand(hook.command);
           if (shouldRemove) removed++;
           return !shouldRemove;
         });
@@ -422,7 +490,9 @@ export async function run(args = []) {
   console.log('  Stop             → throughline process-turn   (L1 要約 + L2 本文保存 + L3 詳細保存)');
   console.log('  UserPromptSubmit → throughline prompt-submit  (/tl & /clear バトン書き込み)');
   if (codex) {
-    console.log(`  Codex Stop       → ${buildCodexStopHookCommand()} (Codex rollout capture + L1 要約)`);
+    console.log(`  Codex UserPromptSubmit → ${buildCodexUserPromptSubmitHookCommand()} (80% 到達時に current session へ $throughline 指示を注入)`);
+    console.log(`  Codex PostToolUse      → ${buildCodexPostToolUseHookCommand()} (tool loop 中も 80% 到達時に $throughline 指示を注入)`);
+    console.log(`  Codex Stop             → ${buildCodexStopHookCommand()} (Codex rollout capture + L1 要約)`);
   }
   console.log('');
   if (installedCommands.length > 0) {

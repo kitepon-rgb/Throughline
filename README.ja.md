@@ -26,6 +26,11 @@ throughline install     # hook / Codex skill / VS Code monitor task を登録
 `/clear` を打てば新セッションはゼロからではなく、**思考の途中から再開** される。
 `/clear` を経由しない新規 chat / VS Code 再起動では `/tl` で前任を指名できる。
 
+Codex では `UserPromptSubmit` / `PostToolUse` / `Stop` hook と `$throughline`
+skill も登録する。80% 自動発火は token-monitor 依存ではなく、当該 Codex
+セッションの rollout `token_count` を hook が読み、prompt 送信時または tool loop
+途中の閾値到達時に同じセッションへ `$throughline` 実行指示を注入する。
+
 ## 他の手段との比較
 
 | | Throughline | MemGPT / SummaryBufferMemory | 素の Claude Code |
@@ -231,7 +236,7 @@ Throughline state をまだ書いていない現在セッションも表示で�
 
 | コマンド | 役割 |
 | --- | --- |
-| `throughline install` | hook / Codex skill を登録し、VS Code 配下なら現プロジェクトの monitor task も配置 |
+| `throughline install` | hook / Codex UserPromptSubmit・PostToolUse・Stop hook / Codex skill を登録し、VS Code 配下なら現プロジェクトの monitor task も配置 |
 | `throughline install --project` | 現リポジトリの `.claude/settings.json` だけに hook を登録 |
 | `throughline uninstall` | hook を削除 |
 | `throughline monitor` | マルチセッション監視を起動 |

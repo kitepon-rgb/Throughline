@@ -28,7 +28,14 @@ import { resolveCodexThreadIdentity } from '../codex-thread-identity.mjs';
 import { defaultCodexHome, listCodexThreadCandidates } from '../codex-thread-index.mjs';
 import { getDb } from '../db.mjs';
 import { detectJsoncFeatures, findMonitorTaskIndex, isMonitorTaskBroken } from '../vscode-task.mjs';
-import { buildCodexStopHookCommand, isThroughlineCodexStopCommand } from './install.mjs';
+import {
+  buildCodexPostToolUseHookCommand,
+  buildCodexStopHookCommand,
+  buildCodexUserPromptSubmitHookCommand,
+  isThroughlineCodexHookCommand,
+  isThroughlineCodexPostToolUseCommand,
+  isThroughlineCodexStopCommand,
+} from './install.mjs';
 
 const GREEN = '\x1b[32m✓\x1b[0m';
 const RED = '\x1b[31m✗\x1b[0m';
@@ -393,20 +400,33 @@ function countCapturedCodexSessions(db, projectPath) {
 function readCodexHookDiagnosis(codexHome) {
   const hooksPath = join(codexHome, 'hooks.json');
   const configPath = join(codexHome, 'config.toml');
-  const expectedCommand = buildCodexStopHookCommand();
+  const expectedStopCommand = buildCodexStopHookCommand();
+  const expectedPromptCommand = buildCodexUserPromptSubmitHookCommand();
+  const expectedPostToolUseCommand = buildCodexPostToolUseHookCommand();
   const out = {
     hooksPath,
     configPath,
-    expectedCommand,
+    expectedStopCommand,
+    expectedPromptCommand,
+    expectedPostToolUseCommand,
     hooksReadable: false,
     featureEnabled: false,
+    codexHooksFeatureEnabled: false,
+    hooksFeatureEnabled: false,
+    managedPromptHooks: [],
+    legacyManagedPromptHooks: [],
+    managedPostToolUseHooks: [],
+    legacyManagedPostToolUseHooks: [],
     managedStopHooks: [],
     legacyManagedStopHooks: [],
   };
 
   if (existsSync(configPath)) {
     try {
-      out.featureEnabled = /^\s*codex_hooks\s*=\s*true\s*$/m.test(readFileSync(configPath, 'utf8'));
+      const config = readFileSync(configPath, 'utf8');
+      out.codexHooksFeatureEnabled = /^\s*codex_hooks\s*=\s*true\s*$/m.test(config);
+      out.hooksFeatureEnabled = /^\s*hooks\s*=\s*true\s*$/m.test(config);
+      out.featureEnabled = out.codexHooksFeatureEnabled || out.hooksFeatureEnabled;
     } catch {
       out.featureEnabled = false;
     }
@@ -421,9 +441,17 @@ function readCodexHookDiagnosis(codexHome) {
   }
 
   out.hooksReadable = true;
+  const promptHooks = (parsed.hooks?.UserPromptSubmit ?? []).flatMap(group => group.hooks ?? []);
+  const postToolUseHooks = (parsed.hooks?.PostToolUse ?? []).flatMap(group => group.hooks ?? []);
   const stopHooks = (parsed.hooks?.Stop ?? []).flatMap(group => group.hooks ?? []);
+  out.managedPromptHooks = promptHooks.filter(h => isThroughlineCodexHookCommand(h.command));
+  out.legacyManagedPromptHooks = out.managedPromptHooks.filter(h => h.command !== expectedPromptCommand);
+  out.managedPostToolUseHooks = postToolUseHooks.filter(h => isThroughlineCodexPostToolUseCommand(h.command));
+  out.legacyManagedPostToolUseHooks = out.managedPostToolUseHooks.filter(
+    h => h.command !== expectedPostToolUseCommand,
+  );
   out.managedStopHooks = stopHooks.filter(h => isThroughlineCodexStopCommand(h.command));
-  out.legacyManagedStopHooks = out.managedStopHooks.filter(h => h.command !== expectedCommand);
+  out.legacyManagedStopHooks = out.managedStopHooks.filter(h => h.command !== expectedStopCommand);
   return out;
 }
 
@@ -456,6 +484,32 @@ function runCodexDiagnosis({
   console.log(`  project:               ${cwd}`);
   console.log(`  CODEX_HOME:            ${codexHome}`);
   console.log(`  Codex hooks feature:   ${hookDiagnosis.featureEnabled ? 'enabled' : 'not enabled'}`);
+  console.log(`  Codex UserPrompt hook: ${
+    hookDiagnosis.managedPromptHooks.length === 0
+      ? 'not registered'
+      : hookDiagnosis.legacyManagedPromptHooks.length > 0
+        ? 'legacy command needs reinstall'
+        : 'registered'
+  }`);
+  if (hookDiagnosis.managedPromptHooks.length > 0) {
+    const h = hookDiagnosis.managedPromptHooks[0];
+    console.log(`    command:             ${h.command}`);
+    console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
+    console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
+  }
+  console.log(`  Codex PostTool hook:   ${
+    hookDiagnosis.managedPostToolUseHooks.length === 0
+      ? 'not registered'
+      : hookDiagnosis.legacyManagedPostToolUseHooks.length > 0
+        ? 'legacy command needs reinstall'
+        : 'registered'
+  }`);
+  if (hookDiagnosis.managedPostToolUseHooks.length > 0) {
+    const h = hookDiagnosis.managedPostToolUseHooks[0];
+    console.log(`    command:             ${h.command}`);
+    console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
+    console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
+  }
   console.log(`  Codex Stop hook:       ${
     hookDiagnosis.managedStopHooks.length === 0
       ? 'not registered'

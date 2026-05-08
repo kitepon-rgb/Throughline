@@ -4,7 +4,13 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { buildCodexStopHookCommand, run, resolveThroughlineOnPath } from './install.mjs';
+import {
+  buildCodexPostToolUseHookCommand,
+  buildCodexStopHookCommand,
+  buildCodexUserPromptSubmitHookCommand,
+  run,
+  resolveThroughlineOnPath,
+} from './install.mjs';
 
 function makeTempHome() {
   const dir = mkdtempSync(join(tmpdir(), 'tl-install-test-'));
@@ -94,7 +100,7 @@ test('project install copies commands to cwd/.claude/commands/', async () => {
   }
 });
 
-test('global install registers Codex Stop hook and enables codex_hooks feature', async () => {
+test('global install registers Codex session hooks and enables hooks features', async () => {
   const home = makeTempHome();
   if (home.resolved !== home.dir) {
     home.restore();
@@ -104,15 +110,30 @@ test('global install registers Codex Stop hook and enables codex_hooks feature',
   try {
     await run([]);
     const hooks = JSON.parse(readFileSync(join(home.dir, '.codex', 'hooks.json'), 'utf8'));
-    const expectedCommand = buildCodexStopHookCommand();
+    const expectedStopCommand = buildCodexStopHookCommand();
+    const expectedPromptCommand = buildCodexUserPromptSubmitHookCommand();
+    const expectedPostToolUseCommand = buildCodexPostToolUseHookCommand();
     const codexHook = hooks.hooks.Stop
       .flatMap(g => g.hooks ?? [])
-      .find(h => h.command === expectedCommand);
+      .find(h => h.command === expectedStopCommand);
     assert.ok(codexHook, 'Codex Stop should have absolute throughline.mjs codex-hook stop');
     assert.equal(codexHook.async, false, 'Codex Stop hook should be synchronous for Codex');
     assert.equal(codexHook.timeoutSec, 300, 'Codex Stop hook should allow summarizer time');
+    const promptHook = hooks.hooks.UserPromptSubmit
+      .flatMap(g => g.hooks ?? [])
+      .find(h => h.command === expectedPromptCommand);
+    assert.ok(promptHook, 'Codex UserPromptSubmit should have absolute throughline.mjs codex-hook user-prompt-submit');
+    assert.equal(promptHook.async, false, 'Codex UserPromptSubmit hook should be synchronous for context injection');
+    assert.equal(promptHook.timeoutSec, 30, 'Codex UserPromptSubmit hook should be short');
+    const postToolUseHook = hooks.hooks.PostToolUse
+      .flatMap(g => g.hooks ?? [])
+      .find(h => h.command === expectedPostToolUseCommand);
+    assert.ok(postToolUseHook, 'Codex PostToolUse should have absolute throughline.mjs codex-hook post-tool-use');
+    assert.equal(postToolUseHook.async, false, 'Codex PostToolUse hook should be synchronous for context injection');
+    assert.equal(postToolUseHook.timeoutSec, 30, 'Codex PostToolUse hook should be short');
     const config = readFileSync(join(home.dir, '.codex', 'config.toml'), 'utf8');
     assert.match(config, /^\[features\]\ncodex_hooks = true/m);
+    assert.match(config, /^hooks = true/m);
   } finally {
     unsilence();
     home.restore();
@@ -215,21 +236,30 @@ test('global install preserves existing Codex hooks and is idempotent', async ()
     await run([]);
     await run([]);
     const hooks = JSON.parse(readFileSync(join(home.dir, '.codex', 'hooks.json'), 'utf8'));
-    const commands = hooks.hooks.Stop.flatMap(g => g.hooks ?? []).map(h => h.command);
-    const expectedCommand = buildCodexStopHookCommand();
-    assert.ok(commands.includes('/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop'));
-    assert.equal(commands.filter(c => c === expectedCommand).length, 1);
-    assert.ok(!commands.includes('throughline codex-hook stop'));
+    const stopCommands = hooks.hooks.Stop.flatMap(g => g.hooks ?? []).map(h => h.command);
+    const promptCommands = hooks.hooks.UserPromptSubmit.flatMap(g => g.hooks ?? []).map(h => h.command);
+    const postToolUseCommands = hooks.hooks.PostToolUse.flatMap(g => g.hooks ?? []).map(h => h.command);
+    const expectedStopCommand = buildCodexStopHookCommand();
+    const expectedPromptCommand = buildCodexUserPromptSubmitHookCommand();
+    const expectedPostToolUseCommand = buildCodexPostToolUseHookCommand();
+    assert.ok(stopCommands.includes('/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop'));
+    assert.equal(stopCommands.filter(c => c === expectedStopCommand).length, 1);
+    assert.equal(promptCommands.filter(c => c === expectedPromptCommand).length, 1);
+    assert.equal(postToolUseCommands.filter(c => c === expectedPostToolUseCommand).length, 1);
+    assert.ok(!stopCommands.includes('throughline codex-hook stop'));
+    assert.ok(!promptCommands.includes('throughline codex-hook user-prompt-submit'));
+    assert.ok(!postToolUseCommands.includes('throughline codex-hook post-tool-use'));
     const config = readFileSync(join(home.dir, '.codex', 'config.toml'), 'utf8');
     assert.match(config, /other = true/);
     assert.match(config, /codex_hooks = true/);
+    assert.match(config, /hooks = true/);
   } finally {
     unsilence();
     home.restore();
   }
 });
 
-test('global install updates existing Throughline Codex Stop hook shape', async () => {
+test('global install updates existing Throughline Codex hook shapes', async () => {
   const home = makeTempHome();
   if (home.resolved !== home.dir) {
     home.restore();
@@ -241,6 +271,32 @@ test('global install updates existing Throughline Codex Stop hook shape', async 
     JSON.stringify(
       {
         hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'throughline codex-hook user-prompt-submit',
+                  timeoutSec: 300,
+                  async: true,
+                  statusMessage: null,
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'throughline codex-hook post-tool-use',
+                  timeoutSec: 300,
+                  async: true,
+                  statusMessage: null,
+                },
+              ],
+            },
+          ],
           Stop: [
             {
               hooks: [
@@ -264,15 +320,37 @@ test('global install updates existing Throughline Codex Stop hook shape', async 
   try {
     await run([]);
     const hooks = JSON.parse(readFileSync(join(home.dir, '.codex', 'hooks.json'), 'utf8'));
-    const expectedCommand = buildCodexStopHookCommand();
+    const expectedStopCommand = buildCodexStopHookCommand();
+    const expectedPromptCommand = buildCodexUserPromptSubmitHookCommand();
+    const expectedPostToolUseCommand = buildCodexPostToolUseHookCommand();
     const codexHooks = hooks.hooks.Stop
       .flatMap(g => g.hooks ?? [])
-      .filter(h => h.command === expectedCommand);
+      .filter(h => h.command === expectedStopCommand);
     assert.equal(codexHooks.length, 1);
     assert.equal(codexHooks[0].async, false);
     assert.equal(codexHooks[0].timeoutSec, 300);
+    const promptHooks = hooks.hooks.UserPromptSubmit
+      .flatMap(g => g.hooks ?? [])
+      .filter(h => h.command === expectedPromptCommand);
+    assert.equal(promptHooks.length, 1);
+    assert.equal(promptHooks[0].async, false);
+    assert.equal(promptHooks[0].timeoutSec, 30);
+    const postToolUseHooks = hooks.hooks.PostToolUse
+      .flatMap(g => g.hooks ?? [])
+      .filter(h => h.command === expectedPostToolUseCommand);
+    assert.equal(postToolUseHooks.length, 1);
+    assert.equal(postToolUseHooks[0].async, false);
+    assert.equal(postToolUseHooks[0].timeoutSec, 30);
     assert.equal(
       hooks.hooks.Stop.flatMap(g => g.hooks ?? []).filter(h => h.command === 'throughline codex-hook stop').length,
+      0,
+    );
+    assert.equal(
+      hooks.hooks.UserPromptSubmit.flatMap(g => g.hooks ?? []).filter(h => h.command === 'throughline codex-hook user-prompt-submit').length,
+      0,
+    );
+    assert.equal(
+      hooks.hooks.PostToolUse.flatMap(g => g.hooks ?? []).filter(h => h.command === 'throughline codex-hook post-tool-use').length,
       0,
     );
   } finally {
@@ -330,10 +408,16 @@ test('global uninstall removes only Throughline-managed Codex hook', async () =>
 
     await run(['--uninstall']);
     const after = JSON.parse(readFileSync(hooksPath, 'utf8'));
-    const commands = after.hooks.Stop.flatMap(g => g.hooks ?? []).map(h => h.command);
-    assert.ok(commands.includes('/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop'));
-    assert.ok(!commands.includes('throughline codex-hook stop'));
-    assert.ok(!commands.some(c => c.includes('throughline.mjs codex-hook stop')));
+    const stopCommands = after.hooks.Stop.flatMap(g => g.hooks ?? []).map(h => h.command);
+    const promptCommands = after.hooks.UserPromptSubmit?.flatMap(g => g.hooks ?? []).map(h => h.command) ?? [];
+    const postToolUseCommands = after.hooks.PostToolUse?.flatMap(g => g.hooks ?? []).map(h => h.command) ?? [];
+    assert.ok(stopCommands.includes('/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop'));
+    assert.ok(!stopCommands.includes('throughline codex-hook stop'));
+    assert.ok(!stopCommands.some(c => c.includes('throughline.mjs codex-hook stop')));
+    assert.ok(!promptCommands.includes('throughline codex-hook user-prompt-submit'));
+    assert.ok(!promptCommands.some(c => c.includes('throughline.mjs codex-hook user-prompt-submit')));
+    assert.ok(!postToolUseCommands.includes('throughline codex-hook post-tool-use'));
+    assert.ok(!postToolUseCommands.some(c => c.includes('throughline.mjs codex-hook post-tool-use')));
   } finally {
     unsilence();
     home.restore();

@@ -31,7 +31,9 @@ function parseArgs(argv) {
   }
 
   if (!out.event) out.event = 'stop';
-  if (out.event !== 'stop') throw new Error(`unknown Codex hook event: ${out.event}`);
+  if (!['stop', 'user-prompt-submit', 'post-tool-use'].includes(out.event)) {
+    throw new Error(`unknown Codex hook event: ${out.event}`);
+  }
   return out;
 }
 
@@ -69,7 +71,39 @@ function suppressExperimentalWarnings() {
   });
 }
 
-export async function runCodexStopHook({
+export function codexContextOutput(text, eventName = 'UserPromptSubmit') {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: eventName,
+      additionalContext: text,
+    },
+  });
+}
+
+function renderAutoRefreshContext({ usage, decision, threadId, eventName = 'UserPromptSubmit' }) {
+  const tokens = Number(usage?.tokens);
+  const contextWindowSize = Number(usage?.contextWindowSize);
+  const ratio = Number(decision?.ratio);
+  const percent = Number.isFinite(ratio) ? `${(ratio * 100).toFixed(1)}%` : 'unknown';
+  const timing =
+    eventName === 'PostToolUse'
+      ? 'Before continuing the current tool loop, run the installed $throughline workflow now.'
+      : 'Before answering the user prompt, run the installed $throughline workflow now.';
+  return [
+    '[throughline] Codex context refresh threshold reached for this current session.',
+    `Thread: ${threadId}`,
+    `Usage: ${Number.isFinite(tokens) ? tokens : 'unknown'} / ${Number.isFinite(contextWindowSize) ? contextWindowSize : 'unknown'} (${percent}); threshold ${(decision.threshold * 100).toFixed(0)}%.`,
+    '',
+    timing,
+    'Execute exactly:',
+    'throughline trim --execute --host codex --all --json',
+    '',
+    'Report only the execution status, whether rollback/inject were sent, durable evidence if present, and the selected memory session; then continue from the refreshed context.',
+    'This trigger was computed from the current Codex rollout token_count, not from token-monitor output.',
+  ].join('\n');
+}
+
+async function captureCodexHookSession({
   args = {},
   payload = {},
   env = process.env,
@@ -77,7 +111,7 @@ export async function runCodexStopHook({
   writeMonitorState = null,
   ensureMonitorTask = null,
   buildMonitorUsage = null,
-  runAutoRefresh = null,
+  summarize = true,
 } = {}) {
   const [
     { getDb },
@@ -87,7 +121,6 @@ export async function runCodexStopHook({
     { writeSessionState },
     { ensureMonitorTaskFile },
     { buildCodexMonitorUsage },
-    { runCodexAutoRefresh },
   ] = await Promise.all([
     import('../db.mjs'),
     import('../codex-capture.mjs'),
@@ -96,7 +129,6 @@ export async function runCodexStopHook({
     import('../state-file.mjs'),
     import('../vscode-task.mjs'),
     import('../codex-usage.mjs'),
-    import('../codex-auto-refresh.mjs'),
   ]);
   const actualDb = db ?? getDb();
   const identity = resolveCodexHookThreadIdentity({ args, payload, env, resolveCodexThreadIdentity });
@@ -105,8 +137,14 @@ export async function runCodexStopHook({
     return {
       status: 'skipped',
       reason: 'codex_thread_id_not_available',
+      db: actualDb,
+      identity,
+      projectPath: null,
+      codexHome: null,
       captured: null,
       summarized: null,
+      monitorState: null,
+      usage: null,
     };
   }
 
@@ -136,9 +174,14 @@ export async function runCodexStopHook({
     return {
       status: 'skipped',
       reason: captured.reason ?? 'codex_capture_not_available',
-      codexThreadIdSource: identity.codexThreadIdSource,
+      db: actualDb,
+      identity,
+      projectPath,
+      codexHome,
       captured,
       summarized: null,
+      monitorState: null,
+      usage: null,
     };
   }
 
@@ -161,23 +204,73 @@ export async function runCodexStopHook({
     process.stderr.write(`[codex-hook:monitor-state] ${msg}\n`);
   }
 
-  const summarized = summarizeCodexSession(actualDb, {
-    sessionId: captured.sessionId,
-    projectPath: captured.projectPath ?? projectPath,
-    max: 1,
-    env,
-  });
+  const summarized = summarize
+    ? summarizeCodexSession(actualDb, {
+        sessionId: captured.sessionId,
+        projectPath: captured.projectPath ?? projectPath,
+        max: 1,
+        env,
+      })
+    : null;
+
+  return {
+    status: 'ok',
+    reason: 'codex_rollout_captured',
+    db: actualDb,
+    identity,
+    projectPath,
+    codexHome,
+    captured,
+    summarized,
+    monitorState,
+    usage,
+  };
+}
+
+export async function runCodexStopHook({
+  args = {},
+  payload = {},
+  env = process.env,
+  db = null,
+  writeMonitorState = null,
+  ensureMonitorTask = null,
+  buildMonitorUsage = null,
+  runAutoRefresh = null,
+} = {}) {
+  const [{ runCodexAutoRefresh }, capturedState] = await Promise.all([
+    import('../codex-auto-refresh.mjs'),
+    captureCodexHookSession({
+      args,
+      payload,
+      env,
+      db,
+      writeMonitorState,
+      ensureMonitorTask,
+      buildMonitorUsage,
+      summarize: true,
+    }),
+  ]);
+
+  if (capturedState.status !== 'ok') {
+    return {
+      status: capturedState.status,
+      reason: capturedState.reason,
+      codexThreadIdSource: capturedState.identity?.codexThreadIdSource,
+      captured: capturedState.captured,
+      summarized: capturedState.summarized,
+    };
+  }
 
   let autoRefresh = null;
   try {
     autoRefresh = await (runAutoRefresh ?? runCodexAutoRefresh)({
-      db: actualDb,
-      threadId: identity.codexThreadId,
-      codexThreadIdSource: identity.codexThreadIdSource,
-      codexHome,
-      projectPath: captured.projectPath ?? projectPath,
-      sessionId: captured.sessionId,
-      usage,
+      db: capturedState.db,
+      threadId: capturedState.identity.codexThreadId,
+      codexThreadIdSource: capturedState.identity.codexThreadIdSource,
+      codexHome: capturedState.codexHome,
+      projectPath: capturedState.captured.projectPath ?? capturedState.projectPath,
+      sessionId: capturedState.captured.sessionId,
+      usage: capturedState.usage,
       command: env.THROUGHLINE_CODEX_APP_SERVER_BIN ?? process.env.THROUGHLINE_CODEX_APP_SERVER_BIN ?? 'codex',
     });
   } catch (err) {
@@ -193,11 +286,126 @@ export async function runCodexStopHook({
   return {
     status: 'ok',
     reason: 'codex_rollout_captured',
-    codexThreadIdSource: identity.codexThreadIdSource,
-    captured,
-    summarized,
-    monitorState,
+    codexThreadIdSource: capturedState.identity.codexThreadIdSource,
+    captured: capturedState.captured,
+    summarized: capturedState.summarized,
+    monitorState: capturedState.monitorState,
     autoRefresh,
+  };
+}
+
+export async function runCodexUserPromptSubmitHook({
+  args = {},
+  payload = {},
+  env = process.env,
+  db = null,
+  writeMonitorState = null,
+  ensureMonitorTask = null,
+  buildMonitorUsage = null,
+} = {}) {
+  return runCodexContextRefreshInstructionHook({
+    eventName: 'UserPromptSubmit',
+    args,
+    payload,
+    env,
+    db,
+    writeMonitorState,
+    ensureMonitorTask,
+    buildMonitorUsage,
+  });
+}
+
+export async function runCodexPostToolUseHook({
+  args = {},
+  payload = {},
+  env = process.env,
+  db = null,
+  writeMonitorState = null,
+  ensureMonitorTask = null,
+  buildMonitorUsage = null,
+} = {}) {
+  return runCodexContextRefreshInstructionHook({
+    eventName: 'PostToolUse',
+    args,
+    payload,
+    env,
+    db,
+    writeMonitorState,
+    ensureMonitorTask,
+    buildMonitorUsage,
+  });
+}
+
+async function runCodexContextRefreshInstructionHook({
+  eventName,
+  args = {},
+  payload = {},
+  env = process.env,
+  db = null,
+  writeMonitorState = null,
+  ensureMonitorTask = null,
+  buildMonitorUsage = null,
+} = {}) {
+  const [{ evaluateCodexAutoRefreshUsage }, capturedState] = await Promise.all([
+    import('../codex-auto-refresh.mjs'),
+    captureCodexHookSession({
+      args,
+      payload,
+      env,
+      db,
+      writeMonitorState,
+      ensureMonitorTask,
+      buildMonitorUsage,
+      summarize: false,
+    }),
+  ]);
+
+  if (capturedState.status !== 'ok') {
+    return {
+      status: capturedState.status,
+      reason: capturedState.reason,
+      codexThreadIdSource: capturedState.identity?.codexThreadIdSource,
+      captured: capturedState.captured,
+      monitorState: capturedState.monitorState,
+      autoRefreshPrompt: null,
+    };
+  }
+
+  const decision = evaluateCodexAutoRefreshUsage(capturedState.usage);
+  if (!decision.shouldRefresh) {
+    return {
+      status: 'ok',
+      reason: 'codex_rollout_captured',
+      codexThreadIdSource: capturedState.identity.codexThreadIdSource,
+      captured: capturedState.captured,
+      monitorState: capturedState.monitorState,
+      autoRefreshPrompt: {
+        status: 'skipped',
+        reason: decision.reason,
+        decision,
+      },
+    };
+  }
+
+  const context = renderAutoRefreshContext({
+    usage: capturedState.usage,
+    decision,
+    threadId: capturedState.identity.codexThreadId,
+    eventName,
+  });
+  return {
+    status: 'ok',
+    reason: 'codex_rollout_captured',
+    codexThreadIdSource: capturedState.identity.codexThreadIdSource,
+    captured: capturedState.captured,
+    monitorState: capturedState.monitorState,
+    autoRefreshPrompt: {
+      status: 'ready',
+      reason: 'threshold_reached',
+      decision,
+      context,
+      output: codexContextOutput(context, eventName),
+    },
   };
 }
 
@@ -215,12 +423,31 @@ export async function run(argv = []) {
   }
 
   try {
-    const result = await runCodexStopHook({
-      args: parsed,
-      payload,
-      env: process.env,
-    });
-    if (parsed.json) process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    let result;
+    if (parsed.event === 'user-prompt-submit') {
+      result = await runCodexUserPromptSubmitHook({
+        args: parsed,
+        payload,
+        env: process.env,
+      });
+    } else if (parsed.event === 'post-tool-use') {
+      result = await runCodexPostToolUseHook({
+        args: parsed,
+        payload,
+        env: process.env,
+      });
+    } else {
+      result = await runCodexStopHook({
+        args: parsed,
+        payload,
+        env: process.env,
+      });
+    }
+    if (parsed.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    } else if (result.autoRefreshPrompt?.output) {
+      process.stdout.write(result.autoRefreshPrompt.output + '\n');
+    }
     process.exit(result.status === 'ok' || result.status === 'skipped' ? 0 : 1);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown';
@@ -248,8 +475,10 @@ export async function run(argv = []) {
 
 export const _internal = {
   codexHomeFromTranscriptPath,
+  codexContextOutput,
   parseArgs,
   parsePayload,
+  renderAutoRefreshContext,
   resolveCodexHookThreadIdentity,
 };
 

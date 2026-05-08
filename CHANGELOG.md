@@ -10,6 +10,19 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.8] — 2026-05-09
+
+### Changed
+
+- Codex install now registers `UserPromptSubmit` and `PostToolUse` hooks in
+  addition to the Stop hook. These hooks read the current Codex rollout
+  `token_count` directly and, at the verified 80% threshold, inject a
+  current-session `$throughline` instruction before the assistant answers or
+  continues a tool loop. This keeps automatic refresh independent of
+  token-monitor and available to users who never run the monitor.
+- `throughline install` now enables both `[features].codex_hooks = true` and
+  `[features].hooks = true` for Codex hook compatibility.
+
 ## [0.4.7] — 2026-05-09
 
 ### Changed

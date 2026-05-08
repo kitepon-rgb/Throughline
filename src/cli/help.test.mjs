@@ -9,6 +9,8 @@ const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const BIN_PATH = join(REPO_ROOT, 'bin/throughline.mjs');
 const CODEX_HELP_COMMANDS = [
   'throughline codex-capture',
+  'throughline codex-hook user-prompt-submit',
+  'throughline codex-hook post-tool-use',
   'throughline codex-hook stop',
   'throughline codex-summarize',
   'throughline codex-resume',

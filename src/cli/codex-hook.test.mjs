@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { runCodexStopHook, _internal } from './codex-hook.mjs';
+import {
+  runCodexPostToolUseHook,
+  runCodexStopHook,
+  runCodexUserPromptSubmitHook,
+  _internal,
+} from './codex-hook.mjs';
 
 function makeDb() {
   const db = new DatabaseSync(':memory:');
@@ -182,6 +187,160 @@ test('codex-hook stop runs auto refresh when verified usage reaches 80%', async 
   }
 });
 
+test('codex-hook user-prompt-submit injects current-session throughline instruction at 80%', async () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  const db = makeDb();
+  let monitorState = null;
+  try {
+    const rolloutPath = writeRollout(codexHome, {
+      id: threadId,
+      cwd: project,
+      events: [
+        event('user_message', { message: 'hook request' }),
+        event('task_started'),
+        turnContext({ model: 'gpt-5.5', cwd: project }),
+        event('agent_message', { message: 'hook answer' }),
+        event('task_complete'),
+        tokenCountEvent({
+          inputTokens: 240_000,
+          outputTokens: 67,
+          contextWindow: 258400,
+        }),
+      ],
+    });
+
+    const result = await runCodexUserPromptSubmitHook({
+      payload: {
+        session_id: threadId,
+        transcript_path: rolloutPath,
+        cwd: project,
+        prompt: 'next user prompt',
+      },
+      env: {},
+      db,
+      ensureMonitorTask: () => {},
+      writeMonitorState: (state) => {
+        monitorState = state;
+      },
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.autoRefreshPrompt.status, 'ready');
+    assert.equal(result.autoRefreshPrompt.reason, 'threshold_reached');
+    assert.match(result.autoRefreshPrompt.context, /Before answering the user prompt/);
+    assert.match(result.autoRefreshPrompt.context, /throughline trim --execute --host codex --all --json/);
+    assert.match(result.autoRefreshPrompt.context, /current Codex rollout token_count/);
+    const output = JSON.parse(result.autoRefreshPrompt.output);
+    assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    assert.match(output.hookSpecificOutput.additionalContext, /installed \$throughline workflow/);
+    assert.equal(result.captured.sessionId, `codex:${threadId}`);
+    assert.equal(monitorState.sessionId, `codex:${threadId}`);
+  } finally {
+    db.close();
+    rmSync(codexHome, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('codex-hook user-prompt-submit stays quiet below 80%', async () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  const db = makeDb();
+  try {
+    const rolloutPath = writeRollout(codexHome, {
+      id: threadId,
+      cwd: project,
+      events: [
+        event('user_message', { message: 'hook request' }),
+        event('task_started'),
+        event('agent_message', { message: 'hook answer' }),
+        event('task_complete'),
+        tokenCountEvent({
+          inputTokens: 12345,
+          outputTokens: 67,
+          contextWindow: 258400,
+        }),
+      ],
+    });
+
+    const result = await runCodexUserPromptSubmitHook({
+      payload: {
+        session_id: threadId,
+        transcript_path: rolloutPath,
+        cwd: project,
+        prompt: 'next user prompt',
+      },
+      env: {},
+      db,
+      ensureMonitorTask: () => {},
+      writeMonitorState: () => {},
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.autoRefreshPrompt.status, 'skipped');
+    assert.equal(result.autoRefreshPrompt.reason, 'below_threshold');
+    assert.equal(result.autoRefreshPrompt.output, undefined);
+  } finally {
+    db.close();
+    rmSync(codexHome, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('codex-hook post-tool-use injects current-session throughline instruction at 80%', async () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  const db = makeDb();
+  try {
+    const rolloutPath = writeRollout(codexHome, {
+      id: threadId,
+      cwd: project,
+      events: [
+        event('user_message', { message: 'hook request' }),
+        event('task_started'),
+        turnContext({ model: 'gpt-5.5', cwd: project }),
+        event('agent_message', { message: 'hook answer' }),
+        tokenCountEvent({
+          inputTokens: 240_000,
+          outputTokens: 67,
+          contextWindow: 258400,
+        }),
+      ],
+    });
+
+    const result = await runCodexPostToolUseHook({
+      payload: {
+        session_id: threadId,
+        transcript_path: rolloutPath,
+        cwd: project,
+        hook_event_name: 'PostToolUse',
+        tool_name: 'exec_command',
+      },
+      env: {},
+      db,
+      ensureMonitorTask: () => {},
+      writeMonitorState: () => {},
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.autoRefreshPrompt.status, 'ready');
+    assert.equal(result.autoRefreshPrompt.reason, 'threshold_reached');
+    assert.match(result.autoRefreshPrompt.context, /Before continuing the current tool loop/);
+    assert.match(result.autoRefreshPrompt.context, /throughline trim --execute --host codex --all --json/);
+    const output = JSON.parse(result.autoRefreshPrompt.output);
+    assert.equal(output.hookSpecificOutput.hookEventName, 'PostToolUse');
+    assert.match(output.hookSpecificOutput.additionalContext, /installed \$throughline workflow/);
+  } finally {
+    db.close();
+    rmSync(codexHome, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
 test('codex-hook stop reports camelCase payload thread id source', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
@@ -239,6 +398,14 @@ test('codex-hook stop skips cleanly when Codex thread id is unavailable', async 
 test('codexHomeFromTranscriptPath infers CODEX_HOME from rollout path', () => {
   const path = '/tmp/codex-home/sessions/2026/05/06/rollout-2026-05-06T09-40-50-id.jsonl';
   assert.equal(_internal.codexHomeFromTranscriptPath(path), '/tmp/codex-home');
+});
+
+test('parseArgs: accepts user-prompt-submit Codex hook event', () => {
+  assert.equal(_internal.parseArgs(['user-prompt-submit']).event, 'user-prompt-submit');
+});
+
+test('parseArgs: accepts post-tool-use Codex hook event', () => {
+  assert.equal(_internal.parseArgs(['post-tool-use']).event, 'post-tool-use');
 });
 
 function writeRollout(home, { id, cwd, events }) {

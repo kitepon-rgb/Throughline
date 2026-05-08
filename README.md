@@ -27,16 +27,20 @@ type `/clear` — the new session resumes mid-thought instead of starting from
 zero. (For non-`/clear` boundaries such as a brand-new chat or a VSCode
 restart, type `/tl` first to mark the predecessor.)
 
-Global install also registers a Codex Stop hook in `~/.codex/hooks.json` and
-enables `[features].codex_hooks = true` in `~/.codex/config.toml`. The Codex
-hook invokes the installed `bin/throughline.mjs` through an absolute Node path,
-so Codex App Server PATH differences do not hide the command. It is registered
-synchronously (`async: false`), matching the Codex hook behavior verified in
-Caveat. Existing non-Throughline Codex hooks are preserved. It also installs a
-global `$throughline` Codex skill. Bare `$throughline` runs the scripted
-current-thread rollback + Throughline DB memory injection directly; ask
-explicitly for status, resume, summarize, diagnostics, or fresh-thread handoff
-when you want those read-only surfaces instead.
+Global install also registers Codex `UserPromptSubmit`, `PostToolUse`, and
+`Stop` hooks in `~/.codex/hooks.json` and enables both
+`[features].codex_hooks = true` and `[features].hooks = true` in
+`~/.codex/config.toml`. The Codex hooks invoke the installed
+`bin/throughline.mjs` through an absolute Node path, so Codex App Server PATH
+differences do not hide the command. They are registered synchronously
+(`async: false`), matching the Codex hook behavior verified in Caveat. Existing
+non-Throughline Codex hooks are preserved. The prompt and tool-loop hooks read
+the current rollout `token_count` themselves and inject `$throughline` at the
+verified 80% threshold; token-monitor is display-only and is never the trigger
+source. It also installs a global `$throughline` Codex skill. Bare
+`$throughline` runs the scripted current-thread rollback + Throughline DB memory
+injection directly; ask explicitly for status, resume, summarize, diagnostics,
+or fresh-thread handoff when you want those read-only surfaces instead.
 
 ## How it compares
 
@@ -249,10 +253,12 @@ looked like a rolled-back user prompt could reappear after VS Code restart /
 reconnect, but controlled model-visible rollback smokes did not reproduce that
 path. `throughline trim --execute --host codex` now sends the guarded
 rollback + Throughline DB memory injection when app-server turn-count guards and
-injectable DB memory are available. Codex Stop hook auto-refresh also attempts
-the same live refresh when verified usage reaches the 80% threshold, which runs
-before Codex native auto-compact while staying above the monitor's 70% warning
-band.
+injectable DB memory are available. Codex current-session auto-refresh is not a
+token-monitor feature: the Codex `UserPromptSubmit` hook reads the current
+rollout `token_count` and, at the verified 80% threshold, injects a same-session
+instruction to run the installed `$throughline` workflow before answering. The
+Codex Stop hook still attempts the guarded live refresh when it naturally fires,
+so non-monitor users get the same threshold behavior.
 
 `throughline codex-host-primitive-audit` can inspect the installed Codex
 app-server schema read-only. On the current tested Codex CLI, it finds
@@ -529,10 +535,13 @@ Example output:
   Codex rollout has no token-count event, Throughline can show an explicit
   estimate with `estimated: true` and the monitor marks it with `est`; it is not
   presented as exact usage.
-- **Codex auto-refresh mutates at the verified 80% threshold.** The Codex Stop
-  hook captures DB memory, writes monitor state, and when verified usage reaches
-  the threshold it attempts rollback + Throughline DB memory injection for the
-  current thread.
+- **Codex auto-refresh is driven by the current Codex session, not the monitor.**
+  The Codex `UserPromptSubmit` and `PostToolUse` hooks capture rollout memory
+  and, when verified usage reaches 80%, inject a current-session `$throughline`
+  instruction before the assistant answers or continues a tool loop. The Codex
+  Stop hook also captures DB memory, writes monitor state, and attempts guarded
+  rollback + Throughline DB memory injection when it naturally fires above the
+  threshold.
 - **1M-context detection** is automatic. It checks the `[1m]` suffix in the
   transcript, falls back to string matching on `1M context`, and finally
   promotes to 1M if observed usage exceeds 200k.
@@ -598,7 +607,7 @@ monitor appears in a dedicated terminal panel the next time you open that
 folder.
 
 **How it works.** `ensureMonitorTaskFile` is called from `throughline install`
-and from **all three hooks (SessionStart, UserPromptSubmit, Stop)**. Whichever
+and from **all three Claude hooks (SessionStart, UserPromptSubmit, Stop)**. Whichever
 one fires first in your environment creates the file; the rest are idempotent
 no-ops. Once per project it inspects `.vscode/tasks.json`:
 
@@ -658,7 +667,7 @@ entry to the `tasks` array yourself:
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
-| `throughline install`                          | Register Claude user hooks/slash commands, the global Codex Stop hook, the global `$throughline` Codex skill, and the current VS Code monitor task when applicable |
+| `throughline install`                          | Register Claude user hooks/slash commands, the global Codex UserPromptSubmit/PostToolUse/Stop hooks, the global `$throughline` Codex skill, and the current VS Code monitor task when applicable |
 | `throughline install --project`                | Register Claude hooks/slash commands in this repo only       |
 | `throughline uninstall`                        | Remove Throughline-managed Claude hooks/slash commands, only the Throughline-managed Codex hook, and the `$throughline` Codex skill |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |

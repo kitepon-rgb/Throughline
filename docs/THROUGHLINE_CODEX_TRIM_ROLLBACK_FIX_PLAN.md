@@ -646,6 +646,11 @@ TODO:
 - [x] Codex Rewind-equivalent trim が complete だという roadmap claim を格下げする。
 - [x] Codex auto-refresh は verified usage 80% 以上で guarded rollback / inject を
   実行する。estimate usage では実行しない。
+- [x] Codex 80% trigger は token-monitor 依存にしない。Codex `UserPromptSubmit`
+  / `PostToolUse` hooks が当該 session の rollout `token_count` を直接読み、
+  verified 80% 以上なら current session へ `$throughline` workflow 実行指示を
+  注入する。`PostToolUse` により、tool loop 中に閾値を超えた場合も次の継続前に
+  同じ判定を走らせる。
 - [x] 新セッションが古い「Codex side complete」claim ではなく、この fix plan から
   再開できるように `CLAUDE.md` を更新する。
 

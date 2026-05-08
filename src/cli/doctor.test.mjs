@@ -155,6 +155,8 @@ test('runCodexDiagnosis: reports env thread and captured DB session', () => {
 
     assert.match(output, /\[Codex primary\]/);
     assert.match(output, /Codex hooks feature:\s+not enabled/);
+    assert.match(output, /Codex UserPrompt hook:\s+not registered/);
+    assert.match(output, /Codex PostTool hook:\s+not registered/);
     assert.match(output, /Codex Stop hook:\s+not registered/);
     assert.match(output, /VSCode monitor task:\s+not registered/);
     assert.match(output, /created by the next VSCode hook event/);
@@ -328,7 +330,7 @@ test('buildCodexContextRefreshDiagnosis keeps ready label when restore safety is
   }
 });
 
-test('readCodexHookDiagnosis detects legacy bare Throughline Codex Stop hook', () => {
+test('readCodexHookDiagnosis detects Codex prompt and Stop hooks', () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-doctor-codex-home-'));
   try {
     mkdirSync(join(codexHome), { recursive: true });
@@ -337,6 +339,30 @@ test('readCodexHookDiagnosis detects legacy bare Throughline Codex Stop hook', (
       JSON.stringify(
         {
           hooks: {
+            UserPromptSubmit: [
+              {
+                hooks: [
+                  {
+                    type: 'command',
+                    command: '/usr/bin/node /pkg/bin/throughline.mjs codex-hook user-prompt-submit',
+                    timeoutSec: 30,
+                    async: false,
+                  },
+                ],
+              },
+            ],
+            PostToolUse: [
+              {
+                hooks: [
+                  {
+                    type: 'command',
+                    command: '/usr/bin/node /pkg/bin/throughline.mjs codex-hook post-tool-use',
+                    timeoutSec: 30,
+                    async: false,
+                  },
+                ],
+              },
+            ],
             Stop: [
               {
                 hooks: [
@@ -355,10 +381,16 @@ test('readCodexHookDiagnosis detects legacy bare Throughline Codex Stop hook', (
         2,
       ) + '\n',
     );
-    writeFileSync(join(codexHome, 'config.toml'), '[features]\ncodex_hooks = true\n');
+    writeFileSync(join(codexHome, 'config.toml'), '[features]\ncodex_hooks = true\nhooks = true\n');
 
     const diagnosis = readCodexHookDiagnosis(codexHome);
     assert.equal(diagnosis.featureEnabled, true);
+    assert.equal(diagnosis.codexHooksFeatureEnabled, true);
+    assert.equal(diagnosis.hooksFeatureEnabled, true);
+    assert.equal(diagnosis.managedPromptHooks.length, 1);
+    assert.equal(diagnosis.legacyManagedPromptHooks.length, 1);
+    assert.equal(diagnosis.managedPostToolUseHooks.length, 1);
+    assert.equal(diagnosis.legacyManagedPostToolUseHooks.length, 1);
     assert.equal(diagnosis.managedStopHooks.length, 1);
     assert.equal(diagnosis.legacyManagedStopHooks.length, 1);
   } finally {

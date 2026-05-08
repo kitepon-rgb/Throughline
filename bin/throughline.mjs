@@ -11,6 +11,8 @@
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
  *   throughline codex-capture # Capture active Codex rollout turns into Throughline DB
+ *   throughline codex-hook user-prompt-submit # Codex current-session auto-refresh prompt hook
+ *   throughline codex-hook post-tool-use # Codex current-session auto-refresh tool-loop hook
  *   throughline codex-hook stop # Codex native Stop hook (capture + L1 summarize)
  *   throughline codex-summarize # Summarize captured Codex L2 turns into L1 via Codex CLI
  *   throughline codex-resume # Render Codex active-work context from DB
@@ -149,8 +151,17 @@ Usage:
   throughline handoff-preview   Print Codex-facing throughline_handoff JSON
   throughline codex-capture     Capture active Codex rollout turns into DB
                               (requires --codex-thread-id or env thread id)
-  throughline codex-hook stop   Codex native Stop hook: capture rollout and
-                              summarize old L2 turns into L1 via Codex CLI
+  throughline codex-hook user-prompt-submit
+                              Codex UserPromptSubmit hook: capture rollout and,
+                              at 80%, inject current-session $throughline
+                              instruction from verified rollout token_count
+  throughline codex-hook post-tool-use
+                              Codex PostToolUse hook: during tool loops, capture
+                              rollout and inject the same 80% $throughline
+                              instruction from verified rollout token_count
+  throughline codex-hook stop   Codex native Stop hook: capture rollout,
+                              summarize old L2 turns into L1, and run guarded
+                              auto-refresh when verified usage reaches 80%
   throughline codex-summarize   Summarize captured Codex L2 into L1 via Codex CLI
                               (requires a codex:<thread-id> session)
   throughline codex-resume      Render Codex active-work context from DB
@@ -243,6 +254,8 @@ Hook subcommands (called by Claude Code / Codex):
   throughline session-start   SessionStart hook
   throughline process-turn    Stop hook
   throughline prompt-submit   UserPromptSubmit hook (/tl & /clear baton writer)
+  throughline codex-hook user-prompt-submit Codex current-session refresh prompt hook
+  throughline codex-hook post-tool-use Codex current-session refresh tool-loop hook
   throughline codex-hook stop Codex Stop hook
 `);
 }
