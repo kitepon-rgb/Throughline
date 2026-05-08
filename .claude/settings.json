@@ -90,7 +90,9 @@
       "Bash(xargs ls *)",
       "Bash(npm version *)",
       "Bash(git commit *)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk git *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",
