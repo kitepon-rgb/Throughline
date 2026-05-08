@@ -98,6 +98,89 @@ test('prompt-submit subprocess writes a /tl baton into an isolated DB', () => {
   }
 });
 
+test('prompt-submit subprocess writes a /clear baton (specific session marker)', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    const result = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'cleared-session',
+        cwd: project,
+        prompt: '/clear',
+      }),
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+
+    const db = openDb(home);
+    const row = db.prepare('SELECT project_path, session_id FROM handoff_batons').get();
+    assert.equal(row.project_path, project);
+    assert.equal(row.session_id, 'cleared-session');
+    db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('prompt-submit: /clear baton overwrites previous /tl baton in same project', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    const tl = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'session-A', cwd: project, prompt: '/tl' }),
+    });
+    assert.equal(tl.status, 0, tl.stderr);
+
+    const clear = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'session-B', cwd: project, prompt: '/clear' }),
+    });
+    assert.equal(clear.status, 0, clear.stderr);
+
+    const db = openDb(home);
+    const row = db.prepare('SELECT session_id FROM handoff_batons').get();
+    assert.equal(row.session_id, 'session-B', 'most recent baton write wins');
+    db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('prompt-submit: non-baton prompt does not write any baton', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    const result = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'session-X',
+        cwd: project,
+        prompt: 'hello world',
+      }),
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+
+    if (existsSync(join(home, '.throughline', 'throughline.db'))) {
+      const db = openDb(home);
+      const row = db.prepare('SELECT COUNT(*) AS n FROM handoff_batons').get();
+      assert.equal(row.n, 0, 'a normal prompt must not create any baton');
+      db.close();
+    }
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('session-start subprocess consumes baton and injects inherited resume context', () => {
   const home = makeTempHome();
   const project = makeTempProject();

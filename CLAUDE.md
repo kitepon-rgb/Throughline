@@ -9,9 +9,9 @@
 **設計の核** (v0.4.0 以降、docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md)
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
-- **引き継ぎ発火条件は 2 経路**:
-  1. **auto path**: `/clear` 後の SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ自動で前任を merge + 注入。Claude Code 2.1.128 で `source='clear'` が reliable になったため成立 ([GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937) は解決済み)
-  2. **baton path**: 旧セッションで `/tl` を打つと UserPromptSubmit hook が `handoff_batons` テーブルに session_id を書き込み、次の新規セッションが TTL 1 時間以内に消費して merge。`source` 値関係なく発火 (auto path を OFF にしているユーザー / `/clear` 経由しないケースの逃げ道)
+- **引き継ぎ発火条件は 2 経路 (baton path 優先)**:
+  1. **baton path**: 旧セッションで `/tl` または `/clear` を打つと UserPromptSubmit hook が `handoff_batons` テーブルに**そのセッションの** session_id を書き込み、次の新規セッションが TTL 1 時間以内に消費して merge。`source` 値関係なく発火、最も確定的な指名方法。multi-window で「最新更新セッション = clear されたセッション」が成立しないシナリオ (例: ウィンドウ A で `/clear`、ウィンドウ B が直前まで活動中) でも誤った前任を選ばない
+  2. **auto path (フォールバック)**: baton が無く、`/clear` 後の SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ `findLatestClaudePredecessor` heuristic で前任を選び merge + 注入。Claude Code 2.1.128 で `source='clear'` が reliable になったため成立 ([GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937) は解決済み)。`/clear` が UserPromptSubmit hook に届かない経路 (VSCode 拡張のメニュー由来など) のためのフォールバック
   3. consumeBaton が先発なので両者は構造上同時成立しない
 - **注入内容**: L1 (古い turn の要約) + L2 (直近 20 turn の verbatim) + L3 references (`throughline detail <時刻>` の取り出しコマンド一覧)。memo / thinking は注入しない (= L2 全文に最後の assistant turn が含まれるので redundant)
 - **thinking の L3 保存**: assistant の extended thinking ブロックは `details` テーブルに `kind='thinking'` で全ターン保存される。`throughline detail <時刻>` で取り出せるが、SessionStart 注入には含めない
@@ -74,7 +74,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` で書き、SessionStart で消費。schema v8 で memo_text 列廃止により `updateBatonMemo` も削除） |
+| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` または `/clear` で書き、SessionStart で消費。schema v8 で memo_text 列廃止により `updateBatonMemo` も削除） |
 | [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と Codex projection が共有する安定した中間表現。DB 永続化はせず、schema v7 の既存テーブルから組み立てる。`codex:<thread_id>` session は `source.adapter = codex` として扱う |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
 | [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画（in-flight メモ → 最終ターン thinking → L1 → L2 の順）。L2 は active work thread として読み方を明示し、冒頭と末尾の両方に current-work instruction を置く |
@@ -124,6 +124,7 @@
 | ファイル | 対象 |
 |---|---|
 | [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / TTL 動作 (v8 で memo_text 関連 test 削除) |
+| [src/prompt-submit.test.mjs](src/prompt-submit.test.mjs) | `isBatonCommand` / `isClearCommand` の slash command 判定 (`/tl`, `/clear` の単独・引数つき・前後空白・prefix 偽陽性拒否) |
 | [src/codex-capture.test.mjs](src/codex-capture.test.mjs) | Codex `codex:<thread_id>` session identity、rollout active turns の L2 capture、`function_call` / `function_call_output` の L3 details capture、rollback tail 再構成、Codex-origin handoff |
 | [src/codex-usage.test.mjs](src/codex-usage.test.mjs) | Codex rollout `token_count` usage 抽出、`token_count` 不在時の明示 estimate、空 rollout の null |
 | [src/codex-auto-refresh.test.mjs](src/codex-auto-refresh.test.mjs) | 90% 閾値、estimate usage の非実行、threshold reached で auto-refresh が rollback/inject を呼ぶこと、DB memory が無い場合の skip |
@@ -142,7 +143,7 @@
 | [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の host mode 分岐、`codex-sidecar` 使用、disabled 時の Haiku 互換経路、Codex CLI backend、Codex CLI failure 非 fallback、再帰ガード |
 | [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |
 | [src/codex-resume.test.mjs](src/codex-resume.test.mjs) | `throughline codex-resume` の text / developer message item JSON / cwd latest Codex session 出力 |
-| [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `session-start` / `process-turn` subprocess 動作 |
+| [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `session-start` / `process-turn` subprocess 動作。`/tl` baton と `/clear` baton の書き込み、後勝ち上書き、非バトンプロンプトの no-op 確認を含む |
 | [src/trim-model.test.mjs](src/trim-model.test.mjs) | `buildTrimPlan` の captured turns / keep-recent / rollback candidate / host boundary / current-work memo preview |
 | [src/trim-cli.test.mjs](src/trim-cli.test.mjs) | `throughline trim --dry-run` JSON 出力、`--memo-stdin`、non-dry-run 明示拒否 |
 | [src/resume-context.test.mjs](src/resume-context.test.mjs) | `buildResumeContext` の注入順序（in-flight memo → thinking → L1 → L2 → footer）、空 context、current-origin 除外 |
@@ -206,7 +207,7 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - L2 → L1 要約は現行実装で唯一の subagent 的 external model call。`codex-sidecar` が configured の環境では `summarize-l1` preset を使い、使えない場合は従来通り Claude Haiku 経路を使う。`/tl` の in-flight memo はメイン Claude が slash command 手順で書くため sidecar 移行対象ではない
 - Claude CLI を実際に呼ぶテスト / smoke は、明示的に必要な場合だけ実行し、モデルは Haiku を使う。他モデルを使う必要がある場合は根拠を残してから実行する
 - 現行 install は Throughline 管理 Codex hook の shape を更新する。同じ `throughline codex-hook stop` command が既にあっても、絶対パス型 command / `timeoutSec` / `async` などを [src/cli/install.mjs](src/cli/install.mjs) の生成値に合わせる。
-- **UserPromptSubmit** は `/tl` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 2 役 (v0.3.18+)。Claude への注入は一切しない（SessionStart 側との重複注入回避のため）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
+- **UserPromptSubmit** は `/tl` または `/clear` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 2 役 (v0.3.18+, /clear バトンは v0.4.x+)。Claude への注入は一切しない（SessionStart 側との重複注入回避のため）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **PostToolUse** は登録しない（schema v4 で廃止）
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
 - dev 時に spike 系 hook（`spike/hook-logger.mjs` 等）が並行登録されている場合があるが、動作ログ採取用で実害なし

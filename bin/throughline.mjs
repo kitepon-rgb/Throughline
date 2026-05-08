@@ -242,7 +242,7 @@ Usage:
 Hook subcommands (called by Claude Code / Codex):
   throughline session-start   SessionStart hook
   throughline process-turn    Stop hook
-  throughline prompt-submit   UserPromptSubmit hook (/tl baton writer)
+  throughline prompt-submit   UserPromptSubmit hook (/tl & /clear baton writer)
   throughline codex-hook stop Codex Stop hook
 `);
 }

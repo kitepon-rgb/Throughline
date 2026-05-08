@@ -415,7 +415,7 @@ export async function run(args = []) {
   console.log('有効な hooks:');
   console.log('  SessionStart     → throughline session-start  (セッション記録・バトン消費・引き継ぎ注入)');
   console.log('  Stop             → throughline process-turn   (L1 要約 + L2 本文保存 + L3 詳細保存)');
-  console.log('  UserPromptSubmit → throughline prompt-submit  (/tl バトン書き込み)');
+  console.log('  UserPromptSubmit → throughline prompt-submit  (/tl & /clear バトン書き込み)');
   if (codex) {
     console.log(`  Codex Stop       → ${buildCodexStopHookCommand()} (Codex rollout capture + L1 要約)`);
   }

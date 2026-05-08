@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 /**
- * UserPromptSubmit hook — /tl スラッシュコマンド検出 + バトン書き込み
+ * UserPromptSubmit hook — /tl & /clear スラッシュコマンド検出 + バトン書き込み
  *
  * stdin: { session_id, cwd, prompt, hook_event_name, ... }
  *
  * 動作:
  *   - prompt が /tl (単独 or /tl ... 形式) で始まっていればバトンを書き込んで終了
+ *   - prompt が /clear (単独 or /clear ... 形式) で始まっていれば、現セッションの
+ *     session_id をバトンに書き込んで終了。
+ *     (これにより SessionStart 側の findLatestClaudePredecessor heuristic に頼らず、
+ *      確定的に「/clear が打たれたセッション」を新セッションに引き継げる。複数
+ *      VSCode ウィンドウ等で「最新更新セッション = clear されたセッション」が
+ *      成立しない multi-window シナリオで誤った前任を選ばないための確定的指名)
  *   - それ以外は何もせず exit 0（プロンプトはそのまま Claude に渡る）
  *   - 本 hook は注入を一切行わない (SessionStart の引き継ぎ注入と二重にならないため)
  *
@@ -43,6 +49,18 @@ export function isBatonCommand(prompt) {
   return false;
 }
 
+/**
+ * プロンプトが /clear バトン発動コマンドか判定する。
+ * 許容: "/clear", "/clear\n", "/clear 何か" (前後空白は trim 済み前提)
+ */
+export function isClearCommand(prompt) {
+  if (typeof prompt !== 'string') return false;
+  const trimmed = prompt.trim();
+  if (trimmed === '/clear') return true;
+  if (trimmed.startsWith('/clear ') || trimmed.startsWith('/clear\n')) return true;
+  return false;
+}
+
 export async function run() {
   let raw = '';
   await new Promise((resolve) => {
@@ -66,7 +84,10 @@ export async function run() {
     process.stderr.write(`[vscode-task] ${msg}\n`);
   }
 
-  if (!isBatonCommand(prompt)) {
+  const tlMatch = isBatonCommand(prompt);
+  const clearMatch = !tlMatch && isClearCommand(prompt);
+
+  if (!tlMatch && !clearMatch) {
     process.exit(0);
     return;
   }
@@ -87,6 +108,7 @@ export async function run() {
     ts: new Date(now).toISOString(),
     session_id,
     project_path: projectPath,
+    trigger: tlMatch ? 'tl' : 'clear',
   });
 
   process.exit(0);
