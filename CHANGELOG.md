@@ -10,6 +10,15 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.5] — 2026-05-09
+
+### Fixed
+
+- VS Code detection now treats `VSCODE_HANDLES_SIGPIPE` as a VS Code-family
+  environment signal. This lets `throughline install` provision the monitor task
+  in Codex / VS Code sessions where `TERM_PROGRAM`, `VSCODE_PID`, and
+  `VSCODE_IPC_HOOK_CLI` are absent.
+
 ## [0.4.4] — 2026-05-09
 
 ### Changed

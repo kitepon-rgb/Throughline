@@ -49,6 +49,10 @@ test('detectVsCode: VSCODE_IPC_HOOK_CLI is detected', () => {
   assert.equal(detectVsCode({ VSCODE_IPC_HOOK_CLI: '/tmp/sock' }), true);
 });
 
+test('detectVsCode: VSCODE_HANDLES_SIGPIPE is detected', () => {
+  assert.equal(detectVsCode({ VSCODE_HANDLES_SIGPIPE: 'true' }), true);
+});
+
 test('detectVsCode: empty env is not detected', () => {
   assert.equal(detectVsCode({}), false);
 });

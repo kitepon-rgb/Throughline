@@ -29,7 +29,8 @@ export function detectVsCode(env) {
   return (
     env.TERM_PROGRAM === 'vscode' ||
     Boolean(env.VSCODE_PID) ||
-    Boolean(env.VSCODE_IPC_HOOK_CLI)
+    Boolean(env.VSCODE_IPC_HOOK_CLI) ||
+    Boolean(env.VSCODE_HANDLES_SIGPIPE)
   );
 }
 
