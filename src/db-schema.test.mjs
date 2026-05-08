@@ -38,10 +38,10 @@ function indexNames(db) {
     .map((row) => row.name);
 }
 
-test('schema v7 preserves Claude-facing tables, fields, and unique indexes', async () => {
+test('schema v8 preserves Claude-facing tables, fields, and unique indexes', async () => {
   await withIsolatedDb((db) => {
     const version = db.prepare('PRAGMA user_version').get();
-    assert.equal(version.user_version, 7);
+    assert.equal(version.user_version, 8);
 
     assert.deepEqual(columnNames(db, 'sessions'), [
       'session_id',
@@ -87,7 +87,6 @@ test('schema v7 preserves Claude-facing tables, fields, and unique indexes', asy
       'project_path',
       'session_id',
       'created_at',
-      'memo_text',
     ]);
 
     const indexes = indexNames(db);

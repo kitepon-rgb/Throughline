@@ -141,66 +141,59 @@ of tool inputs, tool outputs, and hook output captured at L3 for that turn.
 
 ---
 
-## Explicit handoff via `/tl` (with in-flight memo)
+## Inheritance: auto via `/clear`, opt-out via env, opt-in via `/tl`
 
-Inheritance is **opt-in**, not automatic. When you want the next session to
-pick up where this one left off, type `/tl` in the current session before you
-`/clear` or open a new chat. Without `/tl`, new sessions start fresh — no
-memory is carried over.
+Throughline 0.4.0+ supports two inheritance paths:
 
-The `/tl` slash command does two things:
+### auto path (default): `/clear` → automatic inheritance
 
-1. **Writes a handoff baton** (the current `session_id`) into the
-   `handoff_batons` table via the `UserPromptSubmit` hook.
-2. **Asks the current Claude to write an in-flight memo.** `/tl` instructs
-   Claude to summarize *what it was about to do next, its current hypothesis,
-   open questions, and in-progress TODOs*, then pipe that Markdown into
-   `throughline save-inflight`, which attaches it to the baton's `memo_text`
-   column. This captures the "currently thinking" state that plain transcript
-   replay cannot preserve.
+Since Claude Code 2.1.128, the SessionStart hook receives `source='clear'`
+reliably after `/clear`. Throughline detects this and automatically merges the
+previous session's memory into the new one. **No user action required** —
+just type `/clear` and the new chat resumes mid-thought.
 
-On the next `SessionStart`, the hook reads the baton, and if it is less than
-**1 hour old**, merges that session's memory into the new session using a
-deterministic `UPDATE session_id = ?` inside a `BEGIN IMMEDIATE` transaction.
-The baton is consumed (deleted) atomically with the merge, so it cannot fire
-twice. The injected resume context is reframed as **"resuming an interrupted
-task"** rather than *"reading past logs"*, and the in-flight memo plus the
-final turn's extended thinking appear at the top so the new Claude picks up
-mid-thought.
+Set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` in your environment to opt out.
+
+### baton path (`/tl`): explicit inheritance signal
+
+For users who:
+
+- have `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` set, **or**
+- want to inherit across a non-`/clear` boundary (new chat / VSCode restart),
+
+type `/tl` before opening the new session. The `UserPromptSubmit` hook writes
+a handoff baton; the next `SessionStart` (within 1 hour) consumes the baton
+and merges the previous session's memory, regardless of the `source` value.
 
 ```
-Session A (type /tl)  -----------> baton written
-                                       |
-                      /clear           |
-                         |             ▼
-                      Session B  ---- reads baton, merges A into B, deletes baton ---->
-                         |
-                      (type /tl again to hand off further)
+auto path:    Session A → /clear → Session B (auto-merges A)
+baton path:   Session A → /tl → (new chat / restart) → Session B (consumes baton, merges A)
 ```
 
-Why explicit baton instead of auto-inherit:
+### What gets injected
 
-- **Zero false positives.** A parallel window, a VSCode restart, or a genuine
-  new task in the same repo won't accidentally inherit the previous session's
-  memory. Only an explicit `/tl` triggers inheritance.
-- **VSCode extension compatibility.** The `SessionStart` hook's `source` field
-  is rewritten to `"startup"` by the Claude Code VSCode extension even after
-  `/clear` (see [issue #49937](https://github.com/anthropics/claude-code/issues/49937)),
-  so source-based detection is unreliable. A user-driven baton sidesteps this.
-- **Deterministic.** No time-window heuristic, no PID guessing, no ancestor
-  walking. The user declares intent; the hook carries it out.
+Both paths inject the **same** curated memory:
 
-Each merged row keeps its `origin_session_id`, so repeated `/tl` handoffs
+- L1 summaries (older turns, one-line)
+- L2 verbatim (most recent 20 turns, full text)
+- L3 references (`throughline detail <time>` retrieval commands; bodies stay in SQLite)
+
+The injection is reframed as **"resuming an interrupted task"** rather than
+"reading past logs". The L2 verbatim already contains the last assistant
+turn — what Claude was about to do next — so no separate memo or extended
+thinking section is injected.
+
+Each merged row keeps its `origin_session_id`, so repeated handoffs
 accumulate memory through chains:
 
 ```
-S1 (4 turns) --/tl,/clear--> S2 (merges S1, adds 3 turns) --/tl,/clear--> S3 (merges S2, adds 5 turns)
-                             origin=S1×4                                  origin=S1×4, S2×3, S3×5
+S1 (4 turns) --/clear--> S2 (auto-merges S1, adds 3 turns) --/clear--> S3 (auto-merges S2, adds 5 turns)
+                         origin=S1×4                                   origin=S1×4, S2×3, S3×5
 ```
 
 ---
 
-## Codex sidecar and `/tl-trim` preview
+## Codex sidecar and Codex trim
 
 Throughline is still **Claude Code first**. Codex support is an adapter layer:
 it can project the same `HandoffRecord` into a `throughline_handoff` JSON block,
@@ -241,11 +234,7 @@ summarization. When `codex-sidecar` is configured for `summarize-l1`,
 Throughline can use it for that step; otherwise it keeps the existing Claude
 Haiku path. This is an explicit compatibility mode, not silent auto-detection.
 
-`/tl-trim` starts from dry-run. It previews how many captured turns would be
-trimmed, what recent turns would remain, and what curated memory would need to
-be injected back.
-
-**Codex rollback / inject is enabled again.** The 2026-05-06 incident initially
+**Codex rollback / inject is enabled.** The 2026-05-06 incident initially
 looked like a rolled-back user prompt could reappear after VS Code restart /
 reconnect, but controlled model-visible rollback smokes did not reproduce that
 path. `throughline trim --execute --host codex` now sends the guarded
@@ -311,12 +300,9 @@ rollout text, not an exact host tokenizer measurement. If rollback candidate
 turns are `0`, there is no current trim saving under the active keep-recent
 setting.
 
-Claude primary remains manual-only for conversation rewind. Throughline can
-prepare the current-work memory preview, but it does not drive Claude Code's
-interactive rewind UI or claim an automatic Claude rewind path. After a manual
-conversation-only rewind, give Claude the preview from `/tl-trim` / `trim
---dry-run`; the preview uses the same active-work framing as Codex so restored
-L1/L2 reads as the current task rather than as a passive archive.
+Claude-side rewind UI itself is not driven by Throughline. The auto-handoff
+flow is `/clear` → new SessionStart → automatic injection of curated memory.
+Throughline does not invoke `/rewind` or any Claude Code internal command.
 
 Codex-primary setup has an installed Stop hook after global
 `throughline install`. In real sessions, verify capture rather than assuming it:
@@ -380,8 +366,8 @@ references while pointing back to the full `codex-resume` context. `--format
 item-json` returns a Codex developer-message item for hosts that accept
 structured item injection; it is a rendering surface only and does not mutate
 the Codex thread by itself. `--memo-stdin` prepends an explicit Codex-primary
-in-flight memo to that rendered context; this is the first Codex-side equivalent
-of `/tl`'s "what was I about to do next" signal, without touching Claude batons.
+current-work memo to that rendered context; this is a Codex-side opt-in for
+"what was I about to do next" signal, independent from the Claude `/tl` baton.
 `throughline codex-visibility-smoke` is the experimental mutation check for
 that rendered memory: it injects the active-work developer message and starts a
 marker-check model turn through the Codex app-server, so it requires the
@@ -650,7 +636,6 @@ entry to the `tasks` array yourself:
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
 | `throughline monitor --diag`                   | Dump TTY/columns/env diagnostics (for debugging monitor render bugs) |
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
-| `throughline save-inflight`                    | Called by `/tl` to attach an in-flight memo (stdin) to the current baton |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |
 | `throughline doctor --session <id-prefix>`     | Diagnose a specific session — detect state/transcript drift, idle vs. stuck |
 | `throughline doctor --trim --host claude\|codex` | Diagnose trim host boundaries, manual procedure, and Codex host primitive blockage |
@@ -672,7 +657,7 @@ entry to the `tasks` array yourself:
 | `throughline codex-threads`                    | List read-only Codex thread id candidates for the current project |
 | `throughline codex-sidecar-diagnostics`        | Check `codex-sidecar` diagnostics status for this project     |
 | `throughline codex-sidecar-dry-run`            | Print a normalized read-only sidecar request without running the app server |
-| `throughline trim --dry-run`                   | Preview `/tl-trim` context trim memory and host boundary; does not rollback automatically |
+| `throughline trim --dry-run --host codex`      | Preview Codex same-thread context trim memory and host boundary; does not rollback automatically |
 | `throughline trim --preflight --host codex`    | Read/resume the explicit Codex thread and verify turn-count guards without rollback/inject |
 | `throughline trim --execute --host codex`      | Explicit Codex rollback-inject path; requires Codex thread identity, injectable DB memory, and rollout/app-server turn-count agreement |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
@@ -682,14 +667,13 @@ Slash commands (invoked by the user in Claude Code):
 
 | Command       | What it does                                                      |
 | ------------- | ----------------------------------------------------------------- |
-| `/tl`         | Write a handoff baton + ask Claude to save an in-flight memo for the next session |
-| `/tl-trim`    | Ask Claude to write a current-work memo and run trim dry-run      |
+| `/tl`         | Write a handoff baton (used as opt-in inheritance signal when `/clear` auto path is OFF or you skip `/clear`) |
 | `/sc-detail <time>` | Retrieve L2 body text and L3 tool I/O for a past turn       |
 
-> When `/tl` triggers, Claude will call `throughline save-inflight` via its
-> Bash tool. Claude Code will prompt for permission the first time; add
-> `Bash(throughline save-inflight:*)` to your allowlist to skip the prompt on
-> subsequent `/tl` invocations.
+> Auto-handoff is ON by default since v0.4.0: just type `/clear` and the new
+> chat resumes mid-thought. Set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` in your
+> environment to opt out. `/tl` is for users who opt out, or who want to
+> inherit across non-`/clear` boundaries (new chat / VSCode restart).
 
 Hook subcommands (invoked by Claude Code, not by humans):
 `session-start` (SessionStart), `process-turn` (Stop),
@@ -743,7 +727,7 @@ Schema v7:
 - `skeletons` — L1 one-liners, keyed by `(session_id, origin_session_id, turn, role)`
 - `bodies` — L2 verbatim text (user + assistant), same key shape
 - `details` — L3 records with `kind` column (`tool_input` / `tool_output` / `system` / `image` / `thinking`) and `source_id` for idempotent re-processing
-- `handoff_batons` — one row per `project_path`, with `session_id`, `created_at`, and `memo_text` (the in-flight memo written by `save-inflight` after `/tl`). Consumed and deleted by the next `SessionStart` if within the 1-hour TTL.
+- `handoff_batons` — one row per `project_path`, with `session_id` and `created_at`. Consumed and deleted by the next `SessionStart` if within the 1-hour TTL. (v8 dropped the `memo_text` column when memo was retired in v0.4.0.)
 - `injection_log` — audit trail of injection events
 
 All memory tables carry an `origin_session_id` so rebonded rows keep their

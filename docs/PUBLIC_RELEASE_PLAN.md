@@ -78,7 +78,8 @@ schema v4 で PostToolUse (`capture-tool`) は廃止、L2/L3 は Stop 内で一�
 | schema v4 migration（bodies 追加、judgments DROP） | [src/db.mjs](../src/db.mjs) |
 | schema v5 migration（details に kind / source_id 追加、L3 分離書き込み対応） | [src/db.mjs](../src/db.mjs) |
 | schema v6 migration（handoff_batons テーブル追加、`/tl` バトン引き継ぎ方式） | [src/db.mjs](../src/db.mjs), [src/baton.mjs](../src/baton.mjs) |
-| schema v7 migration（`handoff_batons.memo_text` カラム追加、in-flight メモ保存） | [src/db.mjs](../src/db.mjs), [src/baton.mjs](../src/baton.mjs), [src/cli/save-inflight.mjs](../src/cli/save-inflight.mjs) |
+| schema v7 migration（`handoff_batons.memo_text` カラム追加、in-flight メモ保存） | (v8 で memo_text drop、save-inflight 削除済み) |
+| schema v8 migration（`handoff_batons.memo_text` drop、`/clear` auto path 化、`save-inflight` / `/tl-trim` / `updateBatonMemo` 削除、注入を L1+L2+L3 refs のみに簡素化） | [src/db.mjs](../src/db.mjs), [src/session-start.mjs](../src/session-start.mjs), [src/resume-context.mjs](../src/resume-context.mjs), [docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) |
 | VSCode `.vscode/tasks.json` の自動プロビジョニング（token-monitor の folderOpen 自動起動） | [src/vscode-task.mjs](../src/vscode-task.mjs) |
 | Stop フック時の state.usage スナップショット（monitor の「止まって見える」問題の切り分け用） | [src/state-file.mjs](../src/state-file.mjs), [src/turn-processor.mjs](../src/turn-processor.mjs) |
 | `throughline doctor --session <id-prefix>` セッション診断（state/transcript ズレ検出） | [src/cli/doctor.mjs](../src/cli/doctor.mjs) |

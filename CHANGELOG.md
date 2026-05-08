@@ -10,6 +10,55 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-08
+
+### Breaking changes
+
+- **`/clear` で自動引継ぎがデフォルト ON** に変更。Claude Code 2.1.128 で
+  SessionStart hook の `source='clear'` が reliable になったため、`/clear` 後の
+  新セッションは自動的に前セッションの memory を merge + 注入する。
+  ([GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937)
+  は解決済み)
+- **`THROUGHLINE_DISABLE_AUTO_HANDOFF=1`** env var で auto path を OFF にできる。
+- **`/tl` の役割を明示意思マーカーに簡素化**。memo 4 項目入力の指示を削除し、
+  baton を立てるだけの slash command に。`/tl` は env で auto OFF にしている
+  ユーザー、または `/clear` を経由しない引継ぎに使う逃げ道。
+- **`/tl-trim` slash command 廃止**。memo 入力 + dry-run preview の役割を持って
+  いたが、memo 廃止と軽量化方針で役割なしに。Codex 経路の `throughline trim`
+  CLI は維持 (`--host codex` での guarded execute / preflight など)。
+- **`throughline save-inflight` CLI 削除**。memo 廃止に伴う除去。
+- **`updateBatonMemo` 関数削除**。`src/baton.mjs` の export から外した。
+- **schema v8 migration**: `handoff_batons.memo_text` 列を drop。
+- **注入内容を L1 + L2 + L3 references のみに簡素化**。memo セクション、
+  中断直前 thinking セクション、Claude 向け footer の使い方説明を削除。L2 全文
+  に「次に何をしようとしていたか」が含まれているため redundant。
+
+### Added
+
+- `src/db.mjs`: schema v8 migration (handoff_batons.memo_text 列 drop)。
+- `src/session-start.mjs`: 引継ぎ判定の 2 経路ロジック:
+  1. baton path: `consumeBaton` 先発で baton ありなら merge + 注入
+  2. auto path: baton 無し + `source='clear'` + env disable 無し で同 project の
+     最新 Claude unmerged session を自動 predecessor に merge + 注入
+- `inheritance-decision.log` に `triggered_path` / `auto_handoff_disabled`
+  フィールドを追加。`baton_has_memo` フィールドは削除。
+- `src/resume-context.mjs`: L3 references 一覧を注入テキストに追加
+  (Codex `renderCodexRolloutMemoryPreview` 形式の `- ${kind}:
+  \`throughline detail <time>\``)。Reading Contract / Continuation Instruction
+  も Codex 風 framing に揃えた。
+
+### Notes
+
+- `src/handoff-record.mjs` の memo / thinking projection は **維持**: Codex 側
+  (`codex-handoff.mjs`, `codex-resume.mjs`, `codex-handoff-smoke.mjs` など) が
+  `memory.inflightMemo` / `memory.latestThinking` を参照しているため。Claude
+  側は resume-context.mjs で「使わない」だけ。
+- `src/cli/trim.mjs` は **維持**: Codex 経路 (`--host codex`) と doctor
+  (`--trim --host claude`) で使う `describeTrimHost('claude')` の dry-run 表示
+  が依存しているため。`/tl-trim` slash command が無くなっても CLI は残る。
+- 既存 `~/.throughline/logs/inflight-memo.log` ファイルは新版で書き込まれない。
+  ユーザー側で手動削除可能。
+
 ## [0.3.25] — 2026-05-08
 
 ### Added

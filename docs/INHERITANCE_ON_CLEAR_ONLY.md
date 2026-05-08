@@ -1,5 +1,18 @@
 # 引き継ぎ発火条件の絞り込み調査 & 実装計画
 
+> **Status (2026-05-08 update): 本書は履歴扱い**
+>
+> 当時 (2026-04-18) は VSCode 拡張 2.1.112 で `/clear` 後も `source='startup'` に
+> 潰される問題があり、バトン方式 (案 E) を採用した。その後 Claude Code 2.1.105
+> (VSCode `/clear` not clearing context fix) と 2.1.126 (Windows env fix) で
+> 段階的に修正され、**2.1.128 で `source='clear'` が reliable**になっている。
+>
+> 現行仕様 (v0.4.0): auto path (`/clear` で自動引継ぎ) + baton path (`/tl` 明示
+> マーカー) の 2 経路。`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` で auto path を OFF
+> にできる。詳細は [THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md)。
+>
+> 本書は当時のバトン採用判断を残す履歴ドキュメント。
+
 ## Status (2026-04-18 更新)
 
 - **Phase 0 実機検証: 完了**

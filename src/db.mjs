@@ -9,7 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-const CURRENT_VERSION = 7;
+const CURRENT_VERSION = 8;
 
 let _db = null;
 
@@ -199,6 +199,19 @@ function initSchema(db) {
     const batonCols = db.prepare('PRAGMA table_info(handoff_batons)').all();
     if (!batonCols.some((c) => c.name === 'memo_text')) {
       db.exec('ALTER TABLE handoff_batons ADD COLUMN memo_text TEXT');
+    }
+  }
+
+  // v7 → v8: handoff_batons から memo_text 列を drop。
+  // 新仕様 (docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) で memo 廃止:
+  //   - /clear 自動引継ぎ (SessionStart source='clear') + /tl baton (memo なし) の 2 経路に
+  //   - 注入は L1 + L2 + L3 refs のみ
+  //   - save-inflight CLI / updateBatonMemo 関数も併せて削除
+  // SQLite 3.35.0+ で DROP COLUMN サポート (Node.js v22.5+ 同梱版で利用可)。
+  if (version < 8) {
+    const batonCols = db.prepare('PRAGMA table_info(handoff_batons)').all();
+    if (batonCols.some((c) => c.name === 'memo_text')) {
+      db.exec('ALTER TABLE handoff_batons DROP COLUMN memo_text');
     }
   }
 

@@ -98,40 +98,6 @@ test('prompt-submit subprocess writes a /tl baton into an isolated DB', () => {
   }
 });
 
-test('save-inflight subprocess stores memo on the current project baton', () => {
-  const home = makeTempHome();
-  const project = makeTempProject();
-  try {
-    const baton = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
-      home,
-      cwd: project,
-      input: JSON.stringify({
-        session_id: 'old-session',
-        cwd: project,
-        prompt: '/tl',
-      }),
-    });
-    assert.equal(baton.status, 0, baton.stderr);
-
-    const memo = 'Next: keep the handoff precise';
-    const saved = runNode([join(REPO_ROOT, 'bin/throughline.mjs'), 'save-inflight'], {
-      home,
-      cwd: project,
-      input: memo,
-    });
-    assert.equal(saved.status, 0, saved.stderr);
-    assert.match(saved.stdout, /in-flight memo saved/);
-
-    const db = openDb(home);
-    const row = db.prepare('SELECT memo_text FROM handoff_batons').get();
-    assert.equal(row.memo_text, memo);
-    db.close();
-  } finally {
-    rmSync(project, { recursive: true, force: true });
-    rmSync(home, { recursive: true, force: true });
-  }
-});
-
 test('session-start subprocess consumes baton and injects inherited resume context', () => {
   const home = makeTempHome();
   const project = makeTempProject();
@@ -157,11 +123,6 @@ test('session-start subprocess consumes baton and injects inherited resume conte
          (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
        VALUES ('old-session', 'old-session', 1, 'assistant', 'old assistant body', 4, 2)`,
     ).run();
-    db.prepare(
-      `UPDATE handoff_batons
-       SET memo_text = 'handoff memo'
-       WHERE project_path = ?`,
-    ).run(project);
     db.close();
 
     const started = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
@@ -175,7 +136,6 @@ test('session-start subprocess consumes baton and injects inherited resume conte
     });
 
     assert.equal(started.status, 0, started.stderr);
-    assert.match(started.stdout, /handoff memo/);
     assert.match(started.stdout, /old assistant body/);
 
     const after = openDb(home);

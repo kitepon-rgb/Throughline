@@ -65,7 +65,7 @@ function insertThinking(db, row) {
   ).run(row.session, row.origin, row.turn, row.text, row.createdAt, row.sourceId);
 }
 
-test('buildResumeContext: inheritance output order is memo -> thinking -> L1 -> L2 -> footer', () => {
+test('buildResumeContext: inheritance output order is L1 -> L2 -> L3 refs -> reminder (no memo / no thinking)', () => {
   const db = makeDb();
 
   insertSkeleton(db, {
@@ -92,6 +92,7 @@ test('buildResumeContext: inheritance output order is memo -> thinking -> L1 -> 
     text: 'recent assistant body',
     createdAt: 2100,
   });
+  // thinking は DB に書かれても、新仕様では注入テキストに出ない
   insertThinking(db, {
     session: 'new',
     origin: 'old',
@@ -104,32 +105,36 @@ test('buildResumeContext: inheritance output order is memo -> thinking -> L1 -> 
   const text = buildResumeContext(db, {
     sessionId: 'new',
     isInheritance: true,
-    inflightMemo: '**Next**: keep going',
+    // inflightMemo は互換のため受け取れるが、新仕様では注入テキストに使わない
+    inflightMemo: '**Next**: keep going (should NOT appear)',
   });
 
   assert.ok(text);
   assert.match(text, /^## Throughline: 中断した作業の再開/);
 
-  const memoIdx = text.indexOf('### 中断直前の in-flight メモ');
-  const thinkingIdx = text.indexOf('### 中断直前の思考');
+  // 新仕様: memo / thinking セクションは注入されない
+  assert.ok(text.indexOf('### 中断直前の in-flight メモ') < 0, 'memo section should not be injected');
+  assert.ok(text.indexOf('### 中断直前の思考') < 0, 'thinking section should not be injected');
+  assert.ok(!text.includes('**Next**: keep going'), 'inflightMemo content should be ignored');
+  assert.ok(!text.includes('latest thinking block'), 'thinking text should not appear');
+
+  // 注入される順序: L1 → L2 → L3 refs → 再開指示
   const l1Idx = text.indexOf('### それ以前の要約 (L1)');
   const l2Idx = text.indexOf('### 現在進行中の作業履歴 (L2 / active work thread)');
-  const footerIdx = text.indexOf('**[Claude 向け — 記憶の使い方]**');
+  const l3Idx = text.indexOf('### L3 詳細参照');
+  const reminderIdx = text.indexOf('**再開指示:**');
 
-  assert.ok(memoIdx > 0, 'in-flight memo section should be present');
-  assert.ok(thinkingIdx > memoIdx, 'thinking should follow in-flight memo');
-  assert.ok(l1Idx > thinkingIdx, 'L1 should follow thinking');
+  assert.ok(l1Idx > 0, 'L1 section should be present');
   assert.ok(l2Idx > l1Idx, 'L2 should follow L1');
-  assert.ok(footerIdx > l2Idx, 'footer should follow L2');
+  assert.ok(l3Idx > l2Idx, 'L3 references should follow L2');
+  assert.ok(reminderIdx > l3Idx, 'continuation reminder should follow L3 refs');
 
-  assert.ok(text.includes('**Next**: keep going'));
-  assert.ok(text.includes('latest thinking block'));
   assert.ok(text.includes('older L1 summary'));
   assert.ok(text.includes('[user]: recent user body'));
   assert.ok(text.includes('[assistant]: recent assistant body'));
+  // L3 refs は detail コマンドのみ (本文は注入しない)
+  assert.match(text, /throughline detail \d{2}:\d{2}:\d{2}/);
   assert.match(text, /単なる過去ログではなく、現在進行中の作業/);
-  assert.match(text, /後の行ほど現在状態に近く/);
-  assert.match(text, /上記の L1 \/ L2 \/ thinking \/ in-flight メモを、現在タスクに使う作業コンテキスト/);
 });
 
 test('buildResumeContext: returns null when no memory rows or inflight memo exist', () => {

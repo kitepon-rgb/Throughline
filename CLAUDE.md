@@ -6,14 +6,16 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
-**設計の核**
+**設計の核** (v0.4.0 以降、docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md)
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
-- **引き継ぎ発火条件はユーザー明示のバトンのみ**。旧セッションで `/tl` スラッシュコマンドを打つと UserPromptSubmit hook が `handoff_batons` テーブルに session_id を書き込み、次の新規セッションがそれを TTL 1 時間以内に限り消費して merge する。バトンが無ければ一切引き継がない
-- **in-flight メモ** (v7): `/tl` を打った後、旧セッションの Claude 自身が `throughline save-inflight` CLI 経由で「次の一手 / 現在の方針 / 未解決 / 進行中 TODO」を Markdown で `handoff_batons.memo_text` に書き込む。次セッションの resume-context 先頭にそのメモと最終ターンの thinking を注入することで「中断地点からの再開」感を復元する
-- **thinking の L3 保存**: assistant の extended thinking ブロックを `details` テーブルに `kind='thinking'` で全ターン保存。最新ターンの thinking は SessionStart 注入に含まれ、古い thinking は `throughline detail <時刻>` で取り出せる
-- バトン方式の背景: VSCode 拡張では SessionStart の `source` が /clear 後も `startup` に潰されるため source 判定では /clear を識別できない（[GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937)）。時間差ヒューリスティック（案 D）は誤爆リスクがあり撤回。詳細は [docs/INHERITANCE_ON_CLEAR_ONLY.md](docs/INHERITANCE_ON_CLEAR_ONLY.md)
-- 各レコードは `origin_session_id` を保持するため、複数回の `/tl` 経由引き継ぎでも記憶がチェーン状に蓄積する（ホップ制限なし）
+- **引き継ぎ発火条件は 2 経路**:
+  1. **auto path**: `/clear` 後の SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ自動で前任を merge + 注入。Claude Code 2.1.128 で `source='clear'` が reliable になったため成立 ([GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937) は解決済み)
+  2. **baton path**: 旧セッションで `/tl` を打つと UserPromptSubmit hook が `handoff_batons` テーブルに session_id を書き込み、次の新規セッションが TTL 1 時間以内に消費して merge。`source` 値関係なく発火 (auto path を OFF にしているユーザー / `/clear` 経由しないケースの逃げ道)
+  3. consumeBaton が先発なので両者は構造上同時成立しない
+- **注入内容**: L1 (古い turn の要約) + L2 (直近 20 turn の verbatim) + L3 references (`throughline detail <時刻>` の取り出しコマンド一覧)。memo / thinking は注入しない (= L2 全文に最後の assistant turn が含まれるので redundant)
+- **thinking の L3 保存**: assistant の extended thinking ブロックは `details` テーブルに `kind='thinking'` で全ターン保存される。`throughline detail <時刻>` で取り出せるが、SessionStart 注入には含めない
+- 各レコードは `origin_session_id` を保持するため、複数回の引き継ぎでも記憶がチェーン状に蓄積する（ホップ制限なし）
 - `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` は **使わない**（自動コンパクト依存の設計は放棄済み）
 - **フォールバック / 逃げ道のコードを書かない** — [docs/PUBLIC_RELEASE_PLAN.md §0](docs/PUBLIC_RELEASE_PLAN.md) 参照。silent try/catch、`exit(0)` でのエラー隠蔽は禁止
 
@@ -26,7 +28,8 @@
 | ドキュメント | 内容 |
 |---|---|
 | [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **L1/L2/L3 記憶レイヤーの設計仕様**。ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表。schema v4 基盤 + v5 L3 分類拡張まで。以後の v6/v7 追加は本文書とは独立 |
-| [docs/INHERITANCE_ON_CLEAR_ONLY.md](docs/INHERITANCE_ON_CLEAR_ONLY.md) | `/tl` バトン引き継ぎ方式の設計判断記録（schema v6/v7）。ヒューリスティック方式を却下した理由と、現行の明示指名方式の経緯 |
+| [docs/INHERITANCE_ON_CLEAR_ONLY.md](docs/INHERITANCE_ON_CLEAR_ONLY.md) | 2026-04 段階のバトン方式採用経緯（履歴扱い）。VSCode `source='clear'` バグの当時の検証記録。現行仕様は [docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) を参照 |
+| [docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) | **v0.4.0 の現行設計仕様** + 実装 TODO。auto path (`source='clear'`) + baton path (`/tl`) の 2 経路、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` |
 | [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、バージョン別実装ステータス、E2E 検証手順、未完タスク） |
 | [docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md](docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md) | **次フェーズの実装順 / TODO**。Codex primary 実用化、Codex Rewind 互換、Claude 側 finalization の順で進める |
 | [docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | Codex rollback / inject incident の調査・修正履歴。controlled user marker の rollback 後 model-visible reproduction は、fresh app-server verify と VS Code reload/reconnect 後 verify の両方で未再現。これを受けて `trim --execute --host codex`、preflight、Codex Stop hook auto-refresh の overbroad blocker は解除済み。`compacted.replacement_history` retention と host primitive audit は診断として残すが、mutation 前拒否には使わない。実 execute は rollout/app-server turn-count guard、Throughline DB injectable memory、post-inject visibility、durable rollout evidence に基づき `execute-sent-live-only` / `execute-unverified` / `execute-durable-verified` を返す |
@@ -71,7 +74,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo`（`/tl` で書き、`save-inflight` で memo 付与、SessionStart で消費） |
+| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` で書き、SessionStart で消費。schema v8 で memo_text 列廃止により `updateBatonMemo` も削除） |
 | [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と Codex projection が共有する安定した中間表現。DB 永続化はせず、schema v7 の既存テーブルから組み立てる。`codex:<thread_id>` session は `source.adapter = codex` として扱う |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
 | [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画（in-flight メモ → 最終ターン thinking → L1 → L2 の順）。L2 は active work thread として読み方を明示し、冒頭と末尾の両方に current-work instruction を置く |
@@ -89,7 +92,6 @@
 | [src/cli/install.mjs](src/cli/install.mjs) | `install` / `uninstall`（デフォルト global、`--project` で Claude ローカル）。global install は `~/.claude/settings.json` と slash commands に加えて `~/.codex/hooks.json` の Stop に絶対 node + `bin/throughline.mjs codex-hook stop` を先頭登録し、`~/.codex/config.toml` の `[features].codex_hooks = true` を有効化し、`~/.codex/skills/throughline` に `$throughline` skill を配置する。既存 Caveat / Spotter Codex hooks は保持し、uninstall は Throughline 管理の Codex hook / skill だけ削除する。**v0.3.23 以降**: `resolveThroughlineOnPath` で install 完了時に PATH 上の `throughline` 解決を確認し、見つからなければ stderr に修復手順 (npm prefix → `~/.bashrc` 編集 → `doctor` 確認) を出す。Claude-facing hooks は PATH 解決型のため、`~/.npm-global/bin` を `.profile` だけに書いて bashrc に書き忘れる sudoless prefix 派の silent fail を防ぐ |
 | [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断。`doctor --trim --host claude|codex|unknown` で trim host boundary を診断し、Codex では host primitive audit status も表示する。`doctor --codex` で Codex primary の thread env / rollout candidates / captured DB sessions / context refresh memory source と `/tl` memory contract、new-thread handoff / safe continuation status、host primitive audit、VSCode monitor task の登録状態 / Reload Window note を診断 |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
-| [src/cli/save-inflight.mjs](src/cli/save-inflight.mjs) | `save-inflight` — stdin の Markdown を現行バトンの memo_text に書き込む (`/tl` 直後に Claude 自身が呼ぶ) |
 | [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
 | [src/cli/codex-capture.mjs](src/cli/codex-capture.mjs) | `codex-capture` — 明示 Codex thread id の rollout active turns を `codex:<thread_id>` session として DB に保存する。thread id が無い場合は自動推測しない |
 | [src/cli/codex-summarize.mjs](src/cli/codex-summarize.mjs) | `codex-summarize` — captured `codex:<thread_id>` session の古い L2 を Codex CLI backend で L1 skeleton に要約する。Claude Haiku へ fallback しない |
@@ -114,15 +116,14 @@
 
 | ファイル | 用途 |
 |---|---|
-| [.claude/commands/tl.md](.claude/commands/tl.md) | `/tl` — バトン設置 + Claude 自身に in-flight メモを `save-inflight` で書かせる |
-| [.claude/commands/tl-trim.md](.claude/commands/tl-trim.md) | `/tl-trim` — Claude 自身が current-work memo を書いて `throughline trim --dry-run --host claude --memo-stdin` を呼ぶ dry-run slash command。自動 `/rewind` はしない |
+| [.claude/commands/tl.md](.claude/commands/tl.md) | `/tl` — バトン設置 (UserPromptSubmit hook が検出して handoff_batons に書き込む)。v0.4.0 以降は memo 入力を要求しない最小実装 |
 | [.claude/commands/sc-detail.md](.claude/commands/sc-detail.md) | `/sc-detail <時刻>` — L2+L3 詳細取得 |
 
 ### テスト
 
 | ファイル | 対象 |
 |---|---|
-| [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / `updateBatonMemo` / TTL 動作 / memo_text 永続化 |
+| [src/baton.test.mjs](src/baton.test.mjs) | `writeBaton` / `consumeBaton` / TTL 動作 (v8 で memo_text 関連 test 削除) |
 | [src/codex-capture.test.mjs](src/codex-capture.test.mjs) | Codex `codex:<thread_id>` session identity、rollout active turns の L2 capture、`function_call` / `function_call_output` の L3 details capture、rollback tail 再構成、Codex-origin handoff |
 | [src/codex-usage.test.mjs](src/codex-usage.test.mjs) | Codex rollout `token_count` usage 抽出、`token_count` 不在時の明示 estimate、空 rollout の null |
 | [src/codex-auto-refresh.test.mjs](src/codex-auto-refresh.test.mjs) | 90% 閾値、estimate usage の非実行、threshold reached で auto-refresh が rollback/inject を呼ぶこと、DB memory が無い場合の skip |
@@ -141,7 +142,7 @@
 | [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の host mode 分岐、`codex-sidecar` 使用、disabled 時の Haiku 互換経路、Codex CLI backend、Codex CLI failure 非 fallback、再帰ガード |
 | [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |
 | [src/codex-resume.test.mjs](src/codex-resume.test.mjs) | `throughline codex-resume` の text / developer message item JSON / cwd latest Codex session 出力 |
-| [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `save-inflight` / `session-start` / `process-turn` subprocess 動作 |
+| [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `session-start` / `process-turn` subprocess 動作 |
 | [src/trim-model.test.mjs](src/trim-model.test.mjs) | `buildTrimPlan` の captured turns / keep-recent / rollback candidate / host boundary / current-work memo preview |
 | [src/trim-cli.test.mjs](src/trim-cli.test.mjs) | `throughline trim --dry-run` JSON 出力、`--memo-stdin`、non-dry-run 明示拒否 |
 | [src/resume-context.test.mjs](src/resume-context.test.mjs) | `buildResumeContext` の注入順序（in-flight memo → thinking → L1 → L2 → footer）、空 context、current-origin 除外 |
@@ -224,7 +225,7 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - `details` (L3) — `session_id`, `origin_session_id`, `turn_number`, `tool_name`, `input_text`, `output_text`, `token_count`, `created_at`, `kind`, `source_id`
   - `kind`: `'tool_input' | 'tool_output' | 'system' | 'image' | 'thinking'`
   - `source_id`: `tool_use.id` / `attachment.uuid` / `${entry_uuid}:thinking:${idx}` 等の一意キー。`INSERT OR IGNORE` の冪等性を保証
-- `handoff_batons` (v7) — `project_path (PK)`, `session_id`, `created_at`, `memo_text` — `/tl` で書き込み、直後に `save-inflight` で memo_text が付与される。SessionStart が TTL 1h 以内なら消費して merge
+- `handoff_batons` (v8) — `project_path (PK)`, `session_id`, `created_at` — `/tl` で書き込み、SessionStart が TTL 1h 以内なら消費して merge。memo_text 列は v8 で drop (memo 廃止)
 - `injection_log` — 監査用（未活用）
 
 `judgments` テーブルは v4 で DROP 済み。`classifier.mjs` による抽出は精度が低く廃止。

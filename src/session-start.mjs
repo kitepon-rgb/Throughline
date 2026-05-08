@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 /**
- * SessionStart hook — セッション登録 + バトン消費 + 引き継ぎ注入
+ * SessionStart hook — セッション登録 + 引き継ぎ判定 + 注入
  *
  * stdin: { session_id, source, cwd, transcript_path, hook_event_name }
  *
- * 【引き継ぎ条件 (バトン方式)】
- *   ユーザーが旧セッションで /tl スラッシュコマンドを打つと UserPromptSubmit hook が
- *   baton テーブルに session_id を書き込む。本 SessionStart hook はそれを TTL 1 時間以内
- *   なら消費して merge + 引き継ぎヘッダ付き L1+L2 を stdout 注入する。
- *   バトンが無ければ / 期限切れなら何も引き継がない（docs/INHERITANCE_ON_CLEAR_ONLY.md 参照）。
+ * 【引き継ぎ条件 (2 経路)】 docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md
+ *
+ *   1. baton path: ユーザーが旧セッションで `/tl` を打つと UserPromptSubmit hook が
+ *      handoff_batons に session_id を書く。本 hook が TTL 1 時間以内に消費して
+ *      前任を merge + 引継ぎ stdout 注入。`source` 値関係なく発火。
+ *   2. auto path: `source='clear'` かつ env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が
+ *      `'1'` でない場合、同 project_path の最新 Claude unmerged session を
+ *      自動 merge して注入。
+ *
+ *   両方同時成立はしない (consumeBaton が先発、baton ありなら baton path、
+ *   なければ source 判定)。env で OFF にしたユーザーは `/tl` を打ってから
+ *   新セッションスタートで baton path を使う。
  *
  * 役割:
  *   1. sessions テーブルに新セッションを INSERT OR IGNORE
- *   2. バトン消費 + 指名された前任を merge (session-merger.mjs)
- *   3. 合流成立なら L1+L2 を「引き継ぎヘッダ」付きで stdout 注入
- *   4. 判定結果を ~/.throughline/logs/inheritance-decision.log に記録
+ *   2. baton path 判定 (consumeBaton + mergeSpecificPredecessor)
+ *   3. baton 無し かつ source='clear' かつ env disable 無し → auto path 判定
+ *   4. 合流成立なら curated memory (L1+L2+L3 refs) を「引き継ぎヘッダ」付きで stdout 注入
+ *   5. 判定結果を ~/.throughline/logs/inheritance-decision.log に記録
  */
 
 import { getDb } from './db.mjs';
@@ -26,6 +34,37 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+
+const ENV_DISABLE_AUTO_HANDOFF = 'THROUGHLINE_DISABLE_AUTO_HANDOFF';
+
+function isAutoHandoffDisabled(env) {
+  return env[ENV_DISABLE_AUTO_HANDOFF] === '1';
+}
+
+/**
+ * 同 project_path の最新 Claude unmerged session を返す (auto path 用 predecessor)。
+ * Codex session (`codex:*`) と現セッション自身は除外。
+ *
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {string} projectPath
+ * @param {string} currentSessionId
+ * @returns {{ session_id: string } | null}
+ */
+function findLatestClaudePredecessor(db, projectPath, currentSessionId) {
+  return (
+    db
+      .prepare(
+        `SELECT session_id FROM sessions
+         WHERE lower(project_path) = lower(?)
+           AND merged_into IS NULL
+           AND session_id != ?
+           AND session_id NOT LIKE 'codex:%'
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+      )
+      .get(projectPath, currentSessionId) ?? null
+  );
+}
 
 function logDecision(entry) {
   const path = join(homedir(), '.throughline', 'logs', 'inheritance-decision.log');
@@ -57,11 +96,7 @@ export async function run() {
   const db = getDb();
   const now = Date.now();
 
-  // 0. VSCode で開かれた新規プロジェクトに .vscode/tasks.json を自動プロビジョニング。
-  //    Stop hook 側にも同じ呼び出しがあるが、Stop が発火しない環境（応答中断・IDE 挙動差）
-  //    でも SessionStart は必ず走るので、新規プロジェクトでの自動起動を確実化する保険。
-  //    冪等性は ensureMonitorTaskFile 側で保証されており、Stop/UserPromptSubmit と重複呼び
-  //    出しされても安全。
+  // 0. VSCode 用 tasks.json 自動プロビジョニング (冪等)
   try {
     ensureMonitorTaskFile({ cwd: projectPath, env: process.env });
   } catch (err) {
@@ -75,18 +110,40 @@ export async function run() {
      VALUES (?, ?, 'active', ?, ?)`,
   ).run(session_id, projectPath, now, now);
 
-  // 2. バトン消費
+  // 2. baton 消費
   const baton = consumeBaton(db, { projectPath, now });
 
-  let mergeResult = { merged: false, skipReason: 'no_baton' };
+  // 3. 引継ぎ判定
+  let mergeResult = { merged: false, skipReason: 'no_trigger' };
+  let triggeredPath = null;
+  const autoDisabled = isAutoHandoffDisabled(process.env);
+
   if (baton.sessionId) {
-    // バトンが指す session が既に他と merge 済みなら、その合流先末端を前任とする
+    // baton path
+    triggeredPath = 'baton';
     const { target: predecessorId } = resolveMergeTarget(db, baton.sessionId);
     mergeResult = mergeSpecificPredecessor(db, {
       newSessionId: session_id,
       predecessorId,
       now,
     });
+  } else if (source === 'clear' && !autoDisabled) {
+    // auto path: 同 project の最新 Claude unmerged session を自動 predecessor にする
+    triggeredPath = 'auto';
+    const predRow = findLatestClaudePredecessor(db, projectPath, session_id);
+    if (predRow?.session_id) {
+      const { target: predecessorId } = resolveMergeTarget(db, predRow.session_id);
+      mergeResult = mergeSpecificPredecessor(db, {
+        newSessionId: session_id,
+        predecessorId,
+        now,
+      });
+    } else {
+      mergeResult = { merged: false, skipReason: 'no_predecessor' };
+    }
+  } else if (source === 'clear' && autoDisabled) {
+    triggeredPath = 'auto-disabled';
+    mergeResult = { merged: false, skipReason: 'auto_handoff_disabled' };
   }
 
   logDecision({
@@ -94,22 +151,21 @@ export async function run() {
     source: source ?? null,
     session_id,
     project_path: projectPath,
+    triggered_path: triggeredPath,
+    auto_handoff_disabled: autoDisabled,
     baton_session_id: baton.sessionId ?? null,
     baton_age_ms: baton.ageMs ?? null,
     baton_skip_reason: baton.skipReason ?? null,
-    baton_has_memo: Boolean(baton.memoText),
     merged: mergeResult.merged,
     merge_skip_reason: mergeResult.skipReason ?? null,
     predecessor_id: mergeResult.predecessorId ?? null,
   });
 
-  // 3. 合流成立なら引き継ぎヘッダ付きで注入
-  //    バトンに付いていた in-flight メモも併せて先頭セクションに注入する
+  // 4. 合流成立なら curated memory を stdout 注入 (L1 + L2 + L3 refs)
   if (mergeResult.merged) {
     const text = buildResumeContext(db, {
       sessionId: session_id,
       isInheritance: true,
-      inflightMemo: baton.memoText ?? null,
     });
     if (text) {
       process.stdout.write(text + '\n');

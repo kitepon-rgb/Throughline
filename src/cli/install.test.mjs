@@ -54,7 +54,7 @@ test('global install copies Throughline slash commands to ~/.claude/commands/', 
     const trim = join(home.dir, '.claude', 'commands', 'tl-trim.md');
     assert.ok(existsSync(tl), 'tl.md should be installed globally');
     assert.ok(existsSync(sc), 'sc-detail.md should be installed globally');
-    assert.ok(existsSync(trim), 'tl-trim.md should be installed globally');
+    assert.ok(!existsSync(trim), 'tl-trim.md should NOT be installed (deprecated in v0.4.0)');
     const tlBody = readFileSync(tl, 'utf8');
     assert.match(tlBody, /Throughline/, 'tl.md content should be real');
     const settings = JSON.parse(readFileSync(join(home.dir, '.claude', 'settings.json'), 'utf8'));
@@ -261,8 +261,6 @@ test('uninstall removes slash command files', async () => {
     assert.ok(!existsSync(tl), 'uninstall should remove tl.md');
     const sc = join(home.dir, '.claude', 'commands', 'sc-detail.md');
     assert.ok(!existsSync(sc), 'uninstall should remove sc-detail.md');
-    const trim = join(home.dir, '.claude', 'commands', 'tl-trim.md');
-    assert.ok(!existsSync(trim), 'uninstall should remove tl-trim.md');
     const codexSkill = join(home.dir, '.codex', 'skills', 'throughline', 'SKILL.md');
     assert.ok(!existsSync(codexSkill), 'uninstall should remove Throughline Codex skill');
   } finally {

@@ -18,7 +18,7 @@ import { homedir } from 'node:os';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SLASH_COMMANDS_SRC = join(PACKAGE_ROOT, '.claude', 'commands');
-const SC_SLASH_COMMAND_FILES = ['tl.md', 'sc-detail.md', 'tl-trim.md'];
+const SC_SLASH_COMMAND_FILES = ['tl.md', 'sc-detail.md'];
 const CODEX_SKILLS_SRC = join(PACKAGE_ROOT, 'codex', 'skills');
 const CODEX_SKILL_NAMES = ['throughline'];
 const CODEX_HOOKS_RELATIVE_PATH = ['.codex', 'hooks.json'];

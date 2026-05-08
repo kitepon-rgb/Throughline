@@ -27,7 +27,7 @@
  *   throughline codex-threads # List read-only Codex thread id candidates
  *   throughline codex-sidecar-diagnostics # Check codex-sidecar availability
  *   throughline codex-sidecar-dry-run # Print normalized sidecar request
- *   throughline trim --dry-run # Preview same-session context trim plan
+ *   throughline trim --execute --host codex # Codex same-thread guarded trim
  *   throughline doctor        # 環境チェック
  *   throughline status        # DB 統計表示
  *   throughline --version     # バージョン表示
@@ -59,9 +59,6 @@ switch (cmd) {
     break;
   case 'detail':
     (await import('../src/sc-detail.mjs')).run(rest);
-    break;
-  case 'save-inflight':
-    await (await import('../src/cli/save-inflight.mjs')).run();
     break;
   case 'handoff-preview':
     await (await import('../src/cli/handoff-preview.mjs')).run(rest);
@@ -149,7 +146,6 @@ Usage:
   throughline uninstall         Remove hooks
   throughline monitor           Multi-session token monitor (use --all, --session <id>)
   throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
-  throughline save-inflight     Save in-flight memo (stdin) to the current /tl baton
   throughline handoff-preview   Print Codex-facing throughline_handoff JSON
   throughline codex-capture     Capture active Codex rollout turns into DB
                               (requires --codex-thread-id or env thread id)
@@ -226,13 +222,15 @@ Usage:
                               Check codex-sidecar diagnostics status
   throughline codex-sidecar-dry-run
                               Print normalized read-only sidecar request
-  throughline trim --dry-run   Preview same-session context trim plan
-                              (Codex: accepts --codex-thread-id <id> or
+  throughline trim --dry-run --host codex
+                              Preview Codex same-thread context trim plan
+                              (accepts --codex-thread-id <id> or
                               THROUGHLINE_CODEX_THREAD_ID / CODEX_THREAD_ID)
                               (text preview accepts --preview-max-chars <n>)
-  throughline trim --preflight
-                              Codex-only app-server read/resume guard; does not rollback
-  throughline trim --execute  Codex rollback/inject guard; requires a Codex
+  throughline trim --preflight --host codex
+                              Codex app-server read/resume guard; does not rollback
+  throughline trim --execute --host codex
+                              Codex rollback/inject guard; requires a Codex
                               thread id, injectable DB memory, and matching
                               rollout/app-server turns
   throughline doctor            Check environment

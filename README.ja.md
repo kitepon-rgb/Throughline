@@ -126,60 +126,58 @@ L3 に保存された `kind` 別 (ツール入力 / ツール出力 / hook 出�
 
 ---
 
-## 明示的引き継ぎ — `/tl` (in-flight メモ付き)
+## 引き継ぎ: `/clear` で自動、env で OFF、`/tl` で明示
 
-引き継ぎは **明示的** であり、自動ではありません。次セッションへ「ここから続けてほしい」と
-渡したいときは、現セッションで `/clear` または新規チャットを開く **前に** `/tl` を打ちます。
-`/tl` 無しの場合、新セッションはまっさらな状態で始まり、過去メモリは引き継がれません。
+Throughline 0.4.0 から引き継ぎは 2 経路:
 
-`/tl` は 2 つの仕事をします:
+### auto path (デフォルト): `/clear` で自動引き継ぎ
 
-1. **引き継ぎバトンの書き込み**。現在の `session_id` を `handoff_batons` テーブルへ、
-   `UserPromptSubmit` hook 経由で記録します。
-2. **現 Claude に in-flight メモを書かせる**。`/tl` は Claude に対し、
-   *次に何をしようとしていたか、現在の仮説、未解決の問い、進行中 TODO* を Markdown で
-   要約し、`throughline save-inflight` 経由でバトンの `memo_text` カラムに添付するよう
-   指示します。これにより、トランスクリプト再生だけでは保てない「いま考え中だった内容」を保存できます。
+Claude Code 2.1.128 以降は `/clear` 直後の SessionStart hook に
+`source='clear'` が確実に乗ります。Throughline がこれを検出して、前セッションの
+メモリを新セッションに自動 merge します。**ユーザー操作不要** — `/clear`
+だけで新チャットが「途中から」再開されます。
 
-次の `SessionStart` では、hook がバトンを読み、**1 時間以内** であれば
-そのセッションのメモリを `BEGIN IMMEDIATE` トランザクション内で
-`UPDATE session_id = ?` を使って決定論的にマージします。バトンはマージと
-原子的に消費 (削除) されるため、二重発火しません。注入される再開コンテキストは
-**「中断されたタスクの再開」** として再フレーミングされ、in-flight メモと最終ターンの
-拡張思考が先頭に来ることで、新 Claude は思考の途中から拾えます。
+`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` を環境変数に立てると auto path を OFF にできます。
+
+### baton path (`/tl`): 明示意思マーカー
+
+次のいずれかのユーザー向け:
+
+- `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` を立てている、**または**
+- `/clear` 経由しないで引き継ぎたい (新 chat / VSCode 再起動など)
+
+新セッションを開く前に `/tl` を打つと `UserPromptSubmit` hook が baton を書き、
+次の `SessionStart` (1 時間以内) が baton を消費して merge します。
+`source` 値関係なく発火します。
 
 ```
-Session A (/tl を打つ)  -----------> バトン書き込み
-                                          |
-                          /clear           |
-                             |             ▼
-                          Session B  ---- バトン読込 → A を B にマージ → バトン削除 ---->
-                             |
-                          (もう一度 /tl で更に渡せる)
+auto path:    Session A → /clear → Session B (A を auto-merge)
+baton path:   Session A → /tl → (新 chat / 再起動) → Session B (baton を消費して A を merge)
 ```
 
-明示的バトン方式を選んだ理由:
+### 注入されるもの
 
-- **誤継承ゼロ**。並行ウィンドウや VSCode 再起動、同じリポジトリでの新規タスクが、
-  前セッションのメモリを誤って引き継ぐことはありません。`/tl` 明示時のみ発火。
-- **VSCode 拡張対応**。`SessionStart` hook の `source` フィールドは VSCode 拡張で
-  `/clear` 後も `"startup"` に書き換えられてしまう
-  ([issue #49937](https://github.com/anthropics/claude-code/issues/49937))。
-  source 判定は信用できないため、ユーザー駆動のバトンで回避。
-- **決定論的**。時間窓ヒューリスティック、PID 推測、祖先プロセス追跡なし。
-  ユーザーが意思を宣言し、hook が実行する。それだけ。
+両経路で同じ curated memory が注入されます:
 
-各マージ行は `origin_session_id` を保持するので、`/tl` を繰り返すと
+- L1 サマリー (古い turn の一行要約)
+- L2 verbatim (直近 20 turn の本文)
+- L3 references (`throughline detail <時刻>` で引き出すコマンド一覧、本文は SQLite に残置)
+
+注入は **「中断されたタスクの再開」** として再フレーミングされます。L2 verbatim に
+最終 assistant turn (= 次に何をしようとしていたか) が含まれるため、別途 memo /
+extended thinking セクションは注入されません。
+
+各マージ行は `origin_session_id` を保持するので、繰り返し引き継ぐと
 記憶がチェーン状に蓄積します:
 
 ```
-S1 (4 ターン) --/tl,/clear--> S2 (S1 をマージ + 3 ターン追加) --/tl,/clear--> S3 (S2 をマージ + 5 ターン追加)
-                              origin=S1×4                                    origin=S1×4, S2×3, S3×5
+S1 (4 ターン) --/clear--> S2 (S1 を auto-merge + 3 ターン追加) --/clear--> S3 (S2 を auto-merge + 5 ターン追加)
+                          origin=S1×4                                    origin=S1×4, S2×3, S3×5
 ```
 
 ---
 
-## Codex sidecar と `/tl-trim` プレビュー
+## Codex sidecar と Codex trim
 
 Throughline の主軸は引き続き **Claude Code** です。Codex 対応は、Claude hooks /
 slash command / transcript / baton / resume behavior を置き換えるものではなく、
@@ -189,20 +187,11 @@ adapter / projection として追加されます。
 `codex-sidecar` が `summarize-l1` preset で設定されている場合はその要約に
 Codex sidecar を使えます。使えない場合は、従来どおり Claude Haiku 経路を使います。
 
-`/tl-trim` は現在 **dry-run のみ** です。何ターンを trim 候補にするか、
-どの recent context を残すか、どの curated memory を戻す必要があるかを表示します。
-automatic rollback / inject は host primitive の検証が終わるまで無効です。
-
-```bash
-throughline doctor --trim --host claude
-printf '**次の一手**: 今の実装を続ける\n' \
-  | throughline trim --dry-run --host claude --memo-stdin
-```
-
-重要なのは current-work framing です。L1/L2 をそのまま戻すだけだと、
-モデルがそれを「過去ログ」として読んでしまうことがあります。Throughline は recent L2 を
-active work thread として構造化し、古い仮説は後続の判断で上書きされ得ること、
-そして中断地点から続行することを、注入 memory の先頭と末尾で明示します。
+Codex 側 trim (= same-thread context trim) は `throughline trim --execute --host codex`
+で発火します。Claude 側は `/clear` での auto path 引継ぎが本線になったため、
+`/tl-trim` slash command は v0.4.0 で廃止されました。current-work framing は
+SessionStart 注入の Reading Contract / Continuation Instruction で同じ意図を
+継承しています。
 
 ---
 
@@ -238,13 +227,13 @@ throughline monitor --session <id-prefix>
 | `throughline monitor` | マルチセッション監視を起動 |
 | `throughline monitor --diag` | TTY/columns/env 診断ダンプ (描画バグ切り分け用) |
 | `throughline detail <時刻>` | あるターンの L2 本文と L3 ツール I/O を取得 (Claude が使う) |
-| `throughline save-inflight` | `/tl` から呼ばれ、現バトンに in-flight メモを添付 (stdin 経由) |
 | `throughline doctor` | Node バージョン、hook 登録状況、DB、PATH をチェック |
 | `throughline doctor --trim --host claude` | trim boundary と手動手順を診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
 | `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
 | `throughline codex-sidecar-dry-run` | App Server を呼ばずに read-only sidecar request を正規化表示 |
-| `throughline trim --dry-run` | `/tl-trim` 用の dry-run preview。自動 rollback はしない |
+| `throughline trim --dry-run --host codex` | Codex same-thread trim の dry-run preview |
+| `throughline trim --execute --host codex` | Codex 同 thread の guarded rollback + DB memory inject |
 | `throughline doctor --session <id-prefix>` | 特定セッションの state/transcript ズレを診断 |
 | `throughline status` | DB 統計表示 (sessions / skeletons / bodies / details) |
 | `throughline --version` | インストール済みバージョンを表示 |
@@ -253,13 +242,12 @@ throughline monitor --session <id-prefix>
 
 | コマンド | 役割 |
 | --- | --- |
-| `/tl` | 引き継ぎバトンを書き込み + Claude に in-flight メモを書かせる |
-| `/tl-trim` | 現 Claude が current-work memo を書き、trim dry-run を実行 |
+| `/tl` | 引き継ぎバトンを書き込む (auto path を OFF にしているユーザー / `/clear` 経由しない引継ぎの逃げ道) |
 | `/sc-detail <時刻>` | 過去ターンの L2 本文と L3 ツール I/O を取得 |
 
-> `/tl` 発火時、Claude は Bash 経由で `throughline save-inflight` を呼びます。
-> 初回は許可確認が出るので、`Bash(throughline save-inflight:*)` を allowlist に
-> 追加すると以後の確認はスキップできます。
+> v0.4.0 から auto-handoff がデフォルト ON です。`/clear` だけで新セッションが
+> 「途中から」再開されます。`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` で OFF にできます。
+> `/tl` は OFF 設定下、または `/clear` 経由しない引継ぎ用の明示マーカー。
 
 ---
 
