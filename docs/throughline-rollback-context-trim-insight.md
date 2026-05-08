@@ -21,6 +21,8 @@
 
 2026-05-08 unblock: その後の切り分けで、incident thread の retained text は app-server response 上では `aggregatedOutput` など quoted/tool-output field に分類され、controlled rollback model-visible smoke は app-server restart 境界と VS Code reload/reconnect 境界の両方で `not-reproduced` だった。これを受け、Codex `trim --execute --host codex` と Stop hook auto-refresh の過剰 blocker は解除する。`compacted.replacement_history` retention、restore-safety risk、host primitive audit は引き続き diagnostics だが、単独では mutation 前 refusal にしない。DB memory 不在と rollout/app-server turn-count 不一致は引き続き mutation 前 blocker。
 
+2026-05-09 skill UX: bare `$throughline` は diagnostics / dry-run / preflight を AI に順番実行させる surface ではなく、`throughline trim --execute --host codex --all --json` を直接走らせる scripted current-thread refresh とする。目的は rollback と、Throughline DB の L2 最新 20 full bodies + older L1 summaries + L3 references-only memory injection のみ。doctor / dry-run / preflight / fresh-thread handoff / restore-safety / host primitive audit は明示診断用であり、通常 `$throughline` の前段にはしない。
+
 2026-05-07 host primitive audit: `throughline codex-host-primitive-audit` で installed Codex app-server schema を機械監査した。`thread/rollback` / `thread/inject_items` / `thread/compact/start` / `thread/start` / `thread/fork` / `thread/resume` は存在するが、rollback 済み user text を current-thread の model-visible input へ復活させない deletion / isolation / projection primitive は見つからなかった。`thread/resume(history)` は schema 上 `[UNSTABLE] FOR CODEX CLOUD - DO NOT USE` で、`thread_id` も ignored になるため、Throughline の current-thread repair primitive には採用しない。
 
 ## 概要

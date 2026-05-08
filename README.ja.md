@@ -188,7 +188,8 @@ adapter / projection として追加されます。
 Codex sidecar を使えます。使えない場合は、従来どおり Claude Haiku 経路を使います。
 
 Codex 側 trim (= same-thread context trim) は `throughline trim --execute --host codex`
-で発火します。Claude 側は `/clear` での auto path 引継ぎが本線になったため、
+で発火します。Codex の bare `$throughline` skill もこの scripted rollback + DB
+memory inject を直接実行します。Claude 側は `/clear` での auto path 引継ぎが本線になったため、
 `/tl-trim` slash command は v0.4.0 で廃止されました。current-work framing は
 SessionStart 注入の Reading Contract / Continuation Instruction で同じ意図を
 継承しています。
@@ -233,7 +234,7 @@ throughline monitor --session <id-prefix>
 | `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
 | `throughline codex-sidecar-dry-run` | App Server を呼ばずに read-only sidecar request を正規化表示 |
 | `throughline trim --dry-run --host codex` | Codex same-thread trim の dry-run preview |
-| `throughline trim --execute --host codex` | Codex 同 thread の guarded rollback + DB memory inject |
+| `throughline trim --execute --host codex` | Codex 同 thread の scripted rollback + DB memory inject |
 | `throughline doctor --session <id-prefix>` | 特定セッションの state/transcript ズレを診断 |
 | `throughline status` | DB 統計表示 (sessions / skeletons / bodies / details) |
 | `throughline --version` | インストール済みバージョンを表示 |

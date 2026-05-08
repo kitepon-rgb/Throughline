@@ -10,6 +10,17 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-05-09
+
+### Changed
+
+- Changed the installed Codex `$throughline` skill so bare `$throughline` runs
+  the scripted current-thread refresh directly:
+  `throughline trim --execute --host codex --all --json`. Doctor, dry-run,
+  preflight, restore-safety analysis, host primitive audit, and fresh-thread
+  handoff remain available only when explicitly requested instead of being the
+  normal skill path.
+
 ## [0.4.2] — 2026-05-09
 
 ### Fixed

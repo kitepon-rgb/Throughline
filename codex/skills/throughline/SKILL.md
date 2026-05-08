@@ -8,20 +8,21 @@ description: Use when the user asks to use Throughline from Codex, continue or r
 Use this skill to operate Throughline from Codex without making the user type long
 commands.
 
-If the user invokes `$throughline` by itself, treat that as a request to inspect
-the current Codex context and prepare a refresh plan. Codex rollback / inject is
-enabled again after controlled rollback model-visible smokes failed to reproduce
-rollback marker resurrection.
+If the user invokes `$throughline` by itself, treat that as a request to run the
+scripted current-thread refresh now. The normal path is not an AI planning
+exercise: it rolls back the current Codex thread and injects Throughline DB
+memory using the original `/tl` contract.
 
 ## Core Rule
 
 Do not ask the user for a Codex thread id when the current environment can
 provide it. Prefer the current `CODEX_THREAD_ID` / `THROUGHLINE_CODEX_THREAD_ID`
-identity and verify it with `throughline doctor --codex`.
+identity.
 
-Do not manually capture payloads before checking natural Stop hook capture.
-If natural capture looks wrong, inspect `doctor --codex`, the latest rollout,
-and hook logs first.
+For bare `$throughline`, do not run doctor / dry-run / handoff / preflight first
+and do not ask for confirmation. Execute the script command directly. If it
+fails, report the error plainly instead of silently falling back to another
+memory source or a fresh-thread handoff.
 
 ## Common Requests
 
@@ -30,27 +31,21 @@ and hook logs first.
 Run:
 
 ```bash
-throughline doctor --codex
-throughline trim --dry-run --host codex --all --json
-throughline codex-handoff-start --session codex:<current-thread-id> --json
-throughline trim --preflight --host codex --all --json
+throughline trim --execute --host codex --all --json
 ```
 
-This is the safe Codex context-refresh inspection flow. `--all` previews a
-rollback-based reset of the model-visible thread. `codex-handoff-start` is an
-optional fresh-thread continuation surface: it validates the handoff, shows the
-model-smoke dry-run boundary, and can render the prompt with `--print-prompt`
-without mutating the current thread. Report the preflight result, handoff-start
-status, and context reduction estimate from the dry-run. Do not claim the
-refresh happened unless `trim --execute` or auto-refresh actually ran.
+This is the scripted Codex context-refresh flow. It mutates the current Codex
+thread by sending rollback + Throughline DB memory injection. Report only the
+execution status, whether rollback / inject were sent, whether durable evidence
+was observed, and the selected memory session.
 
 The injected memory must preserve the original `/tl` memory contract:
 
-- older turns: L1 summaries
 - recent work: L2 full bodies for the latest 20 turns
+- older turns: L1 summaries
 - L3: detail references only; L3 bodies / tool payloads are not injected
 
-If the dry-run reports no captured turns or no injectable memory, say that
+If there are no captured turns or no injectable Throughline DB memory, say that
 clearly.
 
 ### "Throughline status" / "doctor"
@@ -104,8 +99,18 @@ back to Claude Haiku.
 
 ### "trim" / "rewind" / "rollback" / "context cleanup"
 
-Default to the same inspection flow as bare `$throughline` when the user
+Default to the same scripted execute flow as bare `$throughline` when the user
 asks to trim, rewind, rollback, clean up context, or use Throughline memory.
+
+Execute:
+
+```bash
+throughline trim --execute --host codex --all --json
+```
+
+Report only the essential outcome. Do not introduce fresh-thread handoff,
+restore-safety analysis, host primitive audit, or dry-run planning unless the
+user explicitly asks for those diagnostics.
 
 Preview:
 
@@ -141,17 +146,17 @@ Execute path:
 throughline trim --execute --host codex --all
 ```
 
-Run this only when the user explicitly wants the current thread trimmed. It sends
-rollback + Throughline DB memory injection after the app-server guard checks.
+This is the same command used by bare `$throughline`.
 
 ## User-Facing Explanation
 
 Explain the behavior simply:
 
 - normal Codex turn end: Stop hook captures DB memory and writes monitor state
-- `$throughline` / context refresh: doctor, dry-run, preflight, and optional
-  execute; execute mutates the current Codex thread
-- Stop hook auto-refresh attempts rollback / inject when verified usage reaches
-  90%; estimate usage does not trigger mutation
-- dry-run reports estimated savings when there are rollback candidate turns, but
-  exact host-visible token reduction is not yet measured with the host tokenizer
+- `$throughline` / context refresh: one script command mutates the current Codex
+  thread by rollback + memory inject
+- injected memory is L2 latest 20 full bodies + older L1 summaries + L3
+  references only
+- diagnostics such as doctor, dry-run, preflight, fresh-thread handoff, restore
+  safety, and host primitive audit are optional tools, not the normal
+  `$throughline` path

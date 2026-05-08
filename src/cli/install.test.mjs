@@ -133,10 +133,11 @@ test('global install copies Throughline Codex skill to ~/.codex/skills/', async 
     const metadataBody = readFileSync(metadata, 'utf8');
     assert.match(skillBody, /name: throughline/);
     assert.match(skillBody, /Bare "\$throughline"/);
-    assert.match(skillBody, /throughline codex-handoff-start --session codex:<current-thread-id> --json/);
     assert.match(skillBody, /throughline trim --execute --host codex --all/);
-    assert.match(metadataBody, /inspect guarded Codex trim/);
+    assert.match(skillBody, /do not run doctor \/ dry-run \/ handoff \/ preflight first/);
+    assert.match(metadataBody, /scripted current-thread rollback \+ Throughline memory inject/);
     assert.doesNotMatch(metadataBody, /preview blocked Codex trim/);
+    assert.doesNotMatch(metadataBody, /inspect guarded Codex trim/);
   } finally {
     unsilence();
     home.restore();

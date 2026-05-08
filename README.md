@@ -33,8 +33,10 @@ hook invokes the installed `bin/throughline.mjs` through an absolute Node path,
 so Codex App Server PATH differences do not hide the command. It is registered
 synchronously (`async: false`), matching the Codex hook behavior verified in
 Caveat. Existing non-Throughline Codex hooks are preserved. It also installs a
-global `$throughline` Codex skill, so in Codex you can ask for Throughline
-status, resume, summarize, or trim without typing the full guarded command.
+global `$throughline` Codex skill. Bare `$throughline` runs the scripted
+current-thread rollback + Throughline DB memory injection directly; ask
+explicitly for status, resume, summarize, diagnostics, or fresh-thread handoff
+when you want those read-only surfaces instead.
 
 ## How it compares
 
@@ -344,6 +346,7 @@ throughline trim --dry-run --host codex --codex-thread-id <id>
 throughline trim --dry-run --host codex --codex-thread-id <id> --preview-max-chars 4000
 throughline trim --preflight --host codex --codex-thread-id <id>
 CODEX_THREAD_ID=<id> throughline trim --preflight --host codex
+throughline trim --execute --host codex --all --json
 # read-only app-server process restart smoke; not full VS Code restart-safe proof:
 # THROUGHLINE_EXPERIMENTAL_CODEX_RESTORE_SMOKE=1 throughline codex-restore-smoke --codex-thread-id <id> --json
 # read-only local restore source inventory; not full VS Code restart-safe proof:
@@ -673,7 +676,7 @@ entry to the `tasks` array yourself:
 | `throughline codex-sidecar-dry-run`            | Print a normalized read-only sidecar request without running the app server |
 | `throughline trim --dry-run --host codex`      | Preview Codex same-thread context trim memory and host boundary; does not rollback automatically |
 | `throughline trim --preflight --host codex`    | Read/resume the explicit Codex thread and verify turn-count guards without rollback/inject |
-| `throughline trim --execute --host codex`      | Explicit Codex rollback-inject path; requires Codex thread identity, injectable DB memory, and rollout/app-server turn-count agreement |
+| `throughline trim --execute --host codex`      | Scripted Codex current-thread rollback + Throughline DB memory inject; this is what bare `$throughline` runs in Codex |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
 
