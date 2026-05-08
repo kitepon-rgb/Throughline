@@ -10,32 +10,35 @@
 
 | 文書 | 役割 |
 |---|---|
-| [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | この文書と rollback trim の気づきを統合した、TODO 兼用の実装計画。実装順と進捗管理はここを見る |
+| [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) | 2026-05-06 以降の次フェーズ計画。Codex primary 実用化を先行する |
+| [THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | 2026-05-06 incident 後の修正計画。2026-05-08 の controlled smoke 後、過剰な Codex trim blocker は解除し、restore-safety / host primitive audit は diagnostics として扱う |
+| [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | この文書と rollback trim の気づきを統合した旧計画と実装履歴。完了済み根拠として参照する |
 | [throughline-rollback-context-trim-insight.md](throughline-rollback-context-trim-insight.md) | conversation-only rollback を「model-visible context の delete primitive」と見る設計メモ |
 
-この文書は Codex adapter / sidecar integration の方針を定義する。実装時は、まず統合計画の Phase 0-5 を優先する。
+この文書は Codex adapter / sidecar integration の方針を定義する。今後の実装順は [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) を優先する。
 
 ## 目標
 
 Throughline は agent-neutral な handoff / context compression infrastructure になるべきです。
 
-Claude Code transcript と handoff behavior は守りつつ、`codex-sidecar` 経由で Codex に渡せる compact context も生成できるようにします。
+Claude Code transcript と handoff behavior は守りつつ、Codex primary bridge と `codex-sidecar` 経由の compact context も生成できるようにします。現行の `HandoffRecord` は安定した中間表現だが、保存元はまだ Claude transcript 由来であり、Codex capture を実装して初めて source adapter が Codex 由来になる。
 
 目指す形:
 
 - Throughline core は特定 agent に依存しない。
 - Claude transcript support は first-class かつ stable のまま維持する。
-- Codex support は `throughline_handoff` context block を出す adapter として追加する。
+- Codex support は `throughline_handoff` context block、Codex primary entrypoint、Codex CLI backend、`codex-sidecar` integration として追加する。
 - 既存の Claude handoff behavior を壊さない。
 
 ## 優先順位
 
-1. この project 内で background Claude subagent が担っている作業を、適切な範囲で Codex sidecar に移す。
-2. その次に、Throughline 本体を Claude だけでなく Codex にも対応させる。
+1. Throughline を Codex primary で使えるようにする。Codex primary の L2 -> L1 backend は Codex CLI を本線にする。
+2. Codex で Claude Rewind 相当の context trim を完成させる。2026-05-08 時点では Codex current-thread trim execute / auto-refresh は再有効化済みで、DB memory と turn-count guard を必須にする。
+3. そのあと Claude 側の `/rewind` UX / 自動化 surface を詰める。
 
-Claude transcript handling の置き換えから始めないでください。まず、review、risk-check、second-pass interpretation に向いた独立 background task を特定し、Codex へ委譲できるものを選びます。
+Claude transcript handling の置き換えから始めないでください。Codex 対応は adapter / bridge / Codex primary entrypoint として追加します。
 
-runtime environment で Codex が使えない場合は、現在の Claude subagent behavior をそのまま維持します。Codex adapter が存在するからといって、既存の Claude path を削ったり劣化させたりしないでください。
+Claude primary で `codex-sidecar` が使えない場合は、現在の Claude subagent behavior をそのまま維持します。Codex 向け adapter / bridge が存在するからといって、既存の Claude path を削ったり劣化させたりしないでください。Codex primary の可用性は Codex CLI / app-server / rollout の実測で別に判定します。
 
 ## Architecture 方針
 
@@ -52,7 +55,9 @@ Codex path が Claude internals を parse するのは、それが明示的に a
 
 ## Codex Sidecar Integration
 
-Codex 向けには、Throughline が `codex-sidecar` contract に合う plain JSON context block を生成します。
+この節は `codex-sidecar` integration の設計です。Codex primary の capture / L2 -> L1 backend は [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) を優先します。
+
+Sidecar 向けには、Throughline が `codex-sidecar` contract に合う plain JSON context block を生成します。
 
 ```json
 {
@@ -124,8 +129,9 @@ L2 → L1 要約だけです。具体的には [src/haiku-summarizer.mjs](../src
 
 移行方針:
 
-- `codex-sidecar diagnostics --project <repo> --preset summarize-l1` が成功する環境では、L2 → L1 要約に `codex-sidecar` を使う。
-- `codex-sidecar` が disabled / unavailable / diagnostics failure / run failure の環境では、現行の Claude Haiku 要約を維持する。
+- Claude primary では、`codex-sidecar diagnostics --project <repo> --preset summarize-l1` が成功する環境では、L2 → L1 要約に `codex-sidecar` を使う。
+- Claude primary では、`codex-sidecar` が disabled / unavailable / diagnostics failure / run failure の環境では、現行の Claude Haiku 要約を維持する。
+- Codex primary では、次フェーズ計画 [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) に従い、L2 → L1 要約 backend は Codex CLI を本線にする。Codex CLI が使えない場合は silent fallback せず明示 error とする。
 - `/tl` の in-flight memo は [.claude/commands/tl.md](../.claude/commands/tl.md) が現行メイン Claude に書かせる handoff memo であり、subagent ではない。これは Codex sidecar へ移さない。
 
 handoff review、continuity check、risk analysis などは現行 `src/` 実装には存在しません。
@@ -155,8 +161,7 @@ Codex-on-Codex が有効なのは、sidecar に別の境界がある場合だけ
 - independent second pass として明示的に要求されている。
 
 別の境界がないなら、Throughline は別の Codex に委譲せず、現在の Codex session に handoff を直接 consume させてください。
-Throughline 自体を Codex primary から使う場合は、まず `throughline handoff-preview` や
-`throughline codex-sidecar-diagnostics`、`throughline codex-sidecar-dry-run` など CLI surface を直接使います。
+Throughline 自体を Codex primary から使う場合は、まず [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) の Codex primary capture / Codex active-work resume renderer / Codex CLI L2→L1 backend を本線にします。`throughline codex-capture` と `throughline codex-resume` が Codex primary の入口であり、`throughline codex-sidecar-diagnostics`、`throughline codex-sidecar-dry-run` などは sidecar を使う review / risk-check / second opinion の診断 surface です。
 
 Recommended policy:
 
@@ -166,9 +171,11 @@ Recommended policy:
 | Codex | isolation、structured result capture、explicit second-pass review がある場合のみ Codex sidecar を使う |
 | Unknown / automation | implicit recursion ではなく明示 config を要求 |
 
-Availability policy:
+Sidecar availability policy:
 
-| Codex availability | Behavior |
+この表は `codex-sidecar` の availability を表す。Codex primary の L2 → L1 backend availability ではない。
+
+| Codex sidecar availability | Behavior |
 |---|---|
 | `unavailable` | `codex-sidecar` が存在しない、実行不能、この repo 向けに未設定、または diagnostics 失敗。既存の Claude subagent path を維持 |
 | `configured` | `codex-sidecar diagnostics --project <repo>` が成功。request shaping、dry-run、docs、planned read-only integration は使ってよい |
@@ -176,9 +183,9 @@ Availability policy:
 | `work-capable` | `codex_work` smoke が成功し、allowed paths が設定済み。worktree-backed scoped edit に使ってよい |
 | explicitly disabled | 既存の Claude subagent path を維持 |
 
-これは hidden fallback ではありません。互換モードです。Codex が使えない環境では、現在の Claude-backed behavior を baseline とします。
+これは hidden fallback ではありません。Claude primary の互換モードです。Codex sidecar が使えない環境では、現在の Claude-backed behavior を baseline とします。
 
-「Codex が使える」の最小実用定義は、単に `codex` binary があることではありません。`codex-sidecar` が存在し、対象 repository で diagnostics を成功させられることです。`codex-sidecar` がない場合、Throughline は Codex unavailable と扱ってください。
+「Codex sidecar が使える」の最小実用定義は、単に `codex` binary があることではありません。`codex-sidecar` が存在し、対象 repository で diagnostics を成功させられることです。`codex-sidecar` がない場合、Throughline は sidecar unavailable と扱ってください。Codex primary 自体の可用性は、Codex CLI と app-server / rollout の実測で別に判定します。
 
 Preferred health check:
 
@@ -225,7 +232,7 @@ Structured result policy:
 - [x] Codex context block の fixture snapshot を追加する。
 - [x] Claude primary / Codex primary mode の docs を追加する。
 - [x] Codex-on-Codex recursion を避ける explicit `hostMode` config を追加する。自動 detection は未実装。
-- [x] background Claude subagent task を移す前に Codex availability check を入れる。sidecar absent または diagnostics failure は explicit `unavailable`。
+- [x] background Claude subagent task を移す前に Codex sidecar availability check を入れる。sidecar absent または diagnostics failure は explicit `unavailable`。
 - [x] sample handoff を使った read-only `codex-sidecar` smoke を追加する。2026-05-06 に `throughline_handoff` fixture + `codex-sidecar explore` で成功済み。
 - [x] `review` / `risk-check` dry-run を追加する。2026-05-06 に `throughline_handoff` fixture + `throughline codex-sidecar-dry-run` で成功済み。
 - [x] sidecar structured result は stdout JSON + `rawEventLogRef` link として扱い、Throughline memory tables には混ぜない方針を明文化する。

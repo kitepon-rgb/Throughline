@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { run, resolveThroughlineOnPath } from './install.mjs';
+import { buildCodexStopHookCommand, run, resolveThroughlineOnPath } from './install.mjs';
 
 function makeTempHome() {
   const dir = mkdtempSync(join(tmpdir(), 'tl-install-test-'));
@@ -81,11 +81,168 @@ test('project install copies commands to cwd/.claude/commands/', async () => {
     assert.ok(existsSync(tl), 'tl.md should be installed in project');
     const globalTl = join(home.dir, '.claude', 'commands', 'tl.md');
     assert.ok(!existsSync(globalTl), '--project should NOT touch global dir');
+    assert.ok(!existsSync(join(home.dir, '.codex', 'hooks.json')), '--project should NOT touch global Codex hooks');
+    assert.ok(!existsSync(join(home.dir, '.codex', 'skills', 'throughline')), '--project should NOT touch global Codex skills');
   } finally {
     unsilence();
     process.chdir(origCwd);
     home.restore();
     rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
+test('global install registers Codex Stop hook and enables codex_hooks feature', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  const unsilence = silence();
+  try {
+    await run([]);
+    const hooks = JSON.parse(readFileSync(join(home.dir, '.codex', 'hooks.json'), 'utf8'));
+    const expectedCommand = buildCodexStopHookCommand();
+    const codexHook = hooks.hooks.Stop
+      .flatMap(g => g.hooks ?? [])
+      .find(h => h.command === expectedCommand);
+    assert.ok(codexHook, 'Codex Stop should have absolute throughline.mjs codex-hook stop');
+    assert.equal(codexHook.async, false, 'Codex Stop hook should be synchronous for Codex');
+    assert.equal(codexHook.timeoutSec, 300, 'Codex Stop hook should allow summarizer time');
+    const config = readFileSync(join(home.dir, '.codex', 'config.toml'), 'utf8');
+    assert.match(config, /^\[features\]\ncodex_hooks = true/m);
+  } finally {
+    unsilence();
+    home.restore();
+  }
+});
+
+test('global install copies Throughline Codex skill to ~/.codex/skills/', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  const unsilence = silence();
+  try {
+    await run([]);
+    const skill = join(home.dir, '.codex', 'skills', 'throughline', 'SKILL.md');
+    const metadata = join(home.dir, '.codex', 'skills', 'throughline', 'agents', 'openai.yaml');
+    assert.ok(existsSync(skill), 'Throughline Codex skill should be installed globally');
+    assert.ok(existsSync(metadata), 'Throughline Codex skill UI metadata should be installed globally');
+    const skillBody = readFileSync(skill, 'utf8');
+    const metadataBody = readFileSync(metadata, 'utf8');
+    assert.match(skillBody, /name: throughline/);
+    assert.match(skillBody, /Bare "\$throughline"/);
+    assert.match(skillBody, /throughline codex-handoff-start --session codex:<current-thread-id> --json/);
+    assert.match(skillBody, /throughline trim --execute --host codex --all/);
+    assert.match(metadataBody, /inspect guarded Codex trim/);
+    assert.doesNotMatch(metadataBody, /preview blocked Codex trim/);
+  } finally {
+    unsilence();
+    home.restore();
+  }
+});
+
+test('global install preserves existing Codex hooks and is idempotent', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  mkdirSync(join(home.dir, '.codex'), { recursive: true });
+  writeFileSync(
+    join(home.dir, '.codex', 'hooks.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: '/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop',
+                  timeoutSec: 5,
+                  async: false,
+                  statusMessage: null,
+                },
+              ],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  writeFileSync(join(home.dir, '.codex', 'config.toml'), '[features]\nother = true\n');
+  const unsilence = silence();
+  try {
+    await run([]);
+    await run([]);
+    const hooks = JSON.parse(readFileSync(join(home.dir, '.codex', 'hooks.json'), 'utf8'));
+    const commands = hooks.hooks.Stop.flatMap(g => g.hooks ?? []).map(h => h.command);
+    const expectedCommand = buildCodexStopHookCommand();
+    assert.ok(commands.includes('/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop'));
+    assert.equal(commands.filter(c => c === expectedCommand).length, 1);
+    assert.ok(!commands.includes('throughline codex-hook stop'));
+    const config = readFileSync(join(home.dir, '.codex', 'config.toml'), 'utf8');
+    assert.match(config, /other = true/);
+    assert.match(config, /codex_hooks = true/);
+  } finally {
+    unsilence();
+    home.restore();
+  }
+});
+
+test('global install updates existing Throughline Codex Stop hook shape', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  mkdirSync(join(home.dir, '.codex'), { recursive: true });
+  writeFileSync(
+    join(home.dir, '.codex', 'hooks.json'),
+    JSON.stringify(
+      {
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'throughline codex-hook stop',
+                  timeoutSec: 300,
+                  async: true,
+                  statusMessage: null,
+                },
+              ],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  const unsilence = silence();
+  try {
+    await run([]);
+    const hooks = JSON.parse(readFileSync(join(home.dir, '.codex', 'hooks.json'), 'utf8'));
+    const expectedCommand = buildCodexStopHookCommand();
+    const codexHooks = hooks.hooks.Stop
+      .flatMap(g => g.hooks ?? [])
+      .filter(h => h.command === expectedCommand);
+    assert.equal(codexHooks.length, 1);
+    assert.equal(codexHooks[0].async, false);
+    assert.equal(codexHooks[0].timeoutSec, 300);
+    assert.equal(
+      hooks.hooks.Stop.flatMap(g => g.hooks ?? []).filter(h => h.command === 'throughline codex-hook stop').length,
+      0,
+    );
+  } finally {
+    unsilence();
+    home.restore();
   }
 });
 
@@ -106,6 +263,44 @@ test('uninstall removes slash command files', async () => {
     assert.ok(!existsSync(sc), 'uninstall should remove sc-detail.md');
     const trim = join(home.dir, '.claude', 'commands', 'tl-trim.md');
     assert.ok(!existsSync(trim), 'uninstall should remove tl-trim.md');
+    const codexSkill = join(home.dir, '.codex', 'skills', 'throughline', 'SKILL.md');
+    assert.ok(!existsSync(codexSkill), 'uninstall should remove Throughline Codex skill');
+  } finally {
+    unsilence();
+    home.restore();
+  }
+});
+
+test('global uninstall removes only Throughline-managed Codex hook', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  const unsilence = silence();
+  try {
+    await run([]);
+    const hooksPath = join(home.dir, '.codex', 'hooks.json');
+    const hooks = JSON.parse(readFileSync(hooksPath, 'utf8'));
+    hooks.hooks.Stop.push({
+      hooks: [
+        {
+          type: 'command',
+          command: '/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop',
+          timeoutSec: 5,
+          async: false,
+          statusMessage: null,
+        },
+      ],
+    });
+    writeFileSync(hooksPath, JSON.stringify(hooks, null, 2) + '\n');
+
+    await run(['--uninstall']);
+    const after = JSON.parse(readFileSync(hooksPath, 'utf8'));
+    const commands = after.hooks.Stop.flatMap(g => g.hooks ?? []).map(h => h.command);
+    assert.ok(commands.includes('/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop'));
+    assert.ok(!commands.includes('throughline codex-hook stop'));
+    assert.ok(!commands.some(c => c.includes('throughline.mjs codex-hook stop')));
   } finally {
     unsilence();
     home.restore();
@@ -131,7 +326,7 @@ test('uninstall preserves unrelated slash commands in the same dir', async () =>
   }
 });
 
-test('Stop hook is registered with async:true so it does not block ターン完了 UX', async () => {
+test('Claude Stop hook is registered with async:true so it does not block ターン完了 UX', async () => {
   const home = makeTempHome();
   if (home.resolved !== home.dir) {
     home.restore();

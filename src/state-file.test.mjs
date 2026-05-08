@@ -146,8 +146,55 @@ test('writeSessionState: usage 付きで書くと JSON に含まれる', async (
     const results = mod.readAllSessionStates();
     assert.equal(results.length, 1);
     assert.ok(results[0].usage);
+    assert.equal(results[0].host, 'claude');
+    assert.equal(results[0].rolloutPath, null);
     assert.equal(results[0].usage.tokens, 123);
     assert.equal(results[0].usage.model, 'claude-opus-4-6');
+  });
+});
+
+test('writeSessionState: Codex state は host と rolloutPath を保持しファイル名を encode する', async () => {
+  await withIsolatedStateDir(async ({ stateDir, mod }) => {
+    mod.writeSessionState({
+      sessionId: 'codex:019dfaba-thread',
+      host: 'codex',
+      projectPath: '/tmp/x',
+      transcriptPath: null,
+      rolloutPath: '/tmp/codex/rollout.jsonl',
+      pid: 1,
+      usage: {
+        tokens: 123,
+        model: 'codex',
+        contextWindowSize: 258400,
+        contextWindowEstimated: false,
+        outputTokens: 10,
+        estimated: false,
+        source: 'codex-rollout-token-count',
+      },
+    });
+
+    assert.deepEqual(readdirSync(stateDir), ['codex%3A019dfaba-thread.json']);
+    const results = mod.readAllSessionStates();
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sessionId, 'codex:019dfaba-thread');
+    assert.equal(results[0].host, 'codex');
+    assert.equal(results[0].transcriptPath, null);
+    assert.equal(results[0].rolloutPath, '/tmp/codex/rollout.jsonl');
+    assert.equal(results[0].usage.source, 'codex-rollout-token-count');
+  });
+});
+
+test('writeSessionState: unsupported host は throw する', async () => {
+  await withIsolatedStateDir(async ({ mod }) => {
+    assert.throws(
+      () =>
+        mod.writeSessionState({
+          sessionId: 'sess-bad-host',
+          host: 'unknown-host',
+          projectPath: '/tmp/x',
+        }),
+      /unsupported host/,
+    );
   });
 });
 
@@ -162,6 +209,7 @@ test('writeSessionState: usage 無しで書いたらフィールド自体が無�
     const results = mod.readAllSessionStates();
     assert.equal(results.length, 1);
     assert.equal(results[0].usage, undefined);
+    assert.equal(results[0].host, 'claude');
   });
 });
 
@@ -178,6 +226,8 @@ test('readAllSessionStates: 旧バージョンが書いた usage 無しの state
     }));
     const results = mod.readAllSessionStates();
     assert.equal(results.length, 1);
+    assert.equal(results[0].host, 'claude');
+    assert.equal(results[0].rolloutPath, null);
     assert.equal(results[0].usage, undefined);
     // usage 無しで読めること自体が互換性の証明
   });

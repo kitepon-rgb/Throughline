@@ -195,6 +195,30 @@ test('buildHandoffRecord: excludes current origin rows', () => {
   assert.deepEqual(record.memory.recentBodies.map((r) => r.text), ['old body']);
 });
 
+test('buildHandoffRecord: keeps L2 bodies from the latest 20 turns, not 40 turns', () => {
+  const db = makeDb();
+  insertSession(db);
+  for (let turn = 1; turn <= 22; turn++) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'new',
+      turn,
+      role: 'assistant',
+      text: `body ${turn}`,
+      createdAt: turn * 1000,
+    });
+  }
+
+  const record = buildHandoffRecord(db, { sessionId: 'new' });
+
+  assert.ok(record);
+  assert.equal(record.memory.recentBodies.length, 20);
+  assert.deepEqual(
+    record.memory.recentBodies.map((r) => r.turnNumber),
+    Array.from({ length: 20 }, (_, index) => index + 3),
+  );
+});
+
 test('buildHandoffRecord: returns null when no projected memory exists', () => {
   const db = makeDb();
   insertSession(db);

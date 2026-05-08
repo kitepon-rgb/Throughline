@@ -231,17 +231,17 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
 
 ## 影響ファイル
 
-- [src/turn-processor.mjs](src/turn-processor.mjs) — Stop フック本体。ブロック分類 + Haiku 呼び出し + 3 テーブル書き込み
-- [src/classifier.mjs](src/classifier.mjs) — **廃止**（judgments 廃止に伴い役割消滅）
+- [src/turn-processor.mjs](../src/turn-processor.mjs) — Stop フック本体。ブロック分類 + Haiku 呼び出し + 3 テーブル書き込み
+- `src/classifier.mjs` — **廃止**（judgments 廃止に伴い役割消滅）
 - ~~src/context-injector.mjs~~ — **廃止**（SessionStart との重複注入解消。注入は SessionStart に一本化）
-- [src/session-start.mjs](src/session-start.mjs) — 引き継ぎ注入を新構造に（注入の唯一のエントリポイント）
-- [src/resume-context.mjs](src/resume-context.mjs) — レンダラ差し替え
-- [src/db.mjs](src/db.mjs) — schema v4 migration、bodies テーブル追加
-- [src/session-merger.mjs](src/session-merger.mjs) — **bodies テーブルも merge 追従対象に追加**、judgments 張り替えロジックは削除（skeletons/details/bodies の 3 テーブルで session_id 張り替え）
-- [src/detail-capture.mjs](src/detail-capture.mjs) — **削除**（Stop フックに統合）
-- [.claude-plugin/hooks.json](.claude-plugin/hooks.json) — detail-capture の PostToolUse 登録を削除
-- [.claude/settings.json](.claude/settings.json) — classifier / detail-capture 関連 hook があれば削除
-- [docs/CONCEPT.md](docs/CONCEPT.md) — 再定義の反映
+- [src/session-start.mjs](../src/session-start.mjs) — 引き継ぎ注入を新構造に（注入の唯一のエントリポイント）
+- [src/resume-context.mjs](../src/resume-context.mjs) — レンダラ差し替え
+- [src/db.mjs](../src/db.mjs) — schema v4 migration、bodies テーブル追加
+- [src/session-merger.mjs](../src/session-merger.mjs) — **bodies テーブルも merge 追従対象に追加**、judgments 張り替えロジックは削除（skeletons/details/bodies の 3 テーブルで session_id 張り替え）
+- `src/detail-capture.mjs` — **削除**（Stop フックに統合）
+- `.claude-plugin/hooks.json` — detail-capture の PostToolUse 登録を削除
+- [.claude/settings.json](../.claude/settings.json) — classifier / detail-capture 関連 hook があれば削除
+- [docs/archive/CONCEPT.md](archive/CONCEPT.md) — 再定義の反映
 - **新規**: `commands/sc-detail.md` — L3 オンデマンド参照コマンド。bodies 設計と同時実装必須
 
 ---
@@ -275,14 +275,14 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
 依存関係に沿って以下の順で実装する。**judgments 参照の全削除を schema migration より先にやる** のがポイント（migration 後の中途半端な動作状態で crash するのを防ぐ）。
 
 1. **judgments 参照の全削除**（先行クリーンアップ）
-   - [src/turn-processor.mjs](src/turn-processor.mjs) から judgments 書き込みを削除
+   - [src/turn-processor.mjs](../src/turn-processor.mjs) から judgments 書き込みを削除
    - ~~src/context-injector.mjs~~ から judgments 読み出しを削除（ファイル自体が廃止済み）
-   - [src/session-merger.mjs](src/session-merger.mjs) から judgments の UPDATE を削除
-   - [src/classifier.mjs](src/classifier.mjs) 削除
-   - [.claude/settings.json](.claude/settings.json) / [.claude-plugin/hooks.json](.claude-plugin/hooks.json) から classifier 関連 hook があれば削除
+   - [src/session-merger.mjs](../src/session-merger.mjs) から judgments の UPDATE を削除
+   - `src/classifier.mjs` 削除
+   - [.claude/settings.json](../.claude/settings.json) / `.claude-plugin/hooks.json` から classifier 関連 hook があれば削除
    - この段階では judgments テーブルは DB に残したまま。参照が消えただけ
 
-2. **schema v4 migration** — [src/db.mjs](src/db.mjs)
+2. **schema v4 migration** — [src/db.mjs](../src/db.mjs)
    - bodies テーブル追加
    - judgments テーブル DROP（関連インデックスも DROP）
    - v3 データはマイグレーションせず read-only で共存
@@ -293,7 +293,7 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
    - 単一時刻と時刻範囲の両方サポート
    - 後段の動作確認に使えるので先に作る
 
-4. **Stop フック改修** — [src/turn-processor.mjs](src/turn-processor.mjs)
+4. **Stop フック改修** — [src/turn-processor.mjs](../src/turn-processor.mjs)
    - transcript のブロック分類：
      - `type === 'text'` の user メッセージ → L2（ユーザー発言）
      - `type === 'text'` の assistant メッセージ → L2（Claude 本文）
@@ -306,22 +306,22 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
    - Haiku 4.5 同期呼び出しで L1 要約生成（2 回リトライ、失敗時は L2 全文を L1 に）
    - bodies/skeletons/details の 3 テーブルへ分離書き込み
 
-5. **detail-capture.mjs 削除** — [src/detail-capture.mjs](src/detail-capture.mjs)
+5. **detail-capture.mjs 削除** — `src/detail-capture.mjs`
    - Stop フックに統合済みなので不要
-   - [.claude-plugin/hooks.json](.claude-plugin/hooks.json) の PostToolUse 登録も同時に削除
+   - `.claude-plugin/hooks.json` の PostToolUse 登録も同時に削除
 
-6. **注入パイプライン改修** — [src/session-start.mjs](src/session-start.mjs)、[src/resume-context.mjs](src/resume-context.mjs)
+6. **注入パイプライン改修** — [src/session-start.mjs](../src/session-start.mjs)、[src/resume-context.mjs](../src/resume-context.mjs)
    - 新フォーマット（`[HH:MM:SS]` 時刻プレフィックス）
    - 直近 20 ターンは bodies から L2 全文、それ以前は skeletons から L1 要約
    - 末尾に `/sc-detail` 案内文を追加
    - v3 セッションのフォールバック経路（bodies が空なら skeletons のみ）
    - ~~context-injector.mjs~~ は廃止（SessionStart に一本化）
 
-7. **session-merger の bodies 対応** — [src/session-merger.mjs](src/session-merger.mjs)
+7. **session-merger の bodies 対応** — [src/session-merger.mjs](../src/session-merger.mjs)
    - BEGIN IMMEDIATE トランザクションに bodies の UPDATE を追加
    - 張り替え対象: skeletons / details / bodies / sessions.merged_into
 
-8. **SessionStart 改修** — [src/session-start.mjs](src/session-start.mjs)
+8. **SessionStart 改修** — [src/session-start.mjs](../src/session-start.mjs)
    - 引き継ぎ注入を新フォーマットで
 
 9. **検証** — 各段階で smoke test を走らせ、ユーザーに動作確認してもらう

@@ -8,12 +8,20 @@
 
 | 文書 | 役割 |
 |---|---|
-| [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | この気づきと Claude / Codex 両対応計画を統合した、TODO 兼用の実装計画。実装順と進捗管理はここを見る |
+| [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) | 2026-05-06 以降の次フェーズ計画。Codex primary と Codex Rewind 互換を先行する |
+| [THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | 2026-05-06 incident 後の修正計画。2026-05-08 の controlled smoke 後、automatic mutation は再有効化し、restore-safety / host primitive audit は diagnostics として残す |
+| [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | この気づきと Claude / Codex 両対応計画を統合した旧計画と実装履歴。完了済み根拠として参照する |
 | [THROUGHLINE_CODEX_DUAL_SUPPORT.md](THROUGHLINE_CODEX_DUAL_SUPPORT.md) | Throughline を Claude primary のまま Codex adapter / sidecar に対応させる architecture brief |
 
-この文書は「rollback は欠けていた delete primitive かもしれない」という洞察を残すもの。実装時は、未検証の host primitive を本線仕様にせず、統合計画の Phase 6 で実測してから `/tl-trim` 系 UX に進む。
+この文書は「rollback は欠けていた delete primitive かもしれない」という洞察を残すもの。実装時は、未検証の host primitive を本線仕様にせず、次フェーズ計画 [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) の Codex Rewind 互換 Phase で実測してから本線 UX に進む。
 
-2026-05-06 update: Codex app-server の `thread/rollback` / `thread/inject_items` は host primitive として実測済み。Throughline CLI には明示 `--codex-thread-id` または `THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` による current-thread identity、rollout/app-server turn count guard、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` 配下の guarded execute が入った。ただし通常の automatic rollback / inject と、Claude `/rewind` 自動化はまだ有効化しない。
+2026-05-06 update: Codex app-server の `thread/rollback` / `thread/inject_items` は live host primitive として実測済み。Throughline CLI には明示 `--codex-thread-id` または `THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` による current-thread identity、rollout/app-server turn count guard、guarded execute が入った。
+
+2026-05-07 correction: VS Code restart / reconnect 後に rollback 済み user prompt が復活したように見える incident が起きたため、Codex rollback / inject は restart-safe な context trim primitive としていったん未証明へ戻した。特に `compacted.replacement_history` など、live app-server read/resume 以外の restore source を検証するまで、`$throughline` と Codex Stop hook auto-refresh は mutation を自動実行しない方針にした。Claude `/rewind` 自動化はまだ有効化しない。
+
+2026-05-08 unblock: その後の切り分けで、incident thread の retained text は app-server response 上では `aggregatedOutput` など quoted/tool-output field に分類され、controlled rollback model-visible smoke は app-server restart 境界と VS Code reload/reconnect 境界の両方で `not-reproduced` だった。これを受け、Codex `trim --execute --host codex` と Stop hook auto-refresh の過剰 blocker は解除する。`compacted.replacement_history` retention、restore-safety risk、host primitive audit は引き続き diagnostics だが、単独では mutation 前 refusal にしない。DB memory 不在と rollout/app-server turn-count 不一致は引き続き mutation 前 blocker。
+
+2026-05-07 host primitive audit: `throughline codex-host-primitive-audit` で installed Codex app-server schema を機械監査した。`thread/rollback` / `thread/inject_items` / `thread/compact/start` / `thread/start` / `thread/fork` / `thread/resume` は存在するが、rollback 済み user text を current-thread の model-visible input へ復活させない deletion / isolation / projection primitive は見つからなかった。`thread/resume(history)` は schema 上 `[UNSTABLE] FOR CODEX CLOUD - DO NOT USE` で、`thread_id` も ignored になるため、Throughline の current-thread repair primitive には採用しない。
 
 ## 概要
 
@@ -253,9 +261,11 @@ Codex で考えられる流れ:
 9. ユーザーは同じ Codex thread で続行する。
 ```
 
-現行実装では、この流れは `throughline trim --execute --host codex --codex-thread-id <id>` と
-`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` の両方がある場合だけ実行する。`--execute` は
-rollback / inject 後に model turn を開始しない。通常の automatic rollback / inject はまだ無効。
+現行実装では、Codex Stop hook 後の 90% automatic refresh は guarded rollback / inject
+mutation を試行する。明示 CLI の `throughline trim --execute --host codex --codex-thread-id <id>`
+も env gate なしで実行する。明示 Codex thread identity、injectable Throughline DB memory、
+rollout/app-server turn count guard は live mutation の最低条件であり、durable success は
+post-execute rollout evidence で `execute-durable-verified` として別判定する。
 
 重要な考え:
 

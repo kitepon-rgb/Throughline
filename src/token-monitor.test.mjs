@@ -254,6 +254,10 @@ test('renderBar: ratio=0 は全部 ░', () => {
   assert.equal(renderBar(0, 5), '░░░░░');
 });
 
+test('renderBar: default width は 10 セル', () => {
+  assert.equal(renderBar(0.5), '█████░░░░░');
+});
+
 test('renderBar: ratio=1 は全部 █', () => {
   assert.equal(renderBar(1, 5), '█████');
 });
@@ -287,6 +291,7 @@ function makeLineArgs(ratio) {
   return {
     state: {
       sessionId: 'abc12345-xxxx',
+      host: 'claude',
       projectPath: '/tmp/foo',
       transcriptPath: null,
       updatedAt: Date.now(),
@@ -303,9 +308,31 @@ function makeLineArgs(ratio) {
 
 test('formatLine: 70% 未満は警告テキストなし', () => {
   const out = stripColors(formatLine(makeLineArgs(0.5)));
+  assert.ok(out.includes('Claude'));
+  assert.ok(out.includes('100.0k / 200.0k'));
+  assert.ok(!out.includes('残'));
+  assert.ok(!out.includes('/  50%'));
   assert.ok(!out.includes('!!'));
   assert.ok(!out.includes('!  '));
   assert.ok(!out.includes('/tl'));
+});
+
+test('formatLine: Codex estimated usage は host と est marker を表示する', () => {
+  const args = makeLineArgs(0.5);
+  args.state.host = 'codex';
+  args.usage = {
+    tokens: 100_000,
+    model: 'codex',
+    contextWindowSize: 200_000,
+    contextWindowEstimated: true,
+    outputTokens: 0,
+    estimated: true,
+    source: 'codex-rollout-chars-div-4',
+  };
+  const out = stripColors(formatLine(args));
+  assert.ok(out.includes('Codex'));
+  assert.ok(out.includes('100.0k / 200.0k'));
+  assert.ok(out.includes('codex est win?'));
 });
 
 test('formatLine: 70% 以上で "!" マーカーと弱めの文言', () => {

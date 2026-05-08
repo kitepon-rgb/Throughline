@@ -1,6 +1,9 @@
+import { inspectCodexPlannedRollbackRestoreSafety } from './codex-rollout-memory.mjs';
 import { buildHandoffRecord, N_RECENT_L2 } from './handoff-record.mjs';
+import { estimateTokens } from './token-estimator.mjs';
 
 export const DEFAULT_TRIM_KEEP_RECENT = N_RECENT_L2;
+export const DEFAULT_TRIM_PREVIEW_MAX_CHARS = 1_500;
 export const TRIM_HOSTS = Object.freeze(['claude', 'codex', 'unknown']);
 
 function assertKeepRecent(value) {
@@ -86,14 +89,14 @@ export function describeTrimHost(host) {
   if (host === 'codex') {
     return {
       host,
-      automaticRollback: false,
-      automaticInject: false,
-      status: 'verified-host-primitive',
-      reason: 'codex_thread_rollback_inject_verified_but_not_integrated',
+      automaticRollback: true,
+      automaticInject: true,
+      status: 'ready',
+      reason: 'codex_rollback_inject_available',
       manualProcedure: [
         'Run this dry-run first and review the rollback / injection plan.',
-        'Codex app-server thread/rollback and thread/inject_items are verified host primitives.',
-        'Do not run automatic trim until Throughline can identify and control the intended Codex thread explicitly.',
+        'Use --preflight for a read/resume guard; it does not send rollback or inject.',
+        'Use --execute for rollback + Throughline DB memory injection into the current Codex thread.',
       ],
     };
   }
@@ -111,22 +114,49 @@ export function describeTrimHost(host) {
   };
 }
 
-function collectMemoryPreview(record, maxChars) {
+function buildSafeContinuation({ host, hostIdentity }) {
+  if (host !== 'codex') return null;
+
+  const threadId = hostIdentity?.codexThreadId ?? '<thread-id>';
+  const sessionId = threadId === '<thread-id>' ? 'codex:<thread-id>' : `codex:${threadId}`;
+  return {
+    status: 'fresh-thread-handoff-available',
+    reason: 'optional_fresh_thread_continuation',
+    safetyScope: 'fresh_thread_handoff_no_current_thread_mutation',
+    mutatesCurrentThread: false,
+    memoryCommand: `throughline codex-resume --session ${sessionId} --format handoff`,
+    smokeCommand: `throughline codex-handoff-smoke --session ${sessionId}`,
+    modelSmokeDryRunCommand: `throughline codex-handoff-model-smoke --session ${sessionId} --dry-run --json`,
+    guidedCommand: `throughline codex-handoff-start --session ${sessionId}`,
+    procedure: [
+      'Use the guided command for the full read-only fresh-thread start plan, or run the individual smoke / render commands below.',
+      'Validate the fresh-thread handoff prompt with the smoke command.',
+      'Optionally dry-run the model smoke command to inspect the exact Codex exec boundary without starting a model turn.',
+      'Render the fresh-thread handoff with the memory command.',
+      'Start a new Codex thread with that handoff context only when fresh-thread continuation is explicitly desired.',
+      'Use trim --execute --host codex for current-thread rollback / inject when the guarded execute inputs are present.',
+    ],
+  };
+}
+
+function collectMemoryPreview(record) {
   if (!record) {
     return {
       text: '(no captured memory available)',
       truncated: false,
       stats: {
+        source: 'throughline-db',
         l1Summaries: 0,
         recentBodies: 0,
         latestThinking: 0,
         l3References: 0,
+        recentTurnLimit: N_RECENT_L2,
       },
     };
   }
 
   const lines = [];
-  lines.push('## Throughline Trim Memory Preview');
+  lines.push('## Throughline: Active Work Context');
   lines.push('');
   lines.push(`Intent: ${record.intent}`);
   lines.push('');
@@ -153,7 +183,7 @@ function collectMemoryPreview(record, maxChars) {
   if (record.memory.l1Summaries.length > 0) {
     lines.push('');
     lines.push('### L1 Summaries');
-    for (const row of record.memory.l1Summaries.slice(-8)) {
+    for (const row of record.memory.l1Summaries) {
       lines.push(`[${row.time}] ${row.summary.replace(/\n+/g, ' ').trim()}`);
     }
   }
@@ -162,15 +192,15 @@ function collectMemoryPreview(record, maxChars) {
     lines.push('');
     lines.push('### Active Work Thread (Recent L2)');
     lines.push('Entries are oldest-to-newest; later entries may supersede earlier hypotheses.');
-    for (const row of record.memory.recentBodies.slice(-8)) {
+    for (const row of record.memory.recentBodies) {
       lines.push(`[${row.time}] [${row.role}] ${row.text.replace(/\n+/g, ' ').trim()}`);
     }
   }
 
   if (record.references.l3.length > 0) {
     lines.push('');
-    lines.push('### L3 Detail References');
-    for (const ref of record.references.l3.slice(-8)) {
+    lines.push('### L3 Detail References (Bodies Not Injected)');
+    for (const ref of record.references.l3) {
       lines.push(`- ${ref.kind}: ${ref.detailCommand}`);
     }
   }
@@ -183,27 +213,16 @@ function collectMemoryPreview(record, maxChars) {
   );
 
   const fullText = lines.join('\n');
-  if (fullText.length <= maxChars) {
-    return {
-      text: fullText,
-      truncated: false,
-      stats: {
-        l1Summaries: record.memory.l1Summaries.length,
-        recentBodies: record.memory.recentBodies.length,
-        latestThinking: record.memory.latestThinking.length,
-        l3References: record.references.l3.length,
-      },
-    };
-  }
-
   return {
-    text: `${fullText.slice(0, maxChars).trimEnd()}\n\n[truncated for dry-run preview]`,
-    truncated: true,
+    text: fullText,
+    truncated: false,
     stats: {
+      source: 'throughline-db',
       l1Summaries: record.memory.l1Summaries.length,
       recentBodies: record.memory.recentBodies.length,
       latestThinking: record.memory.latestThinking.length,
       l3References: record.references.l3.length,
+      recentTurnLimit: N_RECENT_L2,
     },
   };
 }
@@ -220,7 +239,7 @@ export function buildTrimPlan(
     codexThreadId = null,
     codexThreadIdSource = null,
     trimSource = null,
-    previewMaxChars = 1_500,
+    previewMaxChars = DEFAULT_TRIM_PREVIEW_MAX_CHARS,
   } = {},
 ) {
   const normalizedHost = TRIM_HOSTS.includes(host) ? host : 'unknown';
@@ -252,16 +271,30 @@ export function buildTrimPlan(
     normalizedTrimSource?.capturedTurns ?? countDistinctCapturedTurns(db, resolvedSessionId);
   const rollbackTurns = Math.max(0, capturedTurns - effectiveKeepRecent);
   const keepTurns = capturedTurns - rollbackTurns;
-  const record = normalizedTrimSource
-    ? null
-    : buildHandoffRecord(db, {
+  const record = resolvedSessionId
+    ? buildHandoffRecord(db, {
         sessionId: resolvedSessionId,
         isInheritance: false,
         inflightMemo,
         recentTurnLimit: DEFAULT_TRIM_KEEP_RECENT,
-      });
-  const memoryPreview = normalizedTrimSource?.memoryPreview ?? collectMemoryPreview(record, previewMaxChars);
+      })
+    : null;
+  const memoryPreview = record ? collectMemoryPreview(record) : normalizedTrimSource?.memoryPreview ?? collectMemoryPreview(null);
+  const contextReductionEstimate = estimateContextReduction({
+    trimSource: normalizedTrimSource,
+    rollbackTurns,
+    memoryPreviewText: memoryPreview.text,
+  });
+  const plannedRollbackRestoreSafety = buildPlannedRollbackRestoreSafety({
+    trimSource: normalizedTrimSource,
+    rollbackTurns,
+  });
   const hostInfo = describeTrimHost(normalizedHost);
+  const hostIdentity = buildHostIdentity({
+    host: normalizedHost,
+    codexThreadId,
+    codexThreadIdSource,
+  });
 
   return {
     status: rollbackTurns === 0 ? 'noop' : hostInfo.status,
@@ -274,14 +307,15 @@ export function buildTrimPlan(
       projectPath,
     }),
     host: hostInfo,
-    hostIdentity: buildHostIdentity({
-      host: normalizedHost,
-      codexThreadId,
-      codexThreadIdSource,
-    }),
+    hostIdentity,
+    safeContinuation: buildSafeContinuation({ host: normalizedHost, hostIdentity }),
+    display: {
+      previewMaxChars,
+    },
     trim: {
       source: normalizedTrimSource?.source ?? 'throughline-db',
       sourceReason: normalizedTrimSource?.sourceReason ?? 'throughline_db_session',
+      rolloutPath: normalizedTrimSource?.rolloutPath ?? null,
       capturedTurns,
       keepRecent: effectiveKeepRecent,
       keepTurns,
@@ -289,6 +323,10 @@ export function buildTrimPlan(
       trimAll: Boolean(trimAll),
       automaticExecutionAllowed:
         rollbackTurns > 0 && hostInfo.automaticRollback && hostInfo.automaticInject,
+      contextReductionEstimate,
+      restoreSafety: normalizedTrimSource?.restoreSafety ?? null,
+      plannedRollbackRestoreSafety,
+      rolloutStats: normalizedTrimSource?.stats ?? null,
     },
     memoryPreview,
   };
@@ -320,6 +358,20 @@ export function renderTrimDryRunReport(plan) {
   lines.push(`Captured turns: ${plan.trim.capturedTurns}`);
   lines.push(`Keep recent turns: ${plan.trim.keepRecent}`);
   lines.push(`Rollback candidate turns: ${plan.trim.rollbackTurns}`);
+  if (plan.trim.contextReductionEstimate) {
+    const estimate = plan.trim.contextReductionEstimate;
+    lines.push(`Estimated rollback tokens: ${estimate.rollbackEstimatedTokens}`);
+    lines.push(`Estimated injected memory tokens: ${estimate.injectedMemoryEstimatedTokens}`);
+    lines.push(
+      `Estimated net token reduction: ${estimate.netEstimatedTokens} (${estimate.reductionPct}%, ${estimate.method})`,
+    );
+  }
+  if (plan.trim.restoreSafety) {
+    lines.push(...renderRestoreSafetyLines(plan.trim.restoreSafety));
+  }
+  if (plan.trim.plannedRollbackRestoreSafety) {
+    lines.push(...renderPlannedRollbackRestoreSafetyLines(plan.trim.plannedRollbackRestoreSafety));
+  }
   lines.push(`Automatic execution allowed: ${plan.trim.automaticExecutionAllowed ? 'yes' : 'no'}`);
 
   lines.push('');
@@ -329,6 +381,30 @@ export function renderTrimDryRunReport(plan) {
   lines.push(`- boundary status: ${plan.host.status}`);
   lines.push(`- boundary reason: ${plan.host.reason}`);
 
+  if (plan.safeContinuation) {
+    lines.push('');
+    lines.push('### Safe Continuation Path');
+    lines.push(`- status: ${plan.safeContinuation.status}`);
+    lines.push(`- reason: ${plan.safeContinuation.reason}`);
+    if (plan.safeContinuation.safetyScope) {
+      lines.push(`- safety scope: ${plan.safeContinuation.safetyScope}`);
+    }
+    lines.push(`- mutates current thread: ${plan.safeContinuation.mutatesCurrentThread ? 'yes' : 'no'}`);
+    if (plan.safeContinuation.guidedCommand) {
+      lines.push(`- guided command: ${plan.safeContinuation.guidedCommand}`);
+    }
+    if (plan.safeContinuation.smokeCommand) {
+      lines.push(`- smoke command: ${plan.safeContinuation.smokeCommand}`);
+    }
+    if (plan.safeContinuation.modelSmokeDryRunCommand) {
+      lines.push(`- model smoke dry-run: ${plan.safeContinuation.modelSmokeDryRunCommand}`);
+    }
+    lines.push(`- memory command: ${plan.safeContinuation.memoryCommand}`);
+    for (const step of plan.safeContinuation.procedure) {
+      lines.push(`- ${step}`);
+    }
+  }
+
   lines.push('');
   lines.push('### Manual Procedure');
   for (const step of plan.host.manualProcedure) {
@@ -337,9 +413,65 @@ export function renderTrimDryRunReport(plan) {
 
   lines.push('');
   lines.push('### Curated Memory Preview');
-  lines.push(plan.memoryPreview.text);
+  const renderedPreview = renderMemoryPreviewForReport({
+    text: plan.memoryPreview.text,
+    maxChars: plan.display?.previewMaxChars,
+  });
+  lines.push(renderedPreview.text);
+  if (renderedPreview.truncated) {
+    lines.push('');
+    lines.push(
+      `[preview truncated to ${renderedPreview.maxChars} chars; full memory remains available in JSON memoryPreview.text]`,
+    );
+    if (plan.safeContinuation?.guidedCommand) {
+      lines.push(`[fresh-thread Codex guided start: ${plan.safeContinuation.guidedCommand}]`);
+    }
+    if (plan.safeContinuation?.memoryCommand) {
+      lines.push(`[fresh-thread Codex handoff: ${plan.safeContinuation.memoryCommand}]`);
+    }
+  }
 
   return lines.join('\n');
+}
+
+function renderMemoryPreviewForReport({ text, maxChars }) {
+  const normalizedMaxChars = Number.isInteger(maxChars) && maxChars > 0 ? maxChars : null;
+  if (!normalizedMaxChars || text.length <= normalizedMaxChars) {
+    return { text, truncated: false, maxChars: normalizedMaxChars };
+  }
+
+  return {
+    text: `${text.slice(0, normalizedMaxChars).trimEnd()}\n...`,
+    truncated: true,
+    maxChars: normalizedMaxChars,
+  };
+}
+
+function renderRestoreSafetyLines(restoreSafety) {
+  const lines = [];
+  lines.push(`Restore safety: ${restoreSafety.status}`);
+  lines.push(`Compacted rows: ${restoreSafety.compactedRows}`);
+  lines.push(`Compacted replacement user messages: ${restoreSafety.compactedReplacementUserMessages}`);
+  lines.push(
+    `Rollback text retained in compacted history: ${restoreSafety.rollbackTextRetainedInCompacted}`,
+  );
+  lines.push(`Resurrected user messages after rollback: ${restoreSafety.resurrectedUserMessages}`);
+  for (const risk of restoreSafety.risks ?? []) {
+    lines.push(`Restore safety risk: ${risk.type} (${risk.count})`);
+  }
+  return lines;
+}
+
+function renderPlannedRollbackRestoreSafetyLines(plannedSafety) {
+  const lines = [];
+  lines.push(`Planned rollback restore safety: ${plannedSafety.status}`);
+  lines.push(
+    `Planned rollback text retained in compacted history: ${plannedSafety.rollbackTextRetainedInCompacted}`,
+  );
+  for (const risk of plannedSafety.risks ?? []) {
+    lines.push(`Planned rollback restore safety risk: ${risk.type} (${risk.count})`);
+  }
+  return lines;
 }
 
 function normalizeTrimSource(trimSource) {
@@ -356,6 +488,42 @@ function normalizeTrimSource(trimSource) {
     source: trimSource.source ?? 'external',
     sourceReason: trimSource.sourceReason ?? 'external_trim_source',
   };
+}
+
+function estimateContextReduction({ trimSource, rollbackTurns, memoryPreviewText }) {
+  const turnEstimates = trimSource?.contextEstimate?.turns;
+  if (!Array.isArray(turnEstimates)) return null;
+
+  const rollbackRows = rollbackTurns > 0 ? turnEstimates.slice(-rollbackTurns) : [];
+  const rollbackEstimatedTokens = rollbackRows.reduce(
+    (sum, row) => sum + (Number.isFinite(row.estimatedTokens) ? row.estimatedTokens : 0),
+    0,
+  );
+  const injectedMemoryEstimatedTokens = rollbackTurns > 0 ? estimateTokens(memoryPreviewText) : 0;
+  const netEstimatedTokens = Math.max(0, rollbackEstimatedTokens - injectedMemoryEstimatedTokens);
+  const reductionPct =
+    rollbackEstimatedTokens > 0 ? Math.max(0, Math.round((netEstimatedTokens / rollbackEstimatedTokens) * 100)) : 0;
+
+  return {
+    method: trimSource.contextEstimate.method ?? 'chars_div_4',
+    scope: 'rollback_candidate_vs_injected_memory',
+    rollbackTurns,
+    rollbackEstimatedTokens,
+    injectedMemoryEstimatedTokens,
+    netEstimatedTokens,
+    reductionPct,
+    note: 'Heuristic estimate from rollout text length; not a host tokenizer measurement.',
+  };
+}
+
+function buildPlannedRollbackRestoreSafety({ trimSource, rollbackTurns }) {
+  if (trimSource?.source !== 'codex-rollout') return null;
+  if (!trimSource.rolloutPath) return null;
+  if (!Number.isInteger(rollbackTurns) || rollbackTurns < 1) return null;
+  return inspectCodexPlannedRollbackRestoreSafety({
+    rolloutPath: trimSource.rolloutPath,
+    rollbackTurns,
+  });
 }
 
 function buildPlanSession({ resolvedSessionId, session, trimSource, projectPath }) {

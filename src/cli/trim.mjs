@@ -1,12 +1,19 @@
 import { runCodexTrimExecution, runCodexTrimPreflight } from '../codex-app-server.mjs';
-import { buildCodexRolloutTrimSource } from '../codex-rollout-memory.mjs';
+import {
+  buildCodexRolloutTrimSource,
+  parseCodexRolloutFile,
+} from '../codex-rollout-memory.mjs';
 import { resolveCodexThreadIdentity } from '../codex-thread-identity.mjs';
 import { getDb } from '../db.mjs';
 import {
   DEFAULT_TRIM_KEEP_RECENT,
+  DEFAULT_TRIM_PREVIEW_MAX_CHARS,
   buildTrimPlan,
   renderTrimDryRunReport,
 } from '../trim-model.mjs';
+
+const DURABLE_ROLLOUT_READ_ATTEMPTS = 5;
+const DURABLE_ROLLOUT_READ_DELAY_MS = 100;
 
 async function readStdin() {
   let raw = '';
@@ -30,6 +37,7 @@ function parseArgs(args) {
     trimAll: false,
     memoStdin: false,
     codexThreadId: null,
+    previewMaxChars: DEFAULT_TRIM_PREVIEW_MAX_CHARS,
     preflight: false,
     execute: false,
     codexAppServerBin: null,
@@ -64,6 +72,12 @@ function parseArgs(args) {
       out.trimAll = true;
     } else if (arg === '--memo-stdin') {
       out.memoStdin = true;
+    } else if (arg === '--preview-max-chars') {
+      const value = Number(args[++i]);
+      if (!Number.isInteger(value) || value < 1) {
+        throw new Error('--preview-max-chars must be a positive integer');
+      }
+      out.previewMaxChars = value;
     } else if (arg === '--codex-thread-id') {
       const value = args[++i];
       if (!value || value.startsWith('-')) {
@@ -128,6 +142,7 @@ export async function run(args) {
     codexThreadId: parsed.codexThreadId,
     codexThreadIdSource: parsed.codexThreadIdSource,
     trimSource,
+    previewMaxChars: parsed.previewMaxChars,
   });
 
   if (!parsed.dryRun) {
@@ -149,7 +164,11 @@ export async function run(args) {
     } else {
       process.stdout.write(renderTrimActionReport(result) + '\n');
     }
-    process.exit(result.status === 'preflight-ready' || result.status === 'executed' ? 0 : 1);
+    process.exit(
+      result.status === 'preflight-ready' || result.status === 'execute-durable-verified'
+        ? 0
+        : 1,
+    );
   }
 
   if (parsed.json) {
@@ -162,19 +181,10 @@ export async function run(args) {
 }
 
 async function runExecute(parsed, plan) {
-  if (process.env.THROUGHLINE_EXPERIMENTAL_CODEX_TRIM !== '1') {
-    return {
-      status: 'execute-refused',
-      reason: 'experimental_env_required',
-      requiredEnv: 'THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1',
-      plan,
-    };
-  }
-
   const refusal = validateCodexAction(parsed, plan, 'execute');
   if (refusal) return refusal;
 
-  if (!hasInjectableMemory(plan.memoryPreview?.text)) {
+  if (!hasInjectableMemory(plan.memoryPreview)) {
     return {
       status: 'execute-refused',
       reason: 'injectable_memory_required',
@@ -201,15 +211,147 @@ async function runExecute(parsed, plan) {
     };
   }
 
+  const classification = await classifyCodexExecutionResult({ plan, execution });
   return {
-    status: 'executed',
-    reason: 'rollback_and_inject_sent',
+    status: classification.status,
+    reason: classification.reason,
+    durableVerification: classification.durableVerification,
     plan: {
       ...plan,
       mode: 'execute',
     },
     execution,
   };
+}
+
+async function classifyCodexExecutionResult({ plan, execution }) {
+  const visibilityStatus = execution.postInjectVisibilityCheck?.status ?? 'unchecked';
+  const restoreSafetyStatus = plan.trim?.restoreSafety?.status ?? 'unknown';
+  const initialRolloutStats = plan.trim?.rolloutStats ?? {};
+  const durableVerification = {
+    liveMutationSent: Boolean(execution.rollbackSent && execution.injectSent),
+    durableVerified: false,
+    postInjectVisibilityStatus: visibilityStatus,
+    restoreSafetyStatus,
+    rolloutPath: plan.trim?.rolloutPath ?? null,
+    rolloutChecked: false,
+    postExecuteRestoreSafetyStatus: null,
+    observedNewRollbackEvent: false,
+    observedInjectedMemory: false,
+    reasons: [],
+  };
+
+  if (visibilityStatus !== 'match') {
+    durableVerification.reasons.push(
+      execution.postInjectVisibilityCheck?.reason ?? 'post_inject_visibility_unverified',
+    );
+  }
+
+  if (!durableVerification.rolloutPath) {
+    durableVerification.reasons.push('rollout_path_unavailable_for_durable_verification');
+    if (visibilityStatus !== 'match') {
+      return {
+        status: 'execute-unverified',
+        reason: execution.postInjectVisibilityCheck?.reason ?? 'post_inject_visibility_unverified',
+        durableVerification,
+      };
+    }
+    return {
+      status: 'execute-sent-live-only',
+      reason: 'rollback_and_inject_sent_live_only',
+      durableVerification,
+    };
+  }
+
+  const evidence = await waitForDurableRolloutEvidence({
+    durableVerification,
+    initialRolloutStats,
+    attempts: DURABLE_ROLLOUT_READ_ATTEMPTS,
+    delayMs: DURABLE_ROLLOUT_READ_DELAY_MS,
+  });
+
+  if (evidence.error) {
+    durableVerification.reasons.push('rollout_durable_verification_failed');
+    durableVerification.error = evidence.error;
+    return {
+      status: 'execute-unverified',
+      reason: 'rollout_durable_verification_failed',
+      durableVerification,
+    };
+  }
+
+  if (visibilityStatus !== 'match') {
+    return {
+      status: 'execute-unverified',
+      reason: execution.postInjectVisibilityCheck?.reason ?? 'post_inject_visibility_unverified',
+      durableVerification,
+    };
+  }
+
+  if (!durableVerification.observedNewRollbackEvent) {
+    durableVerification.reasons.push('rollback_marker_not_observed_in_rollout');
+    return {
+      status: 'execute-unverified',
+      reason: 'rollback_marker_not_observed_in_rollout',
+      durableVerification,
+    };
+  }
+
+  if (!durableVerification.observedInjectedMemory) {
+    durableVerification.reasons.push('injected_memory_not_observed_in_rollout');
+    return {
+      status: 'execute-unverified',
+      reason: 'injected_memory_not_observed_in_rollout',
+      durableVerification,
+    };
+  }
+
+  durableVerification.durableVerified = true;
+  durableVerification.reasons.push('rollout_durable_evidence_verified');
+  durableVerification.restoreSafetyStatus = durableVerification.postExecuteRestoreSafetyStatus;
+  return {
+    status: 'execute-durable-verified',
+    reason: 'rollback_and_inject_durable_verified',
+    durableVerification,
+  };
+}
+
+async function waitForDurableRolloutEvidence({
+  durableVerification,
+  initialRolloutStats,
+  attempts,
+  delayMs,
+}) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (attempt > 1 && delayMs > 0) {
+      await sleep(delayMs);
+    }
+
+    let parsedAfter;
+    try {
+      parsedAfter = parseCodexRolloutFile(durableVerification.rolloutPath);
+    } catch (err) {
+      durableVerification.rolloutChecked = true;
+      return {
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    durableVerification.rolloutChecked = true;
+    durableVerification.postExecuteRestoreSafetyStatus = parsedAfter.restoreSafety?.status ?? 'unknown';
+    durableVerification.observedNewRollbackEvent =
+      parsedAfter.stats.rollbackEvents > (initialRolloutStats.rollbackEvents ?? 0);
+    durableVerification.observedInjectedMemory =
+      parsedAfter.stats.injectedDeveloperMessages > (initialRolloutStats.injectedDeveloperMessages ?? 0);
+
+    if (
+      (durableVerification.observedNewRollbackEvent && durableVerification.observedInjectedMemory)
+    ) {
+      return {};
+    }
+  }
+
+  return {};
 }
 
 async function runPreflight(parsed, plan) {
@@ -278,8 +420,18 @@ function validateCodexAction(parsed, plan, action) {
   return null;
 }
 
-function hasInjectableMemory(text) {
-  return typeof text === 'string' && text.trim().length > 0 && text !== '(no captured memory available)';
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hasInjectableMemory(memoryPreview) {
+  const text = memoryPreview?.text;
+  return (
+    memoryPreview?.stats?.source === 'throughline-db' &&
+    typeof text === 'string' &&
+    text.trim().length > 0 &&
+    text !== '(no captured memory available)'
+  );
 }
 
 function expectedCodexAppServerTurns(plan) {
@@ -288,11 +440,26 @@ function expectedCodexAppServerTurns(plan) {
 
 function renderTrimActionReport(result) {
   const lines = [];
-  lines.push(result.status === 'executed' ? '## Throughline Trim Execute' : '## Throughline Trim Preflight');
+  lines.push(result.status.startsWith('execute-') ? '## Throughline Trim Execute' : '## Throughline Trim Preflight');
   lines.push('');
   lines.push(`Status: ${result.status}`);
   if (result.reason) lines.push(`Reason: ${result.reason}`);
   if (result.requiredEnv) lines.push(`Required env: ${result.requiredEnv}`);
+  if (result.durableVerification) {
+    lines.push(`Live mutation sent: ${result.durableVerification.liveMutationSent ? 'yes' : 'no'}`);
+    lines.push(`Durable verified: ${result.durableVerification.durableVerified ? 'yes' : 'no'}`);
+    lines.push(`Post-inject visibility: ${result.durableVerification.postInjectVisibilityStatus}`);
+    lines.push(`Restore safety: ${result.durableVerification.restoreSafetyStatus}`);
+    if (result.durableVerification.rolloutPath) {
+      lines.push(`Durable rollout: ${result.durableVerification.rolloutPath}`);
+      lines.push(`Rollout checked: ${result.durableVerification.rolloutChecked ? 'yes' : 'no'}`);
+      lines.push(`New rollback marker observed: ${result.durableVerification.observedNewRollbackEvent ? 'yes' : 'no'}`);
+      lines.push(`Injected memory observed in rollout: ${result.durableVerification.observedInjectedMemory ? 'yes' : 'no'}`);
+    }
+    for (const reason of result.durableVerification.reasons ?? []) {
+      lines.push(`Durable verification reason: ${reason}`);
+    }
+  }
 
   if (result.preflight) {
     lines.push('');
@@ -305,6 +472,9 @@ function renderTrimActionReport(result) {
     }
     lines.push(`Rollback sent: ${result.preflight.rollbackSent ? 'yes' : 'no'}`);
     lines.push(`Inject sent: ${result.preflight.injectSent ? 'yes' : 'no'}`);
+    lines.push(...renderTrimMemoryContractLines(result.plan?.memoryPreview?.stats, { planned: true }));
+    lines.push(...renderRestoreSafetyLines(result.plan?.trim?.restoreSafety));
+    lines.push(...renderPlannedRollbackRestoreSafetyLines(result.plan?.trim?.plannedRollbackRestoreSafety));
     lines.push(`Rollback candidate turns: ${result.plan.trim.rollbackTurns}`);
   }
 
@@ -320,8 +490,75 @@ function renderTrimActionReport(result) {
     lines.push(`Rollback sent: ${result.execution.rollbackSent ? 'yes' : 'no'}`);
     lines.push(`Inject sent: ${result.execution.injectSent ? 'yes' : 'no'}`);
     lines.push(`Injected items: ${result.execution.injectedItems}`);
+    lines.push(...renderTrimMemoryContractLines(result.plan?.memoryPreview?.stats, { planned: false }));
+    lines.push(...renderRestoreSafetyLines(result.plan?.trim?.restoreSafety));
+    lines.push(...renderPlannedRollbackRestoreSafetyLines(result.plan?.trim?.plannedRollbackRestoreSafety));
     lines.push(`Rollback candidate turns: ${result.plan.trim.rollbackTurns}`);
   }
 
+  if (result.hostPrimitiveAudit) {
+    const hasNonResurrectionPrimitive =
+      result.hostPrimitiveAudit.facts?.hasCurrentThreadNonResurrectionPrimitive ??
+      result.hostPrimitiveAudit.facts?.hasCurrentThreadRemediationPrimitive;
+    lines.push('');
+    lines.push(`Host primitive audit: ${result.hostPrimitiveAudit.status}`);
+    lines.push(`Host primitive audit reason: ${result.hostPrimitiveAudit.reason}`);
+    lines.push(
+      `Current-thread non-resurrection primitive: ${
+        hasNonResurrectionPrimitive ? 'yes' : 'no'
+      }`,
+    );
+    if (result.hostPrimitiveAudit.repairContract) {
+      lines.push(`Same-thread repair contract: ${result.hostPrimitiveAudit.repairContract.status}`);
+    }
+  }
+
   return lines.join('\n');
+}
+
+function renderRestoreSafetyLines(restoreSafety) {
+  if (!restoreSafety) return [];
+  const lines = [];
+  lines.push(`Restore safety: ${restoreSafety.status}`);
+  lines.push(`Compacted rows: ${restoreSafety.compactedRows}`);
+  lines.push(
+    `Rollback text retained in compacted history: ${restoreSafety.rollbackTextRetainedInCompacted}`,
+  );
+  lines.push(`Resurrected user messages after rollback: ${restoreSafety.resurrectedUserMessages}`);
+  for (const risk of restoreSafety.risks ?? []) {
+    lines.push(`Restore safety risk: ${risk.type} (${risk.count})`);
+  }
+  return lines;
+}
+
+function renderPlannedRollbackRestoreSafetyLines(plannedSafety) {
+  if (!plannedSafety) return [];
+  const lines = [];
+  lines.push(`Planned rollback restore safety: ${plannedSafety.status}`);
+  lines.push(
+    `Planned rollback text retained in compacted history: ${plannedSafety.rollbackTextRetainedInCompacted}`,
+  );
+  for (const risk of plannedSafety.risks ?? []) {
+    lines.push(`Planned rollback restore safety risk: ${risk.type} (${risk.count})`);
+  }
+  return lines;
+}
+
+function renderTrimMemoryContractLines(stats, { planned }) {
+  if (!stats) return [];
+
+  const lines = [];
+  const sourceLabel = planned ? 'Planned memory source' : 'Injected memory source';
+  lines.push(`${sourceLabel}: ${stats.source ?? 'unknown'}`);
+
+  if (stats.source !== 'throughline-db') return lines;
+
+  const recentBodies =
+    typeof stats.recentBodies === 'number'
+      ? `${stats.recentBodies} rows (latest ${stats.recentTurnLimit ?? DEFAULT_TRIM_KEEP_RECENT} turns)`
+      : 'unknown';
+  lines.push('Memory contract: older L1 + latest 20 L2 full bodies + L3 references only');
+  lines.push(`Recent L2 bodies: ${recentBodies}`);
+  lines.push(`L3 bodies injected: no (references only: ${stats.l3References ?? 0})`);
+  return lines;
 }

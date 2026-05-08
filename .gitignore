@@ -11,5 +11,8 @@ node_modules/
 # Local code intelligence index
 .codegraph/
 
+# Local experimental Throughline smoke secrets/state
+.throughline-smoke/
+
 # Codex sidecar runtime logs
 .codex-sidecar/logs/

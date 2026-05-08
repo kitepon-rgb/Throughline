@@ -13,6 +13,7 @@ Throughline は Claude Code を主軸として育ってきたプロジェクト�
 1. [CLAUDE.md](CLAUDE.md)
 2. 変更対象の source / test
 3. Codex 両対応や context trim に関わる作業なら:
+   - [docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md](docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md)
    - [docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md](docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md)
    - [docs/throughline-rollback-context-trim-insight.md](docs/throughline-rollback-context-trim-insight.md)
 
@@ -31,7 +32,7 @@ Throughline は Claude Code を主軸として育ってきたプロジェクト�
 Codex は、このプロジェクトでは Claude の代替ではなく、追加の作業者または adapter 対象として扱う。
 
 - agent-neutral core を増やす場合も、Claude adapter を既存互換のまま残す。
-- Codex support は `throughline_handoff` context block や `codex-sidecar` integration として追加する。
+- Codex support は `throughline_handoff` context block、Codex primary entrypoint、Codex CLI backend、`codex-sidecar` integration として追加する。
 - Codex-on-Codex の再帰委譲は、isolated worktree、structured result capture、明示的な review / critic role など別境界がある場合だけ許可する。
 - `codex-sidecar` が未設定または diagnostics 失敗の環境を、成功扱いにしない。失敗は明示し、既存 Claude behavior を baseline として維持する。
 
@@ -39,13 +40,33 @@ Codex は、このプロジェクトでは Claude の代替ではなく、追加
 
 [docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md](docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md) と [docs/throughline-rollback-context-trim-insight.md](docs/throughline-rollback-context-trim-insight.md) は趣旨が異なるが、矛盾するものではない。
 
-現時点の実装順の基本方針:
+現時点の実装順は [docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md](docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md) と
+[docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) を正とする。
 
-1. Claude contract を audit し、必要な test / fixture で固定する。
-2. agent-neutral handoff object と Claude adapter 境界を明確にする。
-3. Codex adapter / `throughline_handoff` projection を追加する。
-4. rollback / inject primitive は spike として検証し、未検証のまま本線 UX に組み込まない。
-5. rollback-based trim は、host primitive の実測結果に基づいて同一 session / thread の context management として設計する。
+2026-05-07 correction: 2026-05-06 時点では 1 と 2 を完了扱いしていたが、
+VS Code restart / reconnect 後に rollback 済み user prompt が復活した incident 後、
+2 は restart-safe 完了ではない。Codex primary の capture / summarize / resume は
+完了扱いできるが、Codex trim execute / auto-refresh は durable restore safety が
+未証明である。
+
+1. Throughline を Codex primary で使えるようにする。Codex primary の L2 -> L1 backend は Codex CLI を本線にする。
+2. Codex で Claude Rewind 相当の context trim を完成させる。
+3. そのあと Claude 側の `/rewind` UX / 自動化 surface を詰める。
+
+新セッションで迷った場合は、まず [docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md](docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md) の「新セッション引き継ぎ」と
+[docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) を読む。
+Codex 側をやり直さず、現行状態から継続する。2026-05-08 時点では Codex
+current-thread trim は `trim --execute --host codex --all` で guarded rollback +
+Throughline DB developer-memory inject を送れる。必須条件は Codex thread identity、
+Throughline DB injectable memory、rollout/app-server turn-count guard であり、
+`restoreSafety.status = risk`、planned restore-safety risk、host primitive audit は
+diagnostic-only として扱う。developer memory inject は item-level で、現行 Codex
+host では即時 `thread/read` の turn count を増やさない場合がある。durable success は
+rollout 上の新 rollback event と injected active-work memory evidence で判定する。
+Claude 側 `/rewind` UX / 自動化 surface は次段階で、Codex current-thread trim を
+新規 thread handoff に置き換えない。
+
+[docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) は旧統合計画と実装履歴として参照する。
 
 作業量や複雑さを理由に理想を下げない。ただし、未検証の host behavior を確定仕様として実装しない。
 
@@ -53,6 +74,6 @@ Codex は、このプロジェクトでは Claude の代替ではなく、追加
 
 - フォールバックや silent recovery で失敗を隠さない。互換モードを使う場合は条件と理由を明示する。
 - 新しい Markdown を増やす前に、既存 docs に追記できないか確認する。
-- 進捗を計画書と `CLAUDE.md` の該当箇所にそろえて残す。README はユーザー向け仕様なので、[docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) の Phase 9 まで更新しない。
+- 進捗を計画書と `CLAUDE.md` の該当箇所にそろえて残す。README はユーザー向け仕様なので、実装済み behavior だけを載せる。
 - source が正、docs は追従物。判断に迷ったらコードを読む。
 - テストは `CLAUDE.md` の推奨コマンドを基準に、変更範囲に応じて追加する。

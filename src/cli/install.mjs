@@ -6,11 +6,12 @@
  * --project : .claude/settings.json（プロジェクトローカル）
  * --uninstall: hook を削除
  *
- * 登録コマンドは PATH 解決型 (throughline <subcommand>) を使う。
- * node のインストール先や OS が変わっても PATH さえ通れば動く。
+ * Claude-facing hook は従来通り PATH 解決型 (throughline <subcommand>) を使う。
+ * Codex-facing hook は VSCode App Server の PATH 差分を避けるため、絶対 node + CLI
+ * script path で登録する。
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, rmSync } from 'node:fs';
 import { join, dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -18,6 +19,10 @@ import { homedir } from 'node:os';
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SLASH_COMMANDS_SRC = join(PACKAGE_ROOT, '.claude', 'commands');
 const SC_SLASH_COMMAND_FILES = ['tl.md', 'sc-detail.md', 'tl-trim.md'];
+const CODEX_SKILLS_SRC = join(PACKAGE_ROOT, 'codex', 'skills');
+const CODEX_SKILL_NAMES = ['throughline'];
+const CODEX_HOOKS_RELATIVE_PATH = ['.codex', 'hooks.json'];
+const CODEX_CONFIG_RELATIVE_PATH = ['.codex', 'config.toml'];
 
 // Throughline が管理する hook コマンド一覧
 // schema v4 以降: PostToolUse (capture-tool) は廃止。Stop 内で L2/L3 を一括処理する。
@@ -46,6 +51,47 @@ const SC_HOOKS = {
   },
 };
 
+const CODEX_COMMANDS = [
+  'throughline codex-hook stop',
+];
+
+function quoteCommandPath(p) {
+  return /\s/.test(p) ? `"${p.replace(/"/g, '\\"')}"` : p;
+}
+
+export function buildCodexStopHookCommand({
+  nodePath = process.execPath,
+  cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
+} = {}) {
+  return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook stop`;
+}
+
+export function isThroughlineCodexStopCommand(command) {
+  if (typeof command !== 'string') return false;
+  const normalized = command.replace(/["']/g, '');
+  return (
+    normalized === 'throughline codex-hook stop' ||
+    normalized.includes('throughline codex-hook stop') ||
+    normalized.includes('throughline.mjs codex-hook stop')
+  );
+}
+
+function createCodexHooks() {
+  return {
+    Stop: {
+      hooks: [
+        {
+          type: 'command',
+          command: buildCodexStopHookCommand(),
+          timeoutSec: 300,
+          async: false,
+          statusMessage: null,
+        },
+      ],
+    },
+  };
+}
+
 function resolveSettingsPath(args) {
   if (args.includes('--project')) {
     return join(process.cwd(), '.claude', 'settings.json');
@@ -58,6 +104,18 @@ function resolveCommandsDir(args) {
     return join(process.cwd(), '.claude', 'commands');
   }
   return join(homedir(), '.claude', 'commands');
+}
+
+function resolveCodexHooksPath() {
+  return join(homedir(), ...CODEX_HOOKS_RELATIVE_PATH);
+}
+
+function resolveCodexConfigPath() {
+  return join(homedir(), ...CODEX_CONFIG_RELATIVE_PATH);
+}
+
+function resolveCodexSkillsDir() {
+  return join(homedir(), '.codex', 'skills');
 }
 
 function installSlashCommands(commandsDir) {
@@ -83,6 +141,48 @@ function uninstallSlashCommands(commandsDir) {
     const dest = join(commandsDir, name);
     if (existsSync(dest)) {
       unlinkSync(dest);
+      removed.push(name);
+    }
+  }
+  return removed;
+}
+
+function copyDirectory(srcDir, destDir) {
+  mkdirSync(destDir, { recursive: true });
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const src = join(srcDir, entry.name);
+    const dest = join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectory(src, dest);
+    } else if (entry.isFile()) {
+      copyFileSync(src, dest);
+    }
+  }
+}
+
+function installCodexSkills(skillsDir) {
+  if (!existsSync(CODEX_SKILLS_SRC)) {
+    return { installed: [], skipped: 'source-missing' };
+  }
+  mkdirSync(skillsDir, { recursive: true });
+  const installed = [];
+  for (const name of CODEX_SKILL_NAMES) {
+    const src = join(CODEX_SKILLS_SRC, name);
+    if (!existsSync(src)) continue;
+    const dest = join(skillsDir, name);
+    rmSync(dest, { recursive: true, force: true });
+    copyDirectory(src, dest);
+    installed.push(name);
+  }
+  return { installed, skipped: null };
+}
+
+function uninstallCodexSkills(skillsDir) {
+  const removed = [];
+  for (const name of CODEX_SKILL_NAMES) {
+    const dest = join(skillsDir, name);
+    if (existsSync(dest)) {
+      rmSync(dest, { recursive: true, force: true });
       removed.push(name);
     }
   }
@@ -148,10 +248,105 @@ function writeSettings(settingsPath, obj) {
   writeFileSync(settingsPath, JSON.stringify(obj, null, 2) + '\n');
 }
 
+function ensureCodexHooksFeature(configPath) {
+  const existing = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+  const lines = existing.split(/\r?\n/);
+  const sectionStart = lines.findIndex((line) => line.trim() === '[features]');
+  let updated;
+
+  if (sectionStart === -1) {
+    const prefix = existing.trimEnd();
+    updated = `${prefix}${prefix ? '\n\n' : ''}[features]\ncodex_hooks = true\n`;
+  } else {
+    let sectionEnd = lines.length;
+    for (let i = sectionStart + 1; i < lines.length; i++) {
+      if (/^\s*\[[^\]]+\]\s*$/.test(lines[i])) {
+        sectionEnd = i;
+        break;
+      }
+    }
+
+    const codexHooksLine = lines
+      .slice(sectionStart + 1, sectionEnd)
+      .findIndex((line) => /^\s*codex_hooks\s*=/.test(line));
+    if (codexHooksLine === -1) {
+      lines.splice(sectionStart + 1, 0, 'codex_hooks = true');
+    } else {
+      lines[sectionStart + 1 + codexHooksLine] = 'codex_hooks = true';
+    }
+    updated = lines.join('\n').replace(/\n*$/, '\n');
+  }
+
+  const dir = dirname(configPath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(configPath, updated);
+}
+
+function installCodexHooks() {
+  const hooksPath = resolveCodexHooksPath();
+  const configPath = resolveCodexConfigPath();
+  const current = readSettings(hooksPath);
+  const existingHooks = current.hooks ?? {};
+  const codexHooks = createCodexHooks();
+
+  for (const [key, entry] of Object.entries(codexHooks)) {
+    const list = existingHooks[key] ?? [];
+    const preserved = [];
+    for (const group of list) {
+      const hooks = (group.hooks ?? []).filter(h => !isThroughlineCodexStopCommand(h.command));
+      if (hooks.length > 0) preserved.push({ ...group, hooks });
+    }
+    existingHooks[key] = [entry, ...preserved];
+  }
+
+  current.hooks = existingHooks;
+  writeSettings(hooksPath, current);
+  ensureCodexHooksFeature(configPath);
+
+  return { hooksPath, configPath };
+}
+
+function uninstallCodexHooks() {
+  const hooksPath = resolveCodexHooksPath();
+  if (!existsSync(hooksPath)) {
+    return { hooksPath, removed: 0 };
+  }
+
+  const current = readSettings(hooksPath);
+  const existingHooks = current.hooks ?? {};
+  let removed = 0;
+
+  for (const [key, groups] of Object.entries(existingHooks)) {
+    existingHooks[key] = groups
+      .map((group) => {
+        const hooks = (group.hooks ?? []).filter((hook) => {
+          const shouldRemove =
+            CODEX_COMMANDS.includes(hook.command) ||
+            isThroughlineCodexStopCommand(hook.command);
+          if (shouldRemove) removed++;
+          return !shouldRemove;
+        });
+        return { ...group, hooks };
+      })
+      .filter((group) => group.hooks.length > 0);
+    if (existingHooks[key].length === 0) delete existingHooks[key];
+  }
+
+  if (Object.keys(existingHooks).length === 0) {
+    delete current.hooks;
+  } else {
+    current.hooks = existingHooks;
+  }
+
+  writeSettings(hooksPath, current);
+  return { hooksPath, removed };
+}
+
 export async function run(args = []) {
   const uninstall = args.includes('--uninstall');
   const settingsPath = resolveSettingsPath(args);
   const commandsDir = resolveCommandsDir(args);
+  const codexSkillsDir = resolveCodexSkillsDir();
   const current = readSettings(settingsPath);
   const existingHooks = current.hooks ?? {};
   const scSet = new Set(SC_COMMANDS);
@@ -172,10 +367,18 @@ export async function run(args = []) {
 
     writeSettings(settingsPath, current);
     const removedCommands = uninstallSlashCommands(commandsDir);
+    const codex = args.includes('--project') ? null : uninstallCodexHooks();
+    const removedCodexSkills = args.includes('--project') ? [] : uninstallCodexSkills(codexSkillsDir);
     console.log('Throughline hooks を削除しました。');
     console.log(`  ${settingsPath}`);
     if (removedCommands.length > 0) {
       console.log(`  slash commands 削除: ${removedCommands.join(', ')} (${commandsDir})`);
+    }
+    if (codex?.removed > 0) {
+      console.log(`  Codex hooks 削除: ${codex.removed} (${codex.hooksPath})`);
+    }
+    if (removedCodexSkills.length > 0) {
+      console.log(`  Codex skills 削除: ${removedCodexSkills.join(', ')} (${codexSkillsDir})`);
     }
     return;
   }
@@ -195,15 +398,27 @@ export async function run(args = []) {
   current.hooks = existingHooks;
   writeSettings(settingsPath, current);
   const { installed: installedCommands, skipped } = installSlashCommands(commandsDir);
+  const codex = args.includes('--project') ? null : installCodexHooks();
+  const codexSkills = args.includes('--project') ? { installed: [], skipped: null } : installCodexSkills(codexSkillsDir);
 
   const scope = args.includes('--project') ? 'プロジェクトローカル' : 'グローバル（全プロジェクト）';
   console.log(`Throughline hooks をインストールしました [${scope}]`);
   console.log(`  ${settingsPath}`);
+  if (codex) {
+    console.log(`  ${codex.hooksPath}`);
+    console.log(`  ${codex.configPath}`);
+    if (codexSkills.installed.length > 0) {
+      console.log(`  ${codexSkillsDir}`);
+    }
+  }
   console.log('');
   console.log('有効な hooks:');
   console.log('  SessionStart     → throughline session-start  (セッション記録・バトン消費・引き継ぎ注入)');
   console.log('  Stop             → throughline process-turn   (L1 要約 + L2 本文保存 + L3 詳細保存)');
   console.log('  UserPromptSubmit → throughline prompt-submit  (/tl バトン書き込み)');
+  if (codex) {
+    console.log(`  Codex Stop       → ${buildCodexStopHookCommand()} (Codex rollout capture + L1 要約)`);
+  }
   console.log('');
   if (installedCommands.length > 0) {
     console.log(`slash commands を配置しました: ${installedCommands.map(n => '/' + n.replace(/\.md$/, '')).join(', ')}`);
@@ -211,6 +426,14 @@ export async function run(args = []) {
     console.log('');
   } else if (skipped === 'source-missing') {
     console.log('注意: パッケージ内に slash commands のソースが見つからないためスキップしました。');
+    console.log('');
+  }
+  if (codexSkills.installed.length > 0) {
+    console.log(`Codex skills を配置しました: ${codexSkills.installed.map(n => '$' + n).join(', ')}`);
+    console.log(`  ${codexSkillsDir}`);
+    console.log('');
+  } else if (codexSkills.skipped === 'source-missing') {
+    console.log('注意: パッケージ内に Codex skills のソースが見つからないためスキップしました。');
     console.log('');
   }
   console.log('  アンインストール: throughline uninstall');

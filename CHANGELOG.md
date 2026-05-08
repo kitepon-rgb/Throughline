@@ -10,6 +10,8 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.3.25] — 2026-05-08
+
 ### Added
 - Claude-primary / Codex-sidecar groundwork:
   `HandoffRecord` projection, `throughline handoff-preview`,
@@ -28,6 +30,79 @@ shipped to npm but were not individually tagged on GitHub.
 - Codex rollout-backed trim source for explicit `--codex-thread-id` plans.
   This lets Codex dry-run / preflight / guarded execute use the active rollout
   even when the Throughline DB has no Codex `bodies` rows.
+- `throughline codex-capture`, which captures explicit Codex rollout active
+  turns into a namespaced `codex:<thread_id>` Throughline DB session. Re-capture
+  rebuilds that session so rolled-back tail turns do not survive as current L2.
+- Codex capture now stores rollout function-call L3 details as well as L2
+  bodies: `function_call` becomes `details.kind = tool_input`, and
+  `function_call_output` becomes `details.kind = tool_output`.
+- Host-mode L2→L1 backend selection. Claude-primary keeps the existing
+  `codex-sidecar` / Claude Haiku compatibility route, while Codex-primary uses
+  the Codex CLI backend and reports failure explicitly instead of falling back.
+- `throughline codex-summarize`, which writes L1 skeletons for captured
+  `codex:<thread_id>` sessions through the Codex CLI backend once the captured
+  body count exceeds the L2 window.
+- `throughline codex-resume`, which renders captured `codex:<thread_id>` memory
+  as Codex active-work context. `--format handoff` emits a concise fresh-thread
+  handoff prompt for safe continuation without mutating the current Codex
+  thread; the handoff view caps recent L2 entries, long body text, and detail
+  references while preserving the full context in the normal text renderer.
+  `--format item-json` emits a Codex developer message item so hosts can
+  inject the memory as current-task context instead of a passive archive.
+  `--memo-stdin` prepends a Codex-primary in-flight memo without touching Claude
+  `/tl` batons.
+- `throughline codex-handoff-smoke`, a read-only validator for the
+  `codex-resume --format handoff` prompt. It checks fresh-thread header /
+  current-task contract / source session / start instruction / mutation
+  boundary / prompt size / detail-command deduplication before a user starts a
+  new Codex thread with that prompt.
+- `throughline codex-handoff-model-smoke`, an explicit opt-in model smoke for
+  the same handoff prompt. It first requires the structural handoff smoke to be
+  ready, then runs `codex exec --ephemeral --ignore-user-config --ignore-rules
+  --sandbox read-only` with a marker prompt. `--dry-run` inspects the exact
+  readiness / command boundary without starting Codex exec, and
+  `--print-prompt` can include the combined prompt for audit. Live model smoke
+  requires `THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1` and does not
+  mutate the current Codex thread.
+- `throughline codex-handoff-start`, a guided read-only fresh-thread start plan
+  for Codex handoff. It reports the structural smoke command, model-smoke dry-run
+  boundary, handoff render command, optional live model smoke command, and can
+  include the handoff prompt with `--print-prompt`. When `--memo-stdin` is used,
+  the replay commands include `--memo-stdin` and the output reminds callers to
+  pipe the same memo.
+- `throughline doctor --codex`, a read-only Codex-primary diagnostic that shows
+  current thread env identity, rollout candidates for the cwd, captured
+  `codex:<thread_id>` DB sessions, context refresh blockage, new-thread
+  handoff readiness, and the next capture/resume commands.
+- Global `throughline install` now also registers the Codex Stop hook in
+  `~/.codex/hooks.json` with absolute node + installed `bin/throughline.mjs`,
+  `async: false`, and `timeoutSec: 300`, and enables
+  `[features].codex_hooks = true` in `~/.codex/config.toml`. Existing non-
+  Throughline Codex hooks, including Caveat / Spotter hooks, are preserved.
+- Global install now also installs a `$throughline` Codex skill under
+  `~/.codex/skills/throughline`, giving Codex a natural-language entrypoint for
+  Throughline status, resume, summarize, dry-run, preflight, and explicit
+  execute workflows. The rollback / inject execute path is enabled again after
+  controlled rollback model-visible smokes failed to reproduce rollback marker
+  resurrection.
+- A bare `$throughline` Codex skill invocation now runs the safe inspection
+  shape: `doctor --codex`, guarded dry-run, and preflight. Explicit
+  `trim --execute --host codex --all` mutates the current Codex thread when the
+  user asks for it and the guard checks pass.
+- Codex Stop hook automatic refresh now attempts guarded rollback + Throughline
+  DB memory injection at the 90% verified-usage threshold. Estimate-only usage
+  still never triggers mutation.
+- `throughline codex-visibility-smoke`, an experimental opt-in Codex app-server
+  smoke that injects the Codex active-work developer message and starts a
+  marker-check model turn. It requires
+  `THROUGHLINE_EXPERIMENTAL_CODEX_MODEL_VISIBLE_SMOKE=1` and supports explicit
+  model-turn timeouts with `--request-timeout-ms` / `--timeout-ms`; it also
+  accepts the same `--memo-stdin` active-work memo surface as `codex-resume`.
+  `--resume-after-inject` re-runs `thread/resume` after injection before
+  starting the marker turn, so resume persistence can be checked explicitly.
+- Codex-first roadmap docs that set the next implementation order: Codex
+  primary support with a Codex CLI L2→L1 backend, then Codex rewind-compatible
+  trim, then Claude rewind finalization.
 
 ### Changed
 - Resume context now frames recent L2 as an active work thread with explicit
@@ -54,8 +129,10 @@ shipped to npm but were not individually tagged on GitHub.
 - `.codex-sidecar/logs/` is ignored as a runtime artifact from real sidecar
   smoke runs.
 - Codex trim host status now distinguishes verified app-server rollback/inject
-  primitives from default automatic trim execution, which remains disabled
-  unless the guarded Codex execute requirements are met.
+  primitives from guarded execution requirements. Codex Stop hook automatic
+  refresh is enabled only at the 90% verified-usage threshold and still uses the
+  same explicit thread identity, injectable DB memory, and rollout/app-server
+  turn-count guards.
 - Trim dry-run now carries an explicit Codex thread identity separately from
   the Claude/Throughline `session_id`, avoiding latest-rollout guessing.
 - Codex trim can now use `THROUGHLINE_CODEX_THREAD_ID` or `CODEX_THREAD_ID` as
@@ -64,20 +141,174 @@ shipped to npm but were not individually tagged on GitHub.
   latest rollout.
 - `throughline doctor --trim --host codex` now reports whether a current Codex
   thread id is available from env and adjusts its dry-run example accordingly.
+- `throughline doctor --trim --host codex` now also reports the read-only host
+  primitive audit status as diagnostic evidence rather than an execute blocker.
 - `throughline trim --preflight --host codex --codex-thread-id <id>` now
   performs a guarded Codex app-server initialize/read/resume check and stops
   before sending rollback or inject. When the plan source is `codex-rollout`,
   preflight compares rollout active turns with app-server read/resume turns and
   refuses the plan if they differ.
-- `throughline trim --execute --host codex --codex-thread-id <id>` now has an
-  experimental guarded execution path behind
-  `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1`. It sends app-server read/resume,
-  rollback, then curated-memory inject, and never starts a model turn.
+- Codex rollout-backed trim source now excludes the current in-flight turn from
+  rollback planning, including the latest post-rollback assistant continuation.
+  This keeps preflight aligned with app-server `thread/read` / `thread/resume`,
+  which only report completed host-visible turns during an ongoing Codex turn.
+- `throughline trim --execute --host codex --codex-thread-id <id>` no longer
+  requires `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM_EXECUTE=1` and no longer treats
+  host primitive audit or restore-safety diagnostics as mutation blockers.
+  Execute still refuses before mutation when Codex thread identity, injectable
+  Throughline DB memory, or rollout/app-server turn-count agreement is missing.
 - Codex guarded execute now polls post-inject `thread/read` until the injected
-  memory item is visible, and reports `postInjectVisibilityCheck` so stale
-  immediate app-server reads are explicit.
+  memory item is visible when the app-server reports an injected turn count, and
+  reports `postInjectVisibilityCheck` so stale immediate app-server reads are
+  explicit. If `thread/inject_items` returns no turn list, developer memory is
+  treated as item-level injection and the expected post-inject turn count remains
+  the rollback result turn count.
+- Codex guarded execute status now separates live mutation from durable
+  success: a visible app-server mutation reports `execute-sent-live-only` with
+  `durableVerification.durableVerified: false` and exits non-zero; post-inject
+  visibility timeout reports `execute-unverified`.
+- Codex guarded execute can now report `execute-durable-verified` only when the
+  rollout records a new `thread_rolled_back` event, records the injected
+  `## Throughline: Active Work Context` memory, and restore-safety diagnostics
+  remain `ok`.
+- Added `throughline codex-restore-smoke`, a read-only diagnostic that starts
+  fresh Codex app-server processes and compares `thread/read`,
+  `thread/resume`, and paginated `thread/turns/list` turn counts against the
+  rollout active turn count. Its proof scope is
+  `app_server_process_restart_only`, and it always reports `restartSafe: false`
+  because it is not VS Code restart / reconnect proof. If the required
+  read-only app-server request fails, the CLI returns structured
+  `app-server-restore-smoke-error` JSON instead of a stack trace.
+- `codex-restore-smoke --inspect-risky-rollout` can now inspect a risky rollout
+  read-only and search app-server responses for retained rollback text. If
+  retained text appears in direct turn text or `replacement_history`, the smoke
+  reports `app-server-restore-text-retained` instead of a success-like stable
+  status, even when read/resume/list turn counts are stable. If retained text
+  appears only in quoted/tool-output fields such as `aggregatedOutput`, it
+  reports `app-server-restore-text-quoted`. Match reports include sample JSON
+  paths, location kinds, risk classes, and blocking-candidate summaries.
+- `codex-vscode-rollback-smoke` text output now includes retained rollback text
+  count, resurrected user message count, and restore-safety risk type summary so
+  incident audits do not require opening the full JSON payload.
+- `codex-restore-source-audit` now inventories SQLite-backed VS Code storage
+  candidates (`.vscdb`, `.sqlite`, `.sqlite3`, `.db`) read-only and reports
+  table / searchable column / needle match summaries alongside raw byte matches.
+- `codex-restore-source-audit` now classifies VS Code log evidence into thread
+  id hits, retained rollback text hits, patch-apply failures, thread stream
+  broadcasts, and `replacement_history` signals, including a first/last
+  timestamp window for patch-apply failures when log timestamps are present.
+- `codex-restore-source-audit` now reports explicit VS Code extension
+  rollback non-resurrection projection candidates, such as
+  `replacement_history` filter / tombstone paths, separately from deletion-based
+  repair primitives.
+- `codex-restore-smoke --inspect-risky-rollout` now separates blocking retained
+  text candidates from quoted/tool-output matches. Direct turn text and
+  `replacement_history` keep the `app-server-restore-text-retained` status;
+  matches found only in fields such as `aggregatedOutput` report
+  `app-server-restore-text-quoted` with `blocking-candidates=no`.
+- Added `throughline codex-rollback-model-visible-smoke`, a controlled
+  two-phase smoke for the unresolved rollback question. `--prepare` starts a
+  unique marker user turn and rolls it back; `--verify` later starts a model
+  turn that contains only the marker prefix, not the full marker. A returned
+  full marker reports `reproduced`; an explicit not-visible answer reports
+  `not-reproduced`. The command is gated by
+  `THROUGHLINE_EXPERIMENTAL_CODEX_ROLLBACK_MODEL_VISIBLE_SMOKE=1`. Live runs can
+  use `--marker-file` so the full marker is not printed into the same thread
+  being tested; marker-file prepares also use a unique per-trial prefix. Verify
+  output reports `rolledBackMarkerModelVisible` and `modelReportedNotVisible`
+  separately from `restartSafe`.
+- Real controlled current-thread smoke on 2026-05-08 returned
+  `not-reproduced` both before and after a VS Code reload/reconnect command,
+  with `promptIncludesMarker: false` and no observed full marker. This weakens
+  the rollback-resurrection hypothesis for the controlled marker path enough to
+  remove the overbroad automatic Codex trim blocker. Retained compacted history
+  and same-thread host primitive audit remain diagnostics.
+- Added `throughline codex-restore-source-audit`, a read-only local inventory of
+  Codex rollout, `session_index.jsonl`, `state_*.sqlite`, and VS Code
+  globalStorage / workspaceStorage candidates for an explicit Codex thread. It
+  now also scans VS Code `settings.json`, VS Code logs, and installed
+  OpenAI/Codex VS Code extension bundles for restore-path signals such as
+  `thread/read`, `thread/resume`, `thread/turns/list`, reconnect
+  `needs_resume`, persisted webview atoms, and follow-up queue signals.
+  Its proof scope is `local_restore_source_inventory_only`, and it does not
+  prove VS Code restart safety.
+- Added `throughline codex-vscode-restore-smoke`, a manual two-phase VS Code
+  reload/reconnect proof protocol. `--prepare` injects a hidden active-work
+  marker memory behind `THROUGHLINE_EXPERIMENTAL_CODEX_VSCODE_RESTORE_SMOKE=1`;
+  `--verify` scans the rollout for a marker-free smoke prompt followed by an
+  assistant marker-only answer after prepare, and rejects marker leaks in the
+  user prompt. It reports `restartSafe: true` only with an explicit
+  `--after-vscode-restart` acknowledgement and marker proof.
+- Real VS Code reload/reconnect marker proof passed for thread
+  `019dfddb-8288-7392-a461-bf3ebc5da409` with marker
+  `TL_CODEX_VSCODE_RESTORE_46888202`. This proves hidden developer memory
+  visibility across reconnect, not rollback-target non-resurrection.
+- Tightened the VS Code restore smoke verifier after a false-positive hazard:
+  assistant marker mentions in normal progress text no longer count. The proof
+  now requires the marker-free smoke prompt and an assistant marker-only answer.
+- Added `throughline codex-vscode-rollback-smoke`, a read-only rollback
+  non-resurrection verifier. It requires a rollback event, rolled-back user
+  text, a later user turn, restore-safety `ok`, and explicit
+  `--after-vscode-restart` before reporting `restartSafe: true`.
+- Added `throughline codex-host-primitive-audit`, a read-only audit that
+  generates the installed Codex app-server JSON schema and checks whether a
+  same-thread rollback non-resurrection primitive exists. The primitive may
+  delete/rewrite retained rollback sources, or isolate/project them away from
+  model-visible input. It now also reports a host-agnostic same-thread repair
+  contract requiring a rollback non-resurrection guarantee, memory reinjection,
+  post-repair host reads, and restart/reconnect non-resurrection proof; VS Code
+  diagnostics can provide evidence but do not satisfy the contract. On
+  `codex-cli 0.128.0-alpha.1`, the audit reports
+  `diagnostic-only`: rollback/inject/new-thread primitives exist, but no
+  current-thread rollback non-resurrection primitive is exposed, and
+  `thread/resume(history)` is marked unstable/do-not-use with `thread_id`
+  ignored.
+- Real incident-shaped live rollback run for thread
+  `019dfddb-8288-7392-a461-bf3ebc5da409` remains a `restoreSafety: risk`
+  incident: rollout recorded `thread_rolled_back` and injected active-work
+  memory, while `compacted.replacement_history` retained rollback-targeted user
+  text and read-only diagnostics later observed matching text after rollback.
+  Later app-server restore inspection separated direct user-message candidates
+  from quoted/tool-output matches; the current thread's retained app-server
+  matches are `aggregatedOutput` only, and the controlled model-visible smoke
+  did not reproduce marker resurrection. Automatic Codex trim is enabled again
+  with DB memory and turn-count guards.
+- Codex trim dry-run plans and `doctor --trim --host codex` now expose the safe
+  continuation path as `new-thread-handoff-only`: use the guided entrypoint
+  `throughline codex-handoff-start --session codex:<thread-id>`, or validate the
+  handoff with `throughline codex-handoff-smoke --session codex:<thread-id>`, optionally
+  inspect the model-smoke boundary with
+  `throughline codex-handoff-model-smoke --session codex:<thread-id> --dry-run --json`,
+  render a fresh-thread handoff with
+  `throughline codex-resume --session codex:<thread-id> --format handoff`, and
+  start a new Codex thread, without mutating the current risky thread.
+- Human-readable trim dry-run reports now truncate the inline curated memory
+  preview for scanability while leaving full `memoryPreview.text` intact in JSON
+  and in the Codex `codex-resume` safe-continuation command.
+- `parseCodexRolloutFile` now exposes `userMessagesAfterRollback`,
+  `latestRollbackAt`, and `restoreSafety.rolledBackTexts` so rollback smoke
+  results carry enough audit evidence instead of only pass/fail status.
+- Guarded execute now still checks rollout durability evidence when post-inject
+  live read visibility times out, so reports can include observed rollback
+  markers, observed injected memory, and post-execute restore-safety risk.
+- Codex trim preflight / execute now reports planned restore-safety diagnostics:
+  if the planned rollback would remove user text that already appears in
+  `compacted.replacement_history`, Throughline reports
+  `planned_restore_safety_risk` as diagnostic evidence but does not refuse
+  solely for that reason.
+- `codex-restore-source-audit` no longer uses very short retained rollback texts
+  as VS Code storage needles, avoiding false positives from generic prompts such
+  as `go`.
+- Codex guarded execute no longer uses the old
+  `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` gate or the later
+  `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM_EXECUTE=1` blocker. It now requires only
+  explicit `--execute`, Codex thread identity, injectable Throughline DB memory,
+  and rollout/app-server turn-count checks before mutation.
 - Codex app-server helpers now report spawn failures explicitly instead of
   waiting for a request timeout.
+- Codex app-server stderr in diagnostics is now capped after warning
+  compaction, so external plugin/OAuth warnings cannot make smoke JSON
+  excessively large.
 - `throughline codex-threads` lists read-only Codex rollout/thread candidates
   for the current project so users can pass an explicit `--codex-thread-id`
   without Throughline guessing the active thread.
@@ -87,12 +318,60 @@ shipped to npm but were not individually tagged on GitHub.
 - Codex trim memory previews now apply `thread_rolled_back` rollout events
   before building the active work thread, so rolled-back tail turns are not
   reintroduced as current memory.
+- Codex trim dry-run now reports a heuristic context reduction estimate when
+  rollout text is available: rollback-candidate estimated tokens, injected
+  memory estimated tokens, net estimated reduction, and reduction percentage.
+  This is intentionally labeled as `chars / 4`, not an exact host tokenizer
+  measurement.
+- Codex rollout parsing now mirrors app-server turn counts for injected
+  active-work developer messages and for the latest post-rollback assistant
+  continuation turn. This keeps guarded trim preflight aligned after a real
+  rollback/inject cycle.
+- Codex guarded trim now uses rollout/app-server data for rollback planning and
+  turn-count guards, but uses Throughline DB memory for injection when
+  available: older turns as L1 summaries, the latest 20 turns as full L2 bodies,
+  and L3 as references only; L3 bodies / tool payloads are not injected.
+  Execute refuses before mutation when only a rollout preview is available.
+- `throughline doctor --codex` now reports context-refresh readiness, including
+  rollback source, inject memory source, the L1/L2/L3 memory contract, current
+  memory counts, and heuristic reduction estimate when available.
+- `throughline doctor --codex` now reports the host primitive audit status and
+  prints `throughline codex-host-primitive-audit` as the next read-only command
+  for diagnostic detail.
+- `throughline doctor --codex` labels context refresh as `ready` when the
+  executable guard inputs are present, even if restore-safety diagnostics are
+  risky. Those diagnostics are reported separately.
+- `throughline doctor --codex` now reports the VS Code monitor task status and
+  prints the Reload Window note there too, because Codex Stop hook stdout is not
+  guaranteed to appear in the chat.
+- `throughline doctor --codex` and human-readable guarded trim reports now label
+  L3 as references-only and explicitly say L3 bodies are not injected.
 - Guarded Codex execute now performs the same rollout/app-server turn-count
   check before rollback; mismatch or unavailable app-server counts refuse
   execution before any rollback or inject request is sent.
 - Codex app-server stderr in trim preflight / guarded execute now compacts
   repeated unknown-turn item warnings while preserving the first occurrence and
   unrelated diagnostics.
+- Codex visibility smoke now waits for app-server notification events
+  (`item/agentMessage/delta` or `turn/completed`) after `turn/start`, so it does
+  not mistake an accepted model turn for completed model visibility.
+- Codex visibility smoke can now verify the `inject -> resume -> turn/start`
+  path. Real-host smoke confirmed marker
+  `TL_CODEX_RESUME_AFTER_INJECT_REAL_20260506` after a post-inject resume.
+- Codex CLI L1 summarization now uses the `codex exec` option set supported by
+  local `codex-cli 0.128.0-alpha.1`; the removed `--ask-for-approval` flag is
+  no longer passed. The subprocess also passes `--ignore-user-config` so
+  user-level Codex plugins/hooks are not loaded during the summarization call.
+- Codex CLI summarization errors now include compacted stderr in JSON output,
+  preserving actionable `ERROR:` lines without dumping enormous HTML challenge
+  pages verbatim.
+- `throughline monitor` is now host-aware for Claude and Codex state files.
+  Codex Stop hook writes `codex:<thread_id>` monitor state with `rolloutPath`,
+  snapshots verified rollout `token_count` usage when present, and marks
+  rollout-text estimates with `estimated: true` / `est` when no token-count
+  event is available. State filenames are URL-encoded so `codex:` session ids
+  remain portable. The compact row now displays used tokens over the model
+  context window, instead of percent plus remaining tokens.
 
 ### Documentation
 - Added integrated implementation/TODO plan and cross-links for the Codex dual
@@ -109,6 +388,23 @@ shipped to npm but were not individually tagged on GitHub.
 - Recorded the 2026-05-06 Codex app-server rollback/inject spike: `thread/read`
   can read persisted threads, `thread/rollback` requires a loaded thread via
   `thread/resume`, and injected developer items are visible to the next turn.
+- Recorded the 2026-05-06 real Codex-primary active-work smoke: injected
+  `codex-resume` developer context produced marker `TL_CODEX_VISIBLE_REAL_20260506_C`
+  in `item/agentMessage/delta`, confirming the rendered memory is model-visible
+  as current work in a real Codex host.
+- Documented the current Codex-primary setup flow. Global install manages only
+  the Throughline Codex Stop hook / skill and preserves existing
+  non-Throughline hooks; users can verify natural capture with `doctor --codex`,
+  then summarize, render, or inject active-work memory through the `$throughline`
+  skill or the explicit Codex CLI surfaces.
+- Recorded the 2026-05-06 final Codex Stop hook smoke: after the absolute-path
+  hook shape was installed, a newly started VSCode-origin Codex thread
+  `019dfd62-9a9d-7211-bf91-89d8e3fc908e` naturally advanced the latest DB
+  session to `codex:019dfd62-9a9d-7211-bf91-89d8e3fc908e` as reported by
+  `doctor --codex`.
+- Added and completed the Codex monitor implementation plan, documenting the
+  host-aware state contract, Codex `rolloutPath`, verified `token_count`
+  usage, and explicit estimate labeling.
 
 ## [0.3.24] — 2026-05-02
 

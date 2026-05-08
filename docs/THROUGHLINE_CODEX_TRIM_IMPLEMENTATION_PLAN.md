@@ -4,7 +4,8 @@
 
 ## この文書の位置づけ
 
-この文書は **統合実装計画** です。実装順、TODO、進捗チェックはこの文書を正として扱う。
+この文書は **これまでの統合実装計画と実装履歴** です。
+2026-05-06 以降の次フェーズ実装順、TODO、進捗チェックは [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) を正として扱う。
 
 元文書:
 
@@ -15,6 +16,7 @@
 
 | 文書 | この計画での扱い |
 |---|---|
+| [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) | 2026-05-06 以降の次フェーズ計画。Codex primary 実用化を先行し、Codex Rewind 互換を完成させてから Claude 側を詰める |
 | [THROUGHLINE_CODEX_DUAL_SUPPORT.md](THROUGHLINE_CODEX_DUAL_SUPPORT.md) | Claude / Codex 両対応の architecture brief。主に Phase 1-5 に対応 |
 | [throughline-rollback-context-trim-insight.md](throughline-rollback-context-trim-insight.md) | rollback trim の design insight。主に Phase 6-8 に対応 |
 
@@ -43,7 +45,7 @@ rollback trim は最終的な理想に近いが、host primitive の実測が必
 - Claude hooks、slash command、transcript parsing、handoff baton、SessionStart resume behavior を Codex 用に置き換えない。
 - Claude-facing field / command / DB semantics を rename しない。
 - Codex 対応は adapter / projection として足す。
-- `thread/rollback` / `thread/inject_items` は host primitive として実測済み。Codex は明示 thread identity と rollout/app-server turn count guard がある場合だけ guarded execute を許可する。通常の automatic rollback / inject と Claude `/rewind` 自動化はまだ有効化しない。
+- `thread/rollback` / `thread/inject_items` は live host primitive として実測済み。2026-05-06 incident 後に Codex guarded execute / auto-refresh は一時停止したが、2026-05-08 の controlled rollback model-visible smoke が再現しなかったため、過剰 blocker は解除済み。現在は [THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) を優先し、DB memory と rollout/app-server turn-count guard を必須にする。Claude `/rewind` 自動化はまだ有効化しない。
 - fallback や silent recovery で失敗を隠さない。互換モードは条件と理由を明示する。
 
 ## 運用ルール
@@ -180,7 +182,7 @@ Phase 3 implementation result (2026-05-06):
 
 - `src/handoff-record.mjs` を追加した。DB 永続化はせず、schema v7 の `sessions` / `skeletons` / `bodies` / `details` から `handoff_record` v1 を projection する。
 - `src/resume-context.mjs` は `HandoffRecord` から Claude-facing Markdown を描画する形に整理した。既存 SessionStart の出力 contract は維持する。
-- `HandoffRecord` v1 は `session` / `source` / `intent` / `constraints` / `memory` / `references.l3` / `stats` を持つ。
+- `HandoffRecord` v1 は `session` / `source` / `intent` / `constraints` / `memory` / `references.l3` / `stats` を持つ。現時点の persisted writer は Claude transcript 由来なので `source.adapter` は `claude` 固定であり、Codex capture を実装するまでは agent-neutral な形をした Claude-origin projection として扱う。
 - `references.l3` は `sourceId` と `throughline detail <HH:MM:SS>` 参照を持つ。file path / line reference は Phase 3 では必須にしない。
 - `src/handoff-record.test.mjs` で stable projection、origin 除外、空 projection を固定した。
 
@@ -288,7 +290,7 @@ Phase 4 implementation result (2026-05-06):
 TODO:
 
 - [x] diagnostics 実行 wrapper を追加する。
-- [x] diagnostics 結果に基づき、Codex unavailable / disabled / configured / operational / work-capable の状態表現を追加する。
+- [x] diagnostics 結果に基づき、Codex sidecar unavailable / disabled / configured / operational / work-capable の状態表現を追加する。
 - [x] diagnostics failure を明示的な unavailable として扱う。
 - [x] L2 → L1 要約で、`codex-sidecar` が configured の場合は `codex-sidecar` を使う。
 - [x] `codex-sidecar` が disabled / unavailable の場合は、現行 Claude Haiku 要約を維持する。
@@ -344,8 +346,8 @@ Codex spike TODO:
 - [x] rollback 後の rollout JSONL を確認する。
 - [x] `thread/inject_items` に最小 memory item を渡す。
 - [x] 次 turn で injected memory が model-visible か確認する。
-- [ ] `thread/resume` 後も rollback marker と injected memory が効くか確認する。
-- [ ] ローカルファイル変更が戻らないことを確認する。schema 上は conversation history only と明記されるが、Throughline 統合 harness で実ファイル変更を含めて確認する。
+- [x] `thread/resume` 後も rollback marker と injected memory が効くか確認する。
+- [x] ローカルファイル変更が戻らないことを確認する。2026-05-06 の Throughline 統合 smoke で一時ファイルを置いたまま Codex guarded execute を行い、rollback 後も同一 hash で残ることを確認した。
 
 Claude spike TODO:
 
@@ -368,13 +370,15 @@ Phase 6 result (2026-05-06):
 - `thread/rollback` は persisted thread を直接対象にすると `thread not found` を返す。`thread/resume` で loaded thread にしてから呼ぶ必要がある。
 - 検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` で、1 turn を `thread/rollback { numTurns: 1 }` し、`thread/read includeTurns:true` が 0 turns を返すことを確認した。
 - `thread/inject_items` に raw Responses API item `{ type: "message", role: "developer", content: [{ type: "input_text", text: "..." }] }` を渡し、次の `turn/start` で injected memory が model-visible になることを確認した。marker `TL_PHASE6_INJECT_OK` を正しく返した。
-- Codex host primitive は `verified-host-primitive`。現在は明示 `--codex-thread-id` または env thread identity と rollout/app-server turn count guard がそろった場合だけ、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` 配下で guarded execute できる。通常の automatic rollback / inject はまだ有効化しない。
+- その後の Codex primary 実装で、`codex-resume` が描画する active-work developer message も実 Codex host で model-visible になることを確認した。marker `TL_CODEX_VISIBLE_REAL_20260506_C` が `item/agentMessage/delta` に出た。詳細な実測値は [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) の Phase 3 result を正とする。
+- さらに `thread/inject_items` 後にもう一度 `thread/resume` してから `turn/start` を呼ぶ smoke も追加し、実 Codex host で marker `TL_CODEX_RESUME_AFTER_INJECT_REAL_20260506` が `item/agentMessage/delta` に出ることを確認した。
+- Codex host primitive は live app-server 上では実測済み。ただし restart-safe durability は未証明。現在は明示 `--codex-thread-id` または env thread identity と rollout/app-server turn count guard が live mutation の最低条件であり、durable success は別分類で扱う。2026-05-06 incident 後はいったん Codex Stop hook 後の automatic refresh mutation を blocked としたが、2026-05-08 unblock 後は verified usage 90% 以上で guarded rollback / inject を試行する。
 - Claude `/rewind conversation only` は手動 UX として扱う。外部ツールからの自動化 surface は未確認。Claude host の automatic rollback / inject は `manual-only`。
-- Phase 8 では dry-run / preflight を本線にしつつ、Codex だけ実験フラグ配下の guarded execute を追加した。Claude は manual-only のまま扱う。
+- Phase 8 では dry-run / preflight を本線にしつつ、Codex だけ guarded execute を追加した。Claude は manual-only のまま扱う。
 
 完了条件:
 
-- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。Codex は guarded execute のみ実験フラグ配下で許可し、Claude は manual-only。
+- [x] rollback trim を自動実装してよい host と、手動案内に留める host が判断できる。Codex は 2026-05-08 unblock 後、verified usage 90% 以上の Stop hook auto-refresh と明示 execute を許可する。Claude は manual-only。
 
 ## Phase 7: Trim Handoff Model
 
@@ -424,26 +428,26 @@ TODO:
 - [x] 実行前に captured turns / keep turns / injected memory summary を表示する。
 - [x] Codex dry-run では `--codex-thread-id` を受け取り、Claude / Throughline の `session_id` と Codex `thread_id` を混同しない形で plan に残す。
 - [x] Codex non-dry-run の最初の統合として `--preflight` を追加する。これは app-server の initialize / read / resume だけを実行し、rollback / inject は送らない。
-- [x] Codex の guarded execution として `--execute` を追加する。ただし `--host codex`、明示 `--codex-thread-id`、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` を必須にし、実行後に model turn は開始しない。
-- [x] 自動 rollback 対応 host では、実行後に resume / injected memory が有効か検証する。Codex は Phase 6 spike と 2026-05-06 guarded execute smoke で、resume 後 rollback/inject と post-inject visibility を確認した。
+- [x] Codex の guarded execution として `--execute` を追加する。ただし `--host codex`、明示または env の Codex thread identity、rollout/app-server turn count guard を必須にし、実行後に model turn は開始しない。
+- [ ] 自動 rollback 対応 host では、実行後に resume / injected memory が restart / reconnect 後も有効か検証する。Codex は Phase 6 spike、2026-05-06 guarded execute smoke、post-inject resume visibility smoke で live app-server 上の rollback/inject と injected memory visibility だけを確認した。2026-05-06 incident 後、これは restart-safe durability の完了条件を満たさない。
 - [x] `doctor` に trim 関連診断を追加する。
 
 Phase 8 partial implementation result (2026-05-06):
 
 - `throughline trim --dry-run [--host claude|codex|unknown] [--keep-recent N] [--all] [--session <id>] [--codex-thread-id <id>] [--json]` を追加。
 - `throughline trim --dry-run --memo-stdin` を追加。`/tl` が解決した「L1/L2 はあるが今やっている作業として認識されない」問題を `/tl-trim` でも再発させないため、current-work memo を curated memory preview の先頭に入れる。
-- non-dry-run `throughline trim` は Claude / unknown host では automatic rollback / inject 未対応として exit 1 で明示拒否する。Codex host では `--execute`、明示または env の thread identity、`THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` がそろう場合だけ guarded execute へ進む。
+- non-dry-run `throughline trim` は Claude / unknown host では automatic rollback / inject 未対応として exit 1 で明示拒否する。Codex host には `--execute` 経路が実装済み。2026-05-06 incident 後はいったん拒否したが、2026-05-08 unblock 後は明示 `--execute`、Codex thread identity、Throughline DB memory、rollout/app-server turn-count guard がそろえば mutation へ進む。
 - `src/codex-app-server.mjs` を追加し、newline JSON framing、initialize / read / resume / rollback / inject / turn-start request builder、server line parser をテストで固定した。Codex guarded execute はこの helper を通り、model turn は開始しない。
 - `--codex-thread-id` の明示入力を最優先で信頼する。明示入力が無い場合のみ、`THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` を current-thread identity signal として使う。最新 rollout 推測による automatic trim は行わない。
 - `throughline trim --preflight --host codex --codex-thread-id <id> [--json]` を追加した。これは `thread/read` と `thread/resume` が対象 thread に届くことを確認し、`rollbackRequestPreview` を返すが、`thread/rollback` / `thread/inject_items` は送らない。
 - `codex-rollout` source の場合、preflight は rollout 側 active turn count と app-server `thread/read` / `thread/resume` の turn count を突き合わせる。不一致または app-server count 不明なら `preflight-refused` として止まり、rollback / inject は送らない。
 - 同日、検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` に実 app-server preflight を当て、`readTurns: 1` / `resumedTurns: 1` / `rollbackSent: false` / `injectSent: false` を確認した。
-- `throughline trim --execute --host codex --codex-thread-id <id> [--json]` を追加した。これは `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1` がある場合だけ、app-server の `thread/read`、`thread/resume`、`thread/rollback`、`thread/inject_items`、確認用 `thread/read` を順に送る。
-- 実 app-server smoke では `thread/inject_items` の直後に返る turn 配列が、注入 item の可視化より早い場合があると分かった。そのため `--execute` は rollback 後 turn 数 + 注入 item 数を期待値として、post-inject `thread/read` を短く poll し、`postInjectVisibilityCheck` に `match` / `timeout` / `unchecked` を記録する。
+- `throughline trim --execute --host codex --codex-thread-id <id> [--json]` を追加した。2026-05-06 incident 後は既定で拒否し、2026-05-07 追加修正では host primitive audit gate も置いた。2026-05-08 unblock 後はこの env gate / host primitive audit gate を外し、app-server の `thread/read`、`thread/resume`、`thread/rollback`、`thread/inject_items`、確認用 `thread/read` へ進む。host primitive audit と restore-safety は diagnostic-only。
+- 実 app-server smoke では `thread/inject_items` の直後に返る turn 配列が、注入 item の可視化より早い場合があると分かった。その後の current-thread live run で、現行 Codex host の developer memory injection は item-level で、即時 `thread/read` の turn count を増やさない場合があることも確認した。そのため `--execute` は `thread/inject_items` の応答に turn list があればその turn count を期待値とし、応答に turn list がなければ rollback 後 turn count を期待値として post-inject `thread/read` を短く poll する。`postInjectVisibilityCheck` は `match` / `timeout` / `unchecked` を記録する。CLI 外側の status は `executed` ではなく、live mutation だけなら `execute-sent-live-only`、timeout や durable evidence 不足なら `execute-unverified`、rollout に新 rollback marker と active-work memory injection が観測された場合は `execute-durable-verified` とする。restore-safety は durable mutation evidence とは別の diagnostic として表示する。exit 0 は `execute-durable-verified` に限る。
 - `codex-rollout` source の guarded execute は rollback 前に同じ turn count check を実行する。不一致または app-server count 不明なら `execute-refused` として止まり、`thread/rollback` / `thread/inject_items` は送らない。
 - `--execute` が注入する item は `role: "developer"` の raw Responses message item で、中身は `memoryPreview.text`。`memoryPreview.text` は Reading Contract、Active Work Thread、Continuation Instruction を含むため、L2 を単なる過去ログではなく現在タスクの作業文脈として読む前提を維持する。
-- `--execute` は model turn を開始しない。2026-05-06 の実機 smoke では、現在 Codex thread に対して guarded execute が `status: executed` / `rollbackSent: true` / `injectSent: true` で完了し、その後の read-only preflight で rollout/app-server turn count が `21` / `21` の `match` に戻ることを確認した。注入 item の可視化は即時 read では遅れる場合があるため、上記 post-inject poll を入れた。
-- fake app-server テストで、env 無しでは app-server を起動せず拒否すること、preflight は rollback / inject を送らないこと、execute は `read -> resume -> rollback -> inject -> read...` の順で curated memory を注入し、post-inject read が遅れて可視化される場合も待つことを固定した。
+- `--execute` は model turn を開始しない。2026-05-06 の実機 smoke では、現在 Codex thread に対して guarded execute が `rollbackSent: true` / `injectSent: true` まで進み、その後の read-only preflight で rollout/app-server turn count が match に戻ることを確認した。これは live app-server 上の確認であり、restart-safe durability の証明ではない。実ファイル付き smoke では rollback 1 turn 後に一時ファイル `THROUGHLINE_CODEX_ROLLBACK_SMOKE.tmp` が同一 hash のまま残り、context rollback が worktree を戻さないことも確認した。注入 item の可視化は即時 read では遅れる場合があるため、上記 post-inject poll を入れた。
+- fake app-server テストで、preflight は rollback / inject を送らないこと、execute は明示 `--execute` で `read -> resume -> rollback -> inject -> read...` の順に curated memory を注入し、post-inject read が遅れて可視化される場合も待つことを固定した。
 - `throughline codex-threads [--json] [--all-projects] [--limit N]` を追加した。これは `~/.codex/session_index.jsonl` と `~/.codex/sessions/**/rollout-*.jsonl` を read-only に読み、現在 project の Codex thread id 候補を表示する。候補を出すだけで、自動 trim の対象 thread として採用しない。
 - `--host codex --codex-thread-id <id>` の計画作成では、明示 thread id と現在 project に一致する rollout JSONL があれば `codex-rollout` を trim source として使う。これにより Throughline DB の `bodies` が 0 件でも、Codex 側の active turns から rollback candidate と memory preview を作れる。
 - `codex-rollout` source は `event_msg:task_started` を turn として扱い、`event_msg:thread_rolled_back` を適用して active turns を再構成する。rollback 済み tail は current memory preview に戻さない。
@@ -465,7 +469,7 @@ Current-work framing research note (2026-05-06):
 
 完了条件:
 
-- [x] 対応 host では同一 session / thread の context trim が動く。Codex guarded execute は実機 smoke で現在 thread の rollback / inject を完了し、後続 preflight で rollout/app-server turn count match を確認した。
+- [ ] 対応 host では同一 session / thread の context trim が動く。Codex guarded execute は実機 smoke で live rollback / inject を完了したが、restart-safe durability は未証明のため完了扱いしない。
 - [x] Codex では guarded execute path が fake app-server 上で rollback / inject 順序を満たす。
 - [x] Codex では明示 thread id の rollout JSONL から active turns / memory preview を作り、DB 未捕捉の Codex 作業でも dry-run / preflight / guarded execute の plan source にできる。
 - [x] Codex では `codex-rollout` active turn count と app-server read/resume turn count を突き合わせ、差分がある場合は mutation 前に拒否する。

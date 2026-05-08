@@ -19,8 +19,16 @@ import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { getStateDir } from '../state-file.mjs';
 import { readLatestUsage } from '../transcript-usage.mjs';
-import { DEFAULT_TRIM_KEEP_RECENT, describeTrimHost } from '../trim-model.mjs';
+import { buildCodexRolloutTrimSource } from '../codex-rollout-memory.mjs';
+import { runCodexHostPrimitiveAudit } from '../codex-host-primitive-audit.mjs';
+import { buildCodexHandoffSmoke } from '../codex-handoff-smoke.mjs';
+import { buildHandoffRecord } from '../handoff-record.mjs';
+import { DEFAULT_TRIM_KEEP_RECENT, buildTrimPlan, describeTrimHost } from '../trim-model.mjs';
 import { resolveCodexThreadIdentity } from '../codex-thread-identity.mjs';
+import { defaultCodexHome, listCodexThreadCandidates } from '../codex-thread-index.mjs';
+import { getDb } from '../db.mjs';
+import { detectJsoncFeatures, findMonitorTaskIndex, isMonitorTaskBroken } from '../vscode-task.mjs';
+import { buildCodexStopHookCommand, isThroughlineCodexStopCommand } from './install.mjs';
 
 const GREEN = '\x1b[32m✓\x1b[0m';
 const RED = '\x1b[31m✗\x1b[0m';
@@ -45,7 +53,7 @@ async function check(label, fn) {
 }
 
 function parseArgs(argv) {
-  const args = { session: null, trim: false, host: 'unknown' };
+  const args = { session: null, trim: false, host: 'unknown', codex: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--session') {
       const value = argv[i + 1];
@@ -56,6 +64,8 @@ function parseArgs(argv) {
       i++;
     } else if (argv[i] === '--trim') {
       args.trim = true;
+    } else if (argv[i] === '--codex') {
+      args.codex = true;
     } else if (argv[i] === '--host') {
       const value = argv[i + 1];
       if (!['claude', 'codex', 'unknown'].includes(value)) {
@@ -277,10 +287,16 @@ function runSessionDiagnosis(prefix) {
   }
 }
 
-function runTrimDiagnosis(host, env = process.env) {
+function runTrimDiagnosis(
+  host,
+  env = process.env,
+  { auditRunner = runCodexHostPrimitiveAudit } = {},
+) {
   const info = describeTrimHost(host);
   const codexIdentity =
     info.host === 'codex' ? resolveCodexThreadIdentity({ codexThreadId: null }, env) : null;
+  const hostPrimitiveDiagnosis =
+    info.host === 'codex' ? readCodexHostPrimitiveDiagnosis({ env, auditRunner }) : null;
   console.log(`${BOLD}[Trim]${RESET}\n`);
   console.log(`  host:                  ${info.host}`);
   console.log(`  default keep-recent:   ${DEFAULT_TRIM_KEEP_RECENT}`);
@@ -294,18 +310,444 @@ function runTrimDiagnosis(host, env = process.env) {
       : 'not detected';
     console.log(`  current Codex thread:  ${identityText}`);
   }
+  if (hostPrimitiveDiagnosis) {
+    console.log(`  host primitive audit:  ${hostPrimitiveDiagnosis.status}`);
+    console.log(`  host primitive reason: ${hostPrimitiveDiagnosis.reason}`);
+    console.log(
+      `  current-thread non-resurrection: ${
+        hostPrimitiveDiagnosis.hasCurrentThreadNonResurrectionPrimitive ? 'yes' : 'no'
+      }`,
+    );
+    console.log(`  repair contract:       ${hostPrimitiveDiagnosis.repairContractStatus}`);
+  }
   console.log('');
   console.log('  dry-run command:');
   if (info.host === 'codex' && !codexIdentity?.codexThreadId) {
     console.log('    throughline trim --dry-run --host codex --codex-thread-id <id>');
+    console.log('    throughline trim --preflight --host codex --codex-thread-id <id>');
+  } else if (info.host === 'codex') {
+    console.log('    throughline trim --dry-run --host codex');
+    console.log('    throughline trim --preflight --host codex');
   } else {
     console.log(`    throughline trim --dry-run --host ${info.host}`);
+  }
+  if (info.host === 'codex') {
+    console.log('    throughline trim --execute --host codex');
+  }
+  if (info.host === 'codex') {
+    const sessionId = codexIdentity?.codexThreadId
+      ? `codex:${codexIdentity.codexThreadId}`
+      : 'codex:<thread-id>';
+    console.log('');
+    console.log('  fresh-thread continuation path:');
+    console.log('    status: fresh-thread-handoff-available');
+    console.log('    reason: optional_fresh_thread_continuation');
+    console.log('    safety scope: fresh_thread_handoff_no_current_thread_mutation');
+    console.log(`    guided: throughline codex-handoff-start --session ${sessionId}`);
+    console.log(`    smoke:  throughline codex-handoff-smoke --session ${sessionId}`);
+    console.log(`    model smoke dry-run: throughline codex-handoff-model-smoke --session ${sessionId} --dry-run --json`);
+    console.log(`    memory: throughline codex-resume --session ${sessionId} --format handoff`);
+    console.log('    then: start a new Codex thread with that handoff context only if desired');
   }
   console.log('');
   console.log('  manual procedure:');
   for (const step of info.manualProcedure) {
     console.log(`    - ${step}`);
   }
+}
+
+function findLatestCapturedCodexSession(db, projectPath) {
+  try {
+    return (
+      db
+        .prepare(
+          `SELECT session_id, updated_at
+           FROM sessions
+           WHERE lower(project_path) = lower(?)
+             AND session_id LIKE 'codex:%'
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+        )
+        .get(projectPath) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+function countCapturedCodexSessions(db, projectPath) {
+  try {
+    return db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM sessions
+         WHERE lower(project_path) = lower(?)
+           AND session_id LIKE 'codex:%'`,
+      )
+      .get(projectPath).count;
+  } catch {
+    return 0;
+  }
+}
+
+function readCodexHookDiagnosis(codexHome) {
+  const hooksPath = join(codexHome, 'hooks.json');
+  const configPath = join(codexHome, 'config.toml');
+  const expectedCommand = buildCodexStopHookCommand();
+  const out = {
+    hooksPath,
+    configPath,
+    expectedCommand,
+    hooksReadable: false,
+    featureEnabled: false,
+    managedStopHooks: [],
+    legacyManagedStopHooks: [],
+  };
+
+  if (existsSync(configPath)) {
+    try {
+      out.featureEnabled = /^\s*codex_hooks\s*=\s*true\s*$/m.test(readFileSync(configPath, 'utf8'));
+    } catch {
+      out.featureEnabled = false;
+    }
+  }
+
+  if (!existsSync(hooksPath)) return out;
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(hooksPath, 'utf8'));
+  } catch {
+    return out;
+  }
+
+  out.hooksReadable = true;
+  const stopHooks = (parsed.hooks?.Stop ?? []).flatMap(group => group.hooks ?? []);
+  out.managedStopHooks = stopHooks.filter(h => isThroughlineCodexStopCommand(h.command));
+  out.legacyManagedStopHooks = out.managedStopHooks.filter(h => h.command !== expectedCommand);
+  return out;
+}
+
+function runCodexDiagnosis({
+  env = process.env,
+  cwd = process.cwd(),
+  db = getDb(),
+  auditRunner = runCodexHostPrimitiveAudit,
+} = {}) {
+  const codexHome = env.CODEX_HOME || defaultCodexHome();
+  const identity = resolveCodexThreadIdentity({ codexThreadId: null }, env);
+  const hookDiagnosis = readCodexHookDiagnosis(codexHome);
+  const hostPrimitiveDiagnosis = readCodexHostPrimitiveDiagnosis({ env, auditRunner });
+  const monitorTaskDiagnosis = readVsCodeMonitorTaskDiagnosis(cwd);
+  const candidates = listCodexThreadCandidates({
+    codexHome,
+    projectPath: cwd,
+    limit: 3,
+  });
+  const latestCaptured = findLatestCapturedCodexSession(db, cwd);
+  const capturedCount = countCapturedCodexSessions(db, cwd);
+  const refreshDiagnosis = buildCodexContextRefreshDiagnosis({
+    db,
+    cwd,
+    codexHome,
+    identity,
+  });
+
+  console.log(`${BOLD}[Codex primary]${RESET}\n`);
+  console.log(`  project:               ${cwd}`);
+  console.log(`  CODEX_HOME:            ${codexHome}`);
+  console.log(`  Codex hooks feature:   ${hookDiagnosis.featureEnabled ? 'enabled' : 'not enabled'}`);
+  console.log(`  Codex Stop hook:       ${
+    hookDiagnosis.managedStopHooks.length === 0
+      ? 'not registered'
+      : hookDiagnosis.legacyManagedStopHooks.length > 0
+        ? 'legacy command needs reinstall'
+        : 'registered'
+  }`);
+  if (hookDiagnosis.managedStopHooks.length > 0) {
+    const h = hookDiagnosis.managedStopHooks[0];
+    console.log(`    command:             ${h.command}`);
+    console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
+    console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
+  }
+  console.log(`  VSCode monitor task:   ${monitorTaskDiagnosis.status}`);
+  if (monitorTaskDiagnosis.path) {
+    console.log(`    path:                ${monitorTaskDiagnosis.path}`);
+  }
+  if (monitorTaskDiagnosis.runOn) {
+    console.log(`    runOn:               ${monitorTaskDiagnosis.runOn}`);
+  }
+  if (monitorTaskDiagnosis.note) {
+    console.log(`    note:                ${monitorTaskDiagnosis.note}`);
+  }
+  console.log(
+    `  current Codex thread:  ${
+      identity.codexThreadId
+        ? `${identity.codexThreadId} (${identity.codexThreadIdSource})`
+        : 'not detected'
+    }`,
+  );
+  console.log(`  rollout candidates:    ${candidates.length}`);
+  if (candidates.length > 0) {
+    const latest = candidates[0];
+    console.log(`  latest rollout:        ${latest.id}`);
+    console.log(`    updatedAt:           ${latest.updatedAt}`);
+    console.log(`    path:                ${latest.rolloutPath}`);
+  }
+  console.log(`  captured DB sessions:  ${capturedCount}`);
+  if (latestCaptured) {
+    console.log(`  latest DB session:     ${latestCaptured.session_id}`);
+    console.log(`    updatedAt:           ${formatTs(latestCaptured.updated_at)}`);
+  }
+  if (refreshDiagnosis) {
+    console.log(`  context refresh:       ${refreshDiagnosis.status}`);
+    if (refreshDiagnosis.blockedReason) {
+      console.log(`    blocked reason:      ${refreshDiagnosis.blockedReason}`);
+    }
+    console.log(`    rollback source:     ${refreshDiagnosis.rollbackSource}`);
+    console.log(`    inject memory source: ${refreshDiagnosis.injectMemorySource}`);
+    console.log(`    memory contract:     ${refreshDiagnosis.memoryContract}`);
+    console.log(`    L1 summaries:        ${refreshDiagnosis.l1Summaries}`);
+    console.log(`    recent L2 bodies:    ${refreshDiagnosis.recentBodies}`);
+    console.log(`    L3 references only:  ${refreshDiagnosis.l3References} (bodies not injected)`);
+    if (refreshDiagnosis.handoffSmoke) {
+      console.log(`    new-thread handoff:  ${refreshDiagnosis.handoffSmoke.status}`);
+      if (refreshDiagnosis.safeContinuationStatus) {
+        console.log(`      safe continuation: ${refreshDiagnosis.safeContinuationStatus}`);
+      }
+      console.log(`      prompt chars:      ${refreshDiagnosis.handoffSmoke.promptChars}`);
+      console.log(`      estimated tokens:  ${refreshDiagnosis.handoffSmoke.estimatedTokens}`);
+    }
+    if (refreshDiagnosis.estimate) {
+      console.log(`    estimated reduction: ${refreshDiagnosis.estimate}`);
+    }
+  }
+  console.log(`  host primitive audit:  ${hostPrimitiveDiagnosis.status}`);
+  console.log(`    reason:              ${hostPrimitiveDiagnosis.reason}`);
+  console.log(
+    `    current-thread non-resurrection: ${
+      hostPrimitiveDiagnosis.hasCurrentThreadNonResurrectionPrimitive ? 'yes' : 'no'
+    }`,
+  );
+  console.log(`    repair contract:     ${hostPrimitiveDiagnosis.repairContractStatus}`);
+  console.log('');
+  console.log('  next commands:');
+  if (identity.codexThreadId) {
+    console.log(`    throughline codex-capture --codex-thread-id ${identity.codexThreadId}`);
+    console.log(`    throughline codex-handoff-start --session codex:${identity.codexThreadId}`);
+    console.log(`    throughline codex-handoff-smoke --session codex:${identity.codexThreadId}`);
+    console.log(`    throughline codex-handoff-model-smoke --session codex:${identity.codexThreadId} --dry-run --json`);
+    console.log(`    throughline codex-resume --session codex:${identity.codexThreadId} --format handoff`);
+    console.log(`    throughline codex-resume --session codex:${identity.codexThreadId}`);
+    console.log(`    THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1 throughline codex-handoff-model-smoke --session codex:${identity.codexThreadId}`);
+  } else {
+    console.log('    throughline codex-threads --limit 5');
+    console.log('    throughline codex-capture --codex-thread-id <id>');
+    console.log('    throughline codex-handoff-start --session codex:<id>');
+    console.log('    throughline codex-handoff-smoke --session codex:<id>');
+    console.log('    throughline codex-handoff-model-smoke --session codex:<id> --dry-run --json');
+    console.log('    throughline codex-resume --session codex:<id> --format handoff');
+    console.log('    throughline codex-resume --session codex:<id>');
+    console.log('    THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1 throughline codex-handoff-model-smoke --session codex:<id>');
+  }
+  console.log('    throughline doctor --trim --host codex');
+  console.log('    throughline codex-host-primitive-audit');
+}
+
+function readCodexHostPrimitiveDiagnosis({
+  env = process.env,
+  auditRunner = runCodexHostPrimitiveAudit,
+} = {}) {
+  const command = env.THROUGHLINE_CODEX_APP_SERVER_BIN ?? 'codex';
+  try {
+    const audit = auditRunner({ command });
+    return {
+      status: audit.status ?? 'unknown',
+      reason: audit.reason ?? 'unknown',
+      hasCurrentThreadRemediationPrimitive: Boolean(
+        audit.facts?.hasCurrentThreadRemediationPrimitive,
+      ),
+      hasCurrentThreadNonResurrectionPrimitive: Boolean(
+        audit.facts?.hasCurrentThreadNonResurrectionPrimitive ??
+          audit.facts?.hasCurrentThreadRemediationPrimitive,
+      ),
+      repairContractStatus: audit.repairContract?.status ?? 'unknown',
+      methodCount: audit.methodCount ?? null,
+    };
+  } catch (err) {
+    return {
+      status: 'unavailable',
+      reason: err instanceof Error ? err.message : String(err),
+      hasCurrentThreadRemediationPrimitive: false,
+      hasCurrentThreadNonResurrectionPrimitive: false,
+      repairContractStatus: 'unavailable',
+      methodCount: null,
+    };
+  }
+}
+
+function readVsCodeMonitorTaskDiagnosis(cwd) {
+  const tasksPath = join(cwd, '.vscode', 'tasks.json');
+  if (!existsSync(tasksPath)) {
+    return {
+      status: 'not registered',
+      path: tasksPath,
+      note: 'created by the next VSCode hook event; if the folder is already open, reload VSCode once after creation',
+    };
+  }
+
+  let text;
+  try {
+    text = readFileSync(tasksPath, 'utf8');
+  } catch (err) {
+    return {
+      status: 'unreadable',
+      path: tasksPath,
+      note: err instanceof Error ? err.message : 'read failed',
+    };
+  }
+
+  if (detectJsoncFeatures(text)) {
+    return {
+      status: 'jsonc not inspected',
+      path: tasksPath,
+      note: 'Throughline will not auto-edit JSONC tasks; add or verify the monitor task manually',
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return {
+      status: 'parse error',
+      path: tasksPath,
+      note: 'tasks.json is not valid JSON; Throughline will not auto-edit it',
+    };
+  }
+
+  const index = findMonitorTaskIndex(parsed);
+  if (index < 0) {
+    return {
+      status: 'not registered',
+      path: tasksPath,
+      note: 'created by the next VSCode hook event; if the folder is already open, reload VSCode once after creation',
+    };
+  }
+
+  const task = parsed.tasks[index];
+  if (isMonitorTaskBroken(task)) {
+    return {
+      status: 'registered but broken',
+      path: tasksPath,
+      runOn: task?.runOptions?.runOn ?? '(missing)',
+      note: 'existing task points at a missing absolute path; the next VSCode hook event should repair it',
+    };
+  }
+
+  return {
+    status: 'registered',
+    path: tasksPath,
+    runOn: task?.runOptions?.runOn ?? '(missing)',
+    note: 'if it was created after this folder was already open, run Developer: Reload Window once or start the Throughline Monitor task manually',
+  };
+}
+
+function buildCodexContextRefreshDiagnosis({ db, cwd, codexHome, identity }) {
+  if (!identity.codexThreadId) return null;
+
+  let trimSource = null;
+  try {
+    trimSource = buildCodexRolloutTrimSource({
+      threadId: identity.codexThreadId,
+      codexHome,
+      projectPath: cwd,
+      sourceReason:
+        identity.codexThreadIdSource && identity.codexThreadIdSource.startsWith('env:')
+          ? 'env_codex_thread_rollout'
+          : 'explicit_codex_thread_rollout',
+    });
+  } catch {
+    trimSource = null;
+  }
+
+  let plan;
+  try {
+    plan = buildTrimPlan(db, {
+      projectPath: cwd,
+      host: 'codex',
+      trimAll: true,
+      codexThreadId: identity.codexThreadId,
+      codexThreadIdSource: identity.codexThreadIdSource,
+      trimSource,
+    });
+  } catch {
+    return {
+      status: 'unavailable',
+      rollbackSource: trimSource?.source ?? 'unknown',
+      injectMemorySource: 'unknown',
+      memoryContract: 'unavailable',
+      l1Summaries: 'unknown',
+      recentBodies: 'unknown',
+      l3References: 'unknown',
+      estimate: null,
+    };
+  }
+
+  const stats = plan.memoryPreview?.stats ?? {};
+  const hasDbMemory =
+    stats.source === 'throughline-db' &&
+    ((stats.l1Summaries ?? 0) > 0 || (stats.recentBodies ?? 0) > 0 || (stats.l3References ?? 0) > 0);
+  let handoffSmoke = null;
+  if (hasDbMemory) {
+    try {
+      const record = buildHandoffRecord(db, {
+        sessionId: `codex:${identity.codexThreadId}`,
+        isInheritance: false,
+      });
+      if (record) {
+        const smoke = buildCodexHandoffSmoke(record);
+        handoffSmoke = {
+          status: smoke.status,
+          reason: smoke.reason,
+          promptChars: smoke.promptChars,
+          estimatedTokens: smoke.estimatedTokens,
+        };
+      }
+    } catch {
+      handoffSmoke = {
+        status: 'unavailable',
+        reason: 'handoff_smoke_failed',
+        promptChars: 'unknown',
+        estimatedTokens: 'unknown',
+      };
+    }
+  }
+  const estimate = plan.trim?.contextReductionEstimate;
+  return {
+    status: hasDbMemory ? 'ready' : 'not ready',
+    blockedReason: null,
+    rollbackSource: plan.trim?.source ?? 'unknown',
+    injectMemorySource: stats.source ?? 'unknown',
+    memoryContract: hasDbMemory
+      ? 'older L1 + latest 20 L2 full bodies + L3 references only'
+      : 'Throughline DB memory required; rollout preview is not injected',
+    l1Summaries: stats.l1Summaries ?? 0,
+    recentBodies:
+      typeof stats.recentBodies === 'number'
+        ? `${stats.recentBodies} rows (latest ${stats.recentTurnLimit ?? DEFAULT_TRIM_KEEP_RECENT} turns)`
+        : 'unknown',
+    l3References: stats.l3References ?? 0,
+    handoffSmoke,
+    safeContinuationStatus:
+      handoffSmoke?.status === 'ready'
+        ? 'fresh-thread-handoff-available'
+        : handoffSmoke
+          ? 'handoff-not-ready'
+          : null,
+    estimate: estimate
+      ? `${estimate.netEstimatedTokens} tokens (${estimate.reductionPct}%, ${estimate.method})`
+      : null,
+  };
 }
 
 export async function run(argv = []) {
@@ -324,6 +766,11 @@ export async function run(argv = []) {
 
   if (args.trim) {
     runTrimDiagnosis(args.host);
+    return;
+  }
+
+  if (args.codex) {
+    runCodexDiagnosis();
     return;
   }
 
@@ -391,6 +838,7 @@ export async function run(argv = []) {
   console.log('');
   console.log(`${DIM}ヒント: 特定セッションが止まって見えるときは ${RESET}throughline doctor --session <id-prefix>${DIM} で診断できます。${RESET}`);
   console.log(`${DIM}ヒント: trim の host 境界を見るには ${RESET}throughline doctor --trim --host claude${DIM} を使います。${RESET}`);
+  console.log(`${DIM}ヒント: Codex primary の入口を見るには ${RESET}throughline doctor --codex${DIM} を使います。${RESET}`);
 }
 
 // テスト用エクスポート
@@ -400,6 +848,11 @@ export const _internal = {
   formatBytes,
   runSessionDiagnosis,
   runTrimDiagnosis,
+  runCodexDiagnosis,
+  buildCodexContextRefreshDiagnosis,
+  readCodexHostPrimitiveDiagnosis,
+  readCodexHookDiagnosis,
+  readVsCodeMonitorTaskDiagnosis,
   isPidAlive,
   findLatestJsonlInSameDir,
 };

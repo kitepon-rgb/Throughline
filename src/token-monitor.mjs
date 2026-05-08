@@ -14,7 +14,8 @@
  *   - setInterval (1s) + mtime 差分検知で更新を捕捉
  *   - updatedAt 降順ソート、先頭行を ▶ でハイライト
  *   - stale は PID 生存チェックで判定
- *   - トークン数は transcript JSONL の最新 assistant usage を直読
+ *   - Claude は transcript JSONL の最新 assistant usage を直読
+ *   - Codex は Stop hook が state.usage に固定した rollout usage / estimate を表示
  */
 
 import { basename, dirname, join } from 'node:path';
@@ -191,7 +192,7 @@ function parseArgs(argv) {
 }
 
 // --- 表示 ---
-function renderBar(ratio, width = 20) {
+function renderBar(ratio, width = 10) {
   // NaN は 0、+Infinity は 1（オーバーフロー = 満タン表示）、負値 / -Infinity は 0 にクランプ
   let safe;
   if (Number.isNaN(ratio)) safe = 0;
@@ -288,11 +289,10 @@ export function resolveColumns() {
 function formatLine({ state, usage, isActive, now = Date.now() }) {
   const project = basename(state.projectPath || '?');
   const shortId = state.sessionId.slice(0, 8);
+  const host = state.host === 'codex' ? 'Codex' : state.host === 'unknown' ? 'Unknown' : 'Claude';
   const tokens = usage?.tokens ?? 0;
   const max = usage?.contextWindowSize ?? 200_000;
   const ratio = max > 0 ? tokens / max : 0;
-  const pct = Math.round(ratio * 100);
-  const remaining = Math.max(0, max - tokens);
 
   const bar = renderBar(ratio);
   const barColor =
@@ -310,11 +310,15 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
 
   const marker = isActive ? color(ANSI.bold + ANSI.cyan, '▶') : ' ';
   const projectCol = padCellsEnd(project, 18);
+  const hostCol = color(ANSI.dim, padCellsEnd(host, 6));
   const idCol = color(ANSI.dim, shortId);
   const barCol = color(barColor, bar);
-  const tokCol = `${formatNumber(tokens).padStart(6)} / ${pct.toString().padStart(3)}%`;
-  const remCol = color(ANSI.dim, `残 ${formatNumber(remaining)}`);
-  const modelCol = usage?.model ? color(ANSI.dim, usage.model) : color(ANSI.dim, '(未取得)');
+  const tokCol = `${formatNumber(tokens).padStart(6)} / ${formatNumber(max).padStart(6)}`;
+  const estimateMark = usage?.estimated ? ' est' : '';
+  const windowMark = usage?.contextWindowEstimated ? ' win?' : '';
+  const modelCol = usage?.model
+    ? color(ANSI.dim, `${usage.model}${estimateMark}${windowMark}`)
+    : color(ANSI.dim, '(未取得)');
   // 最終更新からの経過: 表示が「止まって見える」とき、それが idle なのか障害なのかを
   // 即座に判別できるようにする。updatedAt は state.writeSessionState 時の Date.now()。
   // 位置は session id の直後（左寄せ固定幅）。狭いターミナルでもモデル名より先に
@@ -325,7 +329,7 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
   // 8 セル固定: "just now" が最長 (8 セル)、"99d ago" は 7 セル。括弧なしで OK
   const agoCol = color(ANSI.dim, padCellsEnd(agoText, 8));
 
-  return `${marker} ${projectCol} ${idCol} ${agoCol} ${barCol} ${tokCol}  ${remCol}  ${modelCol}${warn}`;
+  return `${marker} ${projectCol} ${hostCol} ${idCol} ${agoCol} ${barCol} ${tokCol}  ${modelCol}${warn}`;
 }
 
 // --- フィルタ ---
@@ -428,8 +432,8 @@ function renderFrame(args) {
     for (let i = 0; i < filtered.length; i++) {
       const state = filtered[i];
       // Stop hook が state.usage に固定値を入れていればそれを使う（JSONL 再スキャン不要）。
-      // 旧バージョンが書いた state や usage スナップショットが取れなかったターンでは
-      // transcriptPath を直読してフォールバック。state 側の情報が 1 本化されると
+      // 旧バージョンが書いた Claude state や usage スナップショットが取れなかったターンでは
+      // transcriptPath を直読。state 側の情報が 1 本化されると
       // 「state が古い JSONL を指している」時の表示ブレが減る。
       const usage = state.usage
         ?? (state.transcriptPath ? readLatestUsage(state.transcriptPath) : null);

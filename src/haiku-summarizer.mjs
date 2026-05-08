@@ -2,9 +2,13 @@
  * haiku-summarizer.mjs — L1 要約生成
  *
  * 基本方針:
- *   - codex-sidecar diagnostics が configured なら、Codex sidecar で L2→L1 要約する。
- *   - codex-sidecar が disabled / unavailable なら、現行の Claude Haiku 要約に戻す。
- *   - どちらも失敗したら L2 全文を L1 に入れる（情報欠損ゼロ）。
+ *   - Claude primary では、codex-sidecar diagnostics が configured なら Codex sidecar で
+ *     L2→L1 要約する。
+ *   - Claude primary では、codex-sidecar が disabled / unavailable なら現行の Claude
+ *     Haiku 要約に戻す。
+ *   - Claude primary では、どちらも失敗したら L2 全文を L1 に入れる（情報欠損ゼロ）。
+ *   - Codex primary では、Codex CLI backend を使い、失敗時は Haiku / raw L2 へ
+ *     fallback せず explicit error にする。
  *
  * Claude Haiku 経路:
  *   Claude Max 契約前提。`claude -p --model claude-haiku-4-5-20251001`
@@ -46,7 +50,9 @@ const MODEL = 'claude-haiku-4-5-20251001';
 const MAX_RETRIES = 2;
 const TIMEOUT_MS = 30_000;
 const SIDECAR_TIMEOUT_MS = 10 * 60_000;
+const CODEX_CLI_TIMEOUT_MS = 60_000;
 const RECURSION_GUARD_ENV = 'THROUGHLINE_IN_HAIKU_SUBPROCESS';
+const CODEX_SUMMARIZER_GUARD_ENV = 'THROUGHLINE_IN_CODEX_SUMMARIZER';
 
 // 隔離 cwd: Throughline project-local 設定が見つからない空ディレクトリ
 const HAIKU_WORKDIR = join(homedir(), '.throughline', 'haiku-workdir');
@@ -66,6 +72,26 @@ function buildPrompt(l2Text) {
     `固有名詞・数値・因果関係を優先して残し、枝葉は落としてください。` +
     `要約文だけを出力し、前置きや説明は不要です。`
   );
+}
+
+function buildCodexPrompt(l2Text) {
+  return (
+    `${buildPrompt(l2Text)}\n\n` +
+    'Output contract:\n' +
+    '- Return only the summary text.\n' +
+    '- Do not include Markdown fences, JSON, labels, or commentary.\n\n' +
+    'Text to summarize is provided on stdin.'
+  );
+}
+
+function compactSubprocessStderr(stderr) {
+  if (!stderr) return '';
+  const compacted = String(stderr)
+    .split('\n')
+    .map((line) => (line.length > 600 ? `${line.slice(0, 600)} ...[line truncated]` : line))
+    .join('\n');
+  if (compacted.length <= 6_000) return compacted;
+  return `${compacted.slice(0, 1_500)}\n...[stderr truncated]...\n${compacted.slice(-3_500)}`;
 }
 
 function parseSidecarSummary(stdout) {
@@ -203,15 +229,92 @@ function summarizeWithHaiku(l2Text, prompt, env) {
   return { summary: l2Text, fromFallback: true, source: 'raw_l2' };
 }
 
+function summarizeWithCodexCli(l2Text, { projectPath, env }) {
+  if (!projectPath) {
+    const err = new Error('Codex CLI summarizer requires projectPath');
+    err.source = 'codex-cli';
+    err.reason = 'missing_project_path';
+    throw err;
+  }
+
+  if (env[CODEX_SUMMARIZER_GUARD_ENV] === '1') {
+    const err = new Error('Codex CLI summarizer recursion guard');
+    err.source = 'codex-cli';
+    err.reason = 'recursion_guard';
+    throw err;
+  }
+
+  const command = env.THROUGHLINE_CODEX_CLI_BIN ?? 'codex';
+  const prompt = buildCodexPrompt(l2Text);
+  const childEnv = { ...env, [CODEX_SUMMARIZER_GUARD_ENV]: '1' };
+  const result = spawnSync(
+    command,
+    [
+      'exec',
+      '--ephemeral',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--skip-git-repo-check',
+      '--sandbox',
+      'read-only',
+      '-C',
+      projectPath,
+      prompt,
+    ],
+    {
+      input: l2Text,
+      encoding: 'utf8',
+      timeout: CODEX_CLI_TIMEOUT_MS,
+      shell: process.platform === 'win32',
+      env: childEnv,
+      cwd: projectPath,
+    },
+  );
+
+  if (result.status !== 0) {
+    const err = new Error(`Codex CLI summarizer failed: exit ${result.status ?? 'unknown'}`);
+    err.source = 'codex-cli';
+    err.reason = 'codex_cli_failed';
+    err.exitCode = result.status;
+    err.stderr = compactSubprocessStderr(result.stderr);
+    throw err;
+  }
+
+  const summary = result.stdout?.trim();
+  if (!summary) {
+    const err = new Error('Codex CLI summarizer returned empty output');
+    err.source = 'codex-cli';
+    err.reason = 'empty_output';
+    err.stderr = compactSubprocessStderr(result.stderr);
+    throw err;
+  }
+
+  return { summary, fromFallback: false, source: 'codex-cli' };
+}
+
 /**
  * L2 本文を約 1/5 に要約する。
  * @param {string} l2Text ターンの会話本文（user+assistant を適当な形式で結合した文字列）
- * @param {{ projectPath?: string, env?: NodeJS.ProcessEnv }} [options]
+ * @param {{ projectPath?: string, env?: NodeJS.ProcessEnv, hostMode?: 'claude-primary' | 'codex-primary' | 'unknown' }} [options]
  * @returns {{ summary: string, fromFallback: boolean, source?: string, sidecarReason?: string }}
  */
-export function summarizeToL1(l2Text, { projectPath = null, env = process.env } = {}) {
+export function summarizeToL1(
+  l2Text,
+  { projectPath = null, env = process.env, hostMode = 'unknown' } = {},
+) {
   if (!l2Text || !l2Text.trim()) {
     return { summary: '(no content)', fromFallback: true, source: 'empty' };
+  }
+
+  if (hostMode === 'codex-primary') {
+    return summarizeWithCodexCli(l2Text, { projectPath, env });
+  }
+
+  if (hostMode !== 'claude-primary') {
+    const err = new Error('summarizeToL1 requires hostMode claude-primary or codex-primary');
+    err.source = 'unknown';
+    err.reason = 'unknown_host_mode';
+    throw err;
   }
 
   // 防御（念のため）: 自分自身が Haiku subprocess 内で呼ばれていたら再帰せず即フォールバック

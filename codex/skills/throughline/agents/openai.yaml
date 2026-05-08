@@ -1,0 +1,7 @@
+interface:
+  display_name: "Throughline"
+  short_description: "Operate Throughline memory, Codex capture, resume, and trim"
+  default_prompt: "Use $throughline to check capture, resume memory, summarize, inspect guarded Codex trim, or prepare a safe fresh-thread handoff without typing long commands."
+
+policy:
+  allow_implicit_invocation: true

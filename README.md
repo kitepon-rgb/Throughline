@@ -18,7 +18,7 @@
 
 ```bash
 npm install -g throughline
-throughline install     # registers hooks in ~/.claude/settings.json
+throughline install     # registers Claude hooks, Codex Stop hook, and Codex skill
 ```
 
 That's it. Open any Claude Code session and your turns flow into
@@ -26,6 +26,15 @@ That's it. Open any Claude Code session and your turns flow into
 `/clear` (or just open a new chat), then `/tl` first if you want the next
 session to inherit the memory — the new session resumes mid-thought instead
 of starting from zero.
+
+Global install also registers a Codex Stop hook in `~/.codex/hooks.json` and
+enables `[features].codex_hooks = true` in `~/.codex/config.toml`. The Codex
+hook invokes the installed `bin/throughline.mjs` through an absolute Node path,
+so Codex App Server PATH differences do not hide the command. It is registered
+synchronously (`async: false`), matching the Codex hook behavior verified in
+Caveat. Existing non-Throughline Codex hooks are preserved. It also installs a
+global `$throughline` Codex skill, so in Codex you can ask for Throughline
+status, resume, summarize, or trim without typing the full guarded command.
 
 ## How it compares
 
@@ -36,7 +45,7 @@ of starting from zero.
 | **`/clear` survival** | ✅ via SQLite + `/tl` baton | depends on host | ❌ |
 | **Auto-inheritance risk** | zero (explicit `/tl`) | high | — |
 | **Runtime deps** | **zero** (Node 22.5+ built-in `node:sqlite`) | many | — |
-| **Multi-session token monitor** | ✅ real `message.usage`, no `len/4` | — | — |
+| **Multi-session token monitor** | ✅ Claude real `message.usage`; Codex rollout `token_count` when available | — | — |
 
 <details>
 <summary><b>Why this matters — the 80% tool-I/O problem</b></summary>
@@ -100,7 +109,7 @@ flowchart LR
 
 | Layer | Name       | Where it lives        | Content                                                               | Cost per turn |
 | ----- | ---------- | --------------------- | --------------------------------------------------------------------- | ------------- |
-| **L1** | Skeleton  | injected when old     | one-line summary of the turn (Claude Haiku by default, optional Codex sidecar) | ~10 tok       |
+| **L1** | Skeleton  | injected when old     | one-line summary of the turn (current Claude-primary path: Claude Haiku, optional Codex sidecar) | ~10 tok       |
 | **L2** | Body      | injected when recent  | user text + assistant reply, verbatim                                 | full natural  |
 | **L3** | Detail    | SQLite only           | tool I/O, system messages, images, **extended thinking** (on-demand)  | heavy, retired |
 
@@ -119,10 +128,12 @@ injects it as plain text:
 - L3 stays in SQLite and is retrieved on demand via `/sc-detail <time>`
 
 L1 summaries are generated lazily: for sessions that stay under 20 turns, no
-external summarizer is invoked. By default Throughline uses **Claude Haiku 4.5**
+external summarizer is invoked. In the current Claude-primary path, Throughline uses **Claude Haiku 4.5**
 via a subprocess (`claude -p --model claude-haiku-4-5-*`), reusing your Claude
 Max login — no API key required. When `codex-sidecar` is explicitly configured
 for the `summarize-l1` preset, Throughline can use that instead.
+For Codex-primary capture, the L1 backend is the Codex CLI; failures are explicit
+and do not fall back to Claude Haiku or raw L2.
 
 All three layers (L1/L2/L3) have working write paths as of schema v5.
 `/sc-detail HH:MM:SS` returns user/assistant text (L2) plus a kind-grouped view
@@ -201,6 +212,24 @@ Useful inspection commands:
 
 ```bash
 throughline handoff-preview --session <id>
+throughline codex-summarize --session codex:<thread-id> --json
+throughline codex-resume --session codex:<thread-id>
+throughline codex-resume --session codex:<thread-id> --format handoff
+throughline codex-handoff-start --session codex:<thread-id>
+throughline codex-handoff-smoke --session codex:<thread-id>
+throughline codex-handoff-model-smoke --session codex:<thread-id> --dry-run --json
+THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1 \
+  throughline codex-handoff-model-smoke --session codex:<thread-id> --json
+throughline codex-resume --session codex:<thread-id> --format item-json
+printf '**Next move**: continue the Codex implementation\n' \
+  | throughline codex-resume --session codex:<thread-id> --memo-stdin
+printf '**Next move**: continue the Codex implementation\n' \
+  | THROUGHLINE_EXPERIMENTAL_CODEX_MODEL_VISIBLE_SMOKE=1 \
+      throughline codex-visibility-smoke --session codex:<thread-id> --memo-stdin \
+        --request-timeout-ms 150000 --json
+THROUGHLINE_EXPERIMENTAL_CODEX_MODEL_VISIBLE_SMOKE=1 \
+  throughline codex-visibility-smoke --session codex:<thread-id> \
+    --resume-after-inject --request-timeout-ms 180000 --json
 throughline codex-threads --limit 5
 throughline codex-sidecar-diagnostics --project . --preset review
 throughline codex-sidecar-dry-run --project . --preset risk-check \
@@ -214,35 +243,123 @@ Haiku path. This is an explicit compatibility mode, not silent auto-detection.
 
 `/tl-trim` starts from dry-run. It previews how many captured turns would be
 trimmed, what recent turns would remain, and what curated memory would need to
-be injected back. Codex also has a guarded preflight and experimental execute
-path, but automatic rollback / inject remains disabled. Throughline never
-guesses the active Codex thread: use `throughline codex-threads` to inspect
-read-only rollout candidates, then pass the chosen id explicitly. If a wrapper
-or host exports `THROUGHLINE_CODEX_THREAD_ID` or `CODEX_THREAD_ID`, `throughline
-trim --host codex` treats that as a current-thread identity signal; the CLI flag
-still wins when both are present. Throughline does not fall back to "latest
-rollout" guessing. When the chosen Codex thread has a current-project rollout,
+be injected back.
+
+**Codex rollback / inject is enabled again.** The 2026-05-06 incident initially
+looked like a rolled-back user prompt could reappear after VS Code restart /
+reconnect, but controlled model-visible rollback smokes did not reproduce that
+path. `throughline trim --execute --host codex` now sends the guarded
+rollback + Throughline DB memory injection when app-server turn-count guards and
+injectable DB memory are available. Codex Stop hook auto-refresh also attempts
+the same live refresh when verified usage reaches the 90% threshold.
+
+`throughline codex-host-primitive-audit` can inspect the installed Codex
+app-server schema read-only. On the current tested Codex CLI, it finds
+`thread/rollback`, `thread/inject_items`, and new-thread primitives, but no
+current-thread primitive that either clears/rewrites retained rollback sources
+or isolates/projects them away from model-visible input. This is now diagnostic
+evidence only, not an execute blocker. The audit also emits a host-agnostic same-thread repair contract:
+a passing design needs a current-thread non-resurrection primitive, rollback
+non-resurrection guarantee, memory reinjection, post-repair read verification,
+and a restart / reconnect non-resurrection smoke. VS Code evidence can inform
+that contract, but it is not itself the repair primitive.
+
+Dry-run and preflight also inspect planned rollback risk. If the user text that
+would be removed is already present in Codex `compacted.replacement_history`,
+Throughline reports `Planned rollback restore safety: risk` as diagnostic
+context, but it no longer refuses preflight or execute on that basis.
+
+The intended memory contract remains:
+older turns come back as L1 summaries, the latest 20 turns come back as full L2
+conversation bodies, and L3 remains detail references instead of inline tool
+payloads. Throughline never guesses the active Codex thread: use
+`throughline codex-threads` to inspect read-only rollout candidates, then pass
+the chosen id explicitly. If a wrapper or host exports
+`THROUGHLINE_CODEX_THREAD_ID` or `CODEX_THREAD_ID`, `throughline trim --host
+codex` treats that as a current-thread identity signal; the CLI flag still wins
+when both are present. Throughline does not fall back to "latest rollout"
+guessing. When the chosen Codex thread has a current-project rollout,
 `throughline trim` can use the rollout as the trim source even if the
 Throughline DB has no captured Codex turn bodies; rollback events in the rollout
-are applied before the active work memory preview is built. During Codex
-preflight / guarded execute, Throughline also compares the rollout active-turn
-count with app-server `thread/read` / `thread/resume` counts and refuses to
-mutate the thread if they differ. After guarded execute injects memory,
-Throughline polls `thread/read` briefly and reports a
-`postInjectVisibilityCheck`, because the app-server can acknowledge
-`thread/inject_items` before the injected item appears in a follow-up read.
+are applied before the rollback plan is built. When DB memory exists, the
+injected memory is built from the Throughline DB rather than from the rollout
+preview; guarded execute refuses instead of injecting a rollout preview when
+Throughline DB memory is absent. During Codex
+preflight, Throughline also compares the rollout active-turn count with
+app-server `thread/read` / `thread/resume` counts. The separate read-only
+`codex-restore-smoke` also checks paginated `thread/turns/list` counts across
+fresh app-server processes. These are live app-server guards only; they are not
+by themselves a durable restart-safe proof. The guarded
+execute path is enabled by explicit `--execute`; it may still report
+`execute-sent-live-only` or `execute-unverified` if durable rollout evidence is
+not observed. Throughline reports `execute-durable-verified` when the rollout
+records a new rollback marker and records the injected active-work memory.
+Developer memory injection is item-level on current Codex hosts and may not add a
+host-visible turn during the immediate post-inject read; Throughline therefore
+uses the `thread/inject_items` response shape to decide whether a turn-count
+increase should be expected.
+`doctor --codex` also reports this context-refresh readiness explicitly:
+rollback source, inject memory source, the L1/L2/L3 memory contract, current
+L1/L2/L3 counts, the heuristic reduction estimate when rollout text is
+available, and the host primitive audit status as diagnostic context. L3 is
+reported as references-only; L3 bodies and tool payloads are not injected.
+
+Codex trim dry-run reports a context reduction estimate when rollout text is
+available: rollback-candidate estimated tokens, injected-memory estimated
+tokens, and net estimated reduction. This is a `chars / 4` heuristic from the
+rollout text, not an exact host tokenizer measurement. If rollback candidate
+turns are `0`, there is no current trim saving under the active keep-recent
+setting.
+
+Claude primary remains manual-only for conversation rewind. Throughline can
+prepare the current-work memory preview, but it does not drive Claude Code's
+interactive rewind UI or claim an automatic Claude rewind path. After a manual
+conversation-only rewind, give Claude the preview from `/tl-trim` / `trim
+--dry-run`; the preview uses the same active-work framing as Codex so restored
+L1/L2 reads as the current task rather than as a passive archive.
+
+Codex-primary setup has an installed Stop hook after global
+`throughline install`. In real sessions, verify capture rather than assuming it:
+`doctor --codex` compares the current Codex thread with the latest captured DB
+session, and makes any missing Throughline DB advance visible. A Codex VSCode
+session that was already open before hook shape changes may not be a clean
+natural Stop smoke; use a newly started session or `codex exec` smoke for that
+check. A newly started VSCode-origin Codex session has been verified with
+matching `current Codex thread` and `latest DB session` in `doctor --codex`.
+The following commands are the explicit diagnostic, resume, smoke, and
+guarded trim surfaces:
 
 ```bash
 throughline doctor --trim --host claude
 throughline doctor --trim --host codex
+throughline doctor --codex
+throughline codex-capture --codex-thread-id <id> --json
+throughline codex-summarize --session codex:<id> --json
+throughline codex-resume --session codex:<id> --format handoff
+throughline codex-handoff-start --session codex:<id>
+throughline codex-handoff-smoke --session codex:<id> --json
+throughline codex-handoff-model-smoke --session codex:<id> --dry-run --json
+# optional model smoke; uses codex exec --ephemeral --sandbox read-only:
+# THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1 throughline codex-handoff-model-smoke --session codex:<id> --json
+printf '**Next move**: continue the current Codex task\n' \
+  | throughline codex-resume --session codex:<id> --memo-stdin
 printf '**Next move**: continue the current implementation\n' \
   | throughline trim --dry-run --host claude --memo-stdin
 throughline codex-threads --json --limit 5
 throughline trim --dry-run --host codex --codex-thread-id <id>
+throughline trim --dry-run --host codex --codex-thread-id <id> --preview-max-chars 4000
 throughline trim --preflight --host codex --codex-thread-id <id>
 CODEX_THREAD_ID=<id> throughline trim --preflight --host codex
-THROUGHLINE_EXPERIMENTAL_CODEX_TRIM=1 \
-  throughline trim --execute --host codex --codex-thread-id <id>
+# read-only app-server process restart smoke; not full VS Code restart-safe proof:
+# THROUGHLINE_EXPERIMENTAL_CODEX_RESTORE_SMOKE=1 throughline codex-restore-smoke --codex-thread-id <id> --json
+# read-only local restore source inventory; not full VS Code restart-safe proof:
+# throughline codex-restore-source-audit --codex-thread-id <id> --json
+# manual two-phase VS Code reload/reconnect smoke:
+# THROUGHLINE_EXPERIMENTAL_CODEX_VSCODE_RESTORE_SMOKE=1 throughline codex-vscode-restore-smoke --prepare --codex-thread-id <id> --json
+# after reloading/reconnecting VS Code and sending the printed prompt:
+# throughline codex-vscode-restore-smoke --verify --codex-thread-id <id> --marker <marker> --prepared-at <iso> --after-vscode-restart --json
+# explicit current-thread trim:
+throughline trim --execute --host codex --all --codex-thread-id <id>
 ```
 
 That current-work framing matters: the original `/tl` design learned that L1/L2
@@ -251,6 +368,125 @@ memo is one strong signal, but the broader mechanism is explicit structure:
 recent L2 is labeled as an active work thread, older hypotheses may be
 superseded by later entries, and the continuation instruction appears at the
 top and bottom of the injected memory.
+
+For Codex-primary sessions, `throughline codex-capture --codex-thread-id <id>`
+stores active rollout turns under `codex:<thread_id>`, and `throughline
+codex-summarize --session codex:<thread_id>` can write older captured L2 turns
+to L1 with the Codex CLI backend. `throughline codex-resume --session
+codex:<thread_id>` renders that memory as an active-work context. `--format
+handoff` renders a shorter prompt for starting a new Codex thread without
+mutating the old one; it caps recent L2 entries, long body text, and detail
+references while pointing back to the full `codex-resume` context. `--format
+item-json` returns a Codex developer-message item for hosts that accept
+structured item injection; it is a rendering surface only and does not mutate
+the Codex thread by itself. `--memo-stdin` prepends an explicit Codex-primary
+in-flight memo to that rendered context; this is the first Codex-side equivalent
+of `/tl`'s "what was I about to do next" signal, without touching Claude batons.
+`throughline codex-visibility-smoke` is the experimental mutation check for
+that rendered memory: it injects the active-work developer message and starts a
+marker-check model turn through the Codex app-server, so it requires the
+`THROUGHLINE_EXPERIMENTAL_CODEX_MODEL_VISIBLE_SMOKE=1` opt-in. In local real-host
+smoke testing, the marker appeared in `item/agentMessage/delta`; use
+`--resume-after-inject` to verify injected memory still survives a second
+`thread/resume` before `turn/start`, and use `--request-timeout-ms` /
+`--timeout-ms` when the model turn may take longer than the default wait.
+`throughline codex-restore-smoke` is the read-only restart diagnostic for the
+same boundary: it starts fresh Codex app-server processes and compares
+`thread/read` / `thread/resume` / paginated `thread/turns/list` turn counts with
+the rollout active turn count. Its proof scope is
+`app_server_process_restart_only`; even a passing result is not VS Code
+restart-safe proof for rollback / inject. With `--inspect-risky-rollout`, it can
+inspect a risky rollout read-only; if retained rollback text appears in
+app-server responses, the status becomes `app-server-restore-text-retained`
+when it appears in blocking candidates such as direct turn text or
+`replacement_history`, or `app-server-restore-text-quoted` when it appears only
+inside quoted/tool-output fields such as `aggregatedOutput`. The text-match
+report includes sample JSON paths, location kinds, risk classes, and
+`blocking-candidates` so quoted old output is not confused with resurrected user
+message fields.
+`throughline codex-restore-source-audit` is the local inventory companion: it
+checks the Codex rollout, `session_index.jsonl`, `state_*.sqlite`, and VS Code
+globalStorage / workspaceStorage candidates, VS Code `settings.json`, and VS
+Code logs for the chosen thread id and retained rollback text. SQLite-backed VS
+Code storage candidates such as `.vscdb`, `.sqlite`, `.sqlite3`, and `.db` are
+opened read-only and summarized by table / column / needle matches. It also
+scans installed OpenAI/Codex VS Code extension bundles for restore-path signals
+such as `thread/read`, `thread/resume`, `thread/turns/list`, reconnect
+`needs_resume`, persisted webview atoms, follow-up queue signals, and explicit
+rollback non-resurrection projection candidates such as `replacement_history`
+filter / tombstone paths. A match here is static evidence only; current tested storage roots can still report
+`VS Code storage matches: 0` for the selected thread and retained rollback text.
+VS Code log matches are also classified into thread-id hits, retained rollback
+text hits, patch-apply failures, thread stream broadcasts, and
+`replacement_history` signals so incidental log mentions can be separated from
+restore-path evidence.
+Its proof scope is `local_restore_source_inventory_only`; it can narrow the
+restore-source hypothesis, but it still does not prove VS Code restart safety.
+These VS Code scans are diagnostics only. The product repair path remains the
+host-agnostic same-thread contract reported by `codex-host-primitive-audit`, not
+a VS Code-only implementation path.
+`throughline codex-vscode-restore-smoke` is the manual full-boundary protocol:
+`--prepare` injects a hidden active-work developer-memory marker, then VS Code
+must be reloaded or reconnected and asked a prompt that does not contain the
+marker. `--verify` scans the rollout for a marker answer after the prepare
+timestamp and rejects the proof if the marker leaked through the user prompt.
+Only a marker-free smoke prompt followed by an assistant answer whose trimmed
+text exactly equals the marker, plus `--after-vscode-restart`, is treated as
+`restartSafe: true`; prepare remains an explicit experiment gated by
+`THROUGHLINE_EXPERIMENTAL_CODEX_VSCODE_RESTORE_SMOKE=1`. A real VS Code
+reload/reconnect run has passed this marker proof, showing hidden developer
+memory can remain model-visible after reconnect. That is not the same as
+proving rollback-targeted user turns cannot resurrect, so rollback-specific
+smokes remain the stronger diagnostic boundary.
+`throughline codex-vscode-rollback-smoke --verify --after-vscode-restart` is
+the read-only verifier for that next proof: it requires a rollback event,
+rolled-back user text, a later user turn, and `restoreSafety: ok` before it
+will report `restartSafe: true`.
+`throughline codex-rollback-model-visible-smoke` is a stricter controlled
+experiment for the current thread: `--prepare` creates a unique user marker and
+rolls that turn back, while `--verify` later starts a model turn that contains
+only the marker prefix, not the full marker. It reports `reproduced` only if the
+model returns the hidden full marker. This mutates the thread and is gated by
+`THROUGHLINE_EXPERIMENTAL_CODEX_ROLLBACK_MODEL_VISIBLE_SMOKE=1`. Use
+`--marker-file <path>` for live runs so the full marker is stored locally instead
+of being printed into the same conversation being tested. Verify output reports
+`rolledBackMarkerModelVisible` separately from `restartSafe`. In a controlled
+2026-05-08 current-thread run, both the immediate fresh app-server verify and
+the post VS Code reload/reconnect verify returned `not-reproduced` with no full
+marker in the prompt or observed assistant output.
+
+A 2026-05-07 incident-shaped live rollback run produced useful risk evidence:
+`thread_rolled_back` and injected active-work memory were recorded in the
+rollout, but rollback-targeted user text remained in
+`compacted.replacement_history`, and the verifier later observed rolled-back
+user text reappearing in rollout/app-server diagnostics (`restoreSafety:
+risk`). A later risky restore inspection found those retained matches only
+inside `aggregatedOutput`, so this is not yet proof that the text is sent as a
+fresh user message or model-visible input. Because the controlled reproduction
+smoke stayed clean across app-server restart and VS Code reload/reconnect,
+Throughline no longer blocks Codex trim solely on this diagnostic risk.
+
+For Codex, fresh-thread handoff remains an explicit continuation path in trim
+plans and trim diagnostics, but it is not a replacement for current-thread
+trim. The guided entrypoint is
+`throughline codex-handoff-start --session codex:<thread-id>`; it shows the
+structural smoke, model-smoke dry-run boundary, handoff render command, optional
+live model smoke, and can include the prompt with `--print-prompt`. With
+`--memo-stdin`, it also propagates `--memo-stdin` into the replay commands and
+reminds you to pipe the same memo when using them separately. The
+individual commands remain available: validate the fresh-thread handoff with
+`throughline codex-handoff-smoke --session codex:<thread-id>`, optionally audit
+the model-smoke boundary with
+`throughline codex-handoff-model-smoke --session codex:<thread-id> --dry-run --json`,
+render it with `throughline codex-resume --session codex:<thread-id> --format handoff`,
+then start a new Codex thread with that context. This does not mutate the current
+thread. `trim --execute --host codex` is the current-thread mutation path and
+still requires explicit execution, injectable Throughline DB memory, and
+rollout/app-server turn-count agreement.
+Human-readable dry-run output truncates the inline memory preview for scanability;
+the full text remains in `--json` as `memoryPreview.text`, and for Codex the
+fresh-thread continuation can be guided with `codex-handoff-start` or rendered
+directly with the `codex-resume` command shown in the fresh-thread continuation path.
 
 ---
 
@@ -264,24 +500,38 @@ throughline monitor --all      # every project, every session
 throughline monitor --session <id-prefix>
 ```
 
-Example output (real values from a running 1M-context Opus session):
+Example output:
 
 ```
 [Throughline] 1 セッション
-▶ Throughline       2ed5039c  ████░░░░░░░░░░░░░░░░  205.1k /  21%  残 794.9k  claude-opus-4-6
+▶ Throughline       Claude 2ed5039c just now ██░░░░░░░░  205.1k /   1.0M  claude-opus-4-6
+  Throughline       Codex  codex:01 just now ██████░░░░  151.9k / 258.4k  gpt-5.5
 ```
 
-- **Token counts are accurate.** Read straight from the latest `message.usage`
-  field in the session transcript JSONL, which is what Anthropic's API actually
-  reported (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`).
+- **Claude token counts are accurate.** Read straight from the latest
+  `message.usage` field in the session transcript JSONL, which is what
+  Anthropic's API actually reported
+  (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`).
   No `length / 4` approximation.
+- **Codex token counts use the rollout `token_count` event when present.** The
+  Codex Stop hook writes `codex:<thread_id>` monitor state and snapshots the
+  latest verified rollout `token_count` sample. If a Codex rollout has no
+  token-count event, Throughline can store an explicit estimate with
+  `estimated: true` and the monitor marks it with `est`; it is not presented as
+  exact usage.
+- **Codex auto-refresh mutates at the verified 90% threshold.** The Codex Stop
+  hook captures DB memory, writes monitor state, and when verified usage reaches
+  the threshold it attempts rollback + Throughline DB memory injection for the
+  current thread.
 - **1M-context detection** is automatic. It checks the `[1m]` suffix in the
   transcript, falls back to string matching on `1M context`, and finally
   promotes to 1M if observed usage exceeds 200k.
-- **Multi-session view.** Each Claude Code session writes its own state file
-  (`~/.throughline/state/<session_id>.json`). The monitor scans the directory
-  every second and displays one row per live session, sorted by last activity.
-  The most recent one is highlighted with `▶`.
+- **Multi-session view.** Each Claude Code or Codex session writes its own
+  state file (`~/.throughline/state/<session_id>.json`). Codex session ids are
+  stored as `codex:<thread_id>` in the JSON payload; filenames are URL-encoded
+  so the state directory remains portable. The monitor scans the directory every
+  second and displays one row per live session, sorted by last activity. The
+  most recent one is highlighted with `▶`.
 - **Stale hiding.** Sessions that haven't been touched in 15 minutes drop out of
   the default view; files older than 24 hours are deleted entirely. This is the
   only time threshold in the system and is used solely for display hygiene — no
@@ -312,7 +562,11 @@ Example output (real values from a running 1M-context Opus session):
   file. The monitor prefers this snapshot over re-reading the JSONL, which
   removes a source of flicker when the transcript path in state drifts from
   the one Claude Code is currently appending to.
-- **Non-blocking Stop hook (v0.3.22+).** The Stop hook is registered with
+- **Host-aware state.** Missing `host` means an older Claude state file.
+  Codex states use `host: "codex"`, keep `transcriptPath: null`, and store the
+  Codex rollout path separately as `rolloutPath` so the Claude transcript parser
+  is never pointed at a Codex rollout.
+- **Non-blocking Claude Stop hook (v0.3.22+).** The Claude Stop hook is registered with
   `"async": true` so `throughline process-turn` runs in the background and
   does not delay Claude's reply from reaching you. L1 Haiku summarization
   (`claude -p` subprocess + inference, seconds to tens of seconds) would
@@ -344,6 +598,10 @@ Once per project it inspects `.vscode/tasks.json`:
   one-time notice to stderr asking you to paste the snippet below.
 - **Already contains a Throughline Monitor task** → does nothing (idempotent;
   this is the common path on every subsequent turn; notice is silent).
+
+For Codex-primary projects, hook stdout is not always surfaced in the chat.
+`throughline doctor --codex` therefore reports the VS Code monitor task status,
+its `runOn` value, and the same Reload Window note in a visible diagnostic.
 
 The generated task uses `type: 'shell'` with the absolute path to Node and
 `bin/throughline.mjs`. VS Code wraps shell tasks in a PTY (xterm.js) so the
@@ -386,21 +644,37 @@ entry to the `tasks` array yourself:
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
-| `throughline install`                          | Register hooks in `~/.claude/settings.json` (user scope)     |
-| `throughline install --project`                | Register hooks in `.claude/settings.json` for this repo only |
-| `throughline uninstall`                        | Remove Throughline hooks from the settings file              |
+| `throughline install`                          | Register Claude user hooks/slash commands, the global Codex Stop hook, and the global `$throughline` Codex skill |
+| `throughline install --project`                | Register Claude hooks/slash commands in this repo only       |
+| `throughline uninstall`                        | Remove Throughline-managed Claude hooks/slash commands, only the Throughline-managed Codex hook, and the `$throughline` Codex skill |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
 | `throughline monitor --diag`                   | Dump TTY/columns/env diagnostics (for debugging monitor render bugs) |
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
 | `throughline save-inflight`                    | Called by `/tl` to attach an in-flight memo (stdin) to the current baton |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |
 | `throughline doctor --session <id-prefix>`     | Diagnose a specific session — detect state/transcript drift, idle vs. stuck |
-| `throughline doctor --trim --host claude`      | Diagnose trim host boundaries and manual procedure            |
+| `throughline doctor --trim --host claude\|codex` | Diagnose trim host boundaries, manual procedure, and Codex host primitive blockage |
+| `throughline doctor --codex`                   | Diagnose Codex primary entry state, captured DB sessions, context-refresh memory contract, new-thread handoff readiness, safe continuation status, and host primitive audit |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
+| `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
+| `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |
+| `throughline codex-resume --session codex:<id>` | Render Codex active-work context from a captured Codex session |
+| `throughline codex-resume --session codex:<id> --format handoff` | Render a concise fresh-thread handoff prompt without mutating the current thread |
+| `throughline codex-handoff-start --session codex:<id>` | Guided read-only start plan for moving the handoff prompt into a new Codex thread; use `--print-prompt` to include the prompt and `--memo-stdin` to carry a current-work memo |
+| `throughline codex-handoff-smoke --session codex:<id>` | Read-only validation that the fresh-thread handoff prompt is pasteable before starting a new thread |
+| `throughline codex-handoff-model-smoke --session codex:<id>` | Experimental marker smoke for the handoff prompt. `--dry-run` checks readiness / command boundary without starting Codex exec; `--memo-stdin` carries a current-work memo; live `codex exec --ephemeral --sandbox read-only` requires explicit env opt-in |
+| `throughline codex-visibility-smoke --session codex:<id>` | Experimental Codex app-server marker smoke; injects memory and starts a model turn |
+| `throughline codex-restore-smoke --codex-thread-id <id>` | Experimental read-only app-server restart restore smoke; `--inspect-risky-rollout` classifies retained rollback text as blocking retained text or quoted/tool-output text; does not prove VS Code restart safety |
+| `throughline codex-restore-source-audit --codex-thread-id <id>` | Read-only local restore-source inventory, including VS Code projection-candidate facts; does not prove VS Code restart safety |
+| `throughline codex-host-primitive-audit`       | Read-only Codex app-server schema audit for same-thread rollback non-resurrection primitives and the host-agnostic repair contract |
+| `throughline codex-vscode-restore-smoke --prepare/--verify --codex-thread-id <id>` | Manual VS Code reload/reconnect marker proof protocol |
+| `throughline codex-vscode-rollback-smoke --verify --codex-thread-id <id>` | Manual VS Code rollback non-resurrection verifier |
 | `throughline codex-threads`                    | List read-only Codex thread id candidates for the current project |
 | `throughline codex-sidecar-diagnostics`        | Check `codex-sidecar` diagnostics status for this project     |
 | `throughline codex-sidecar-dry-run`            | Print a normalized read-only sidecar request without running the app server |
 | `throughline trim --dry-run`                   | Preview `/tl-trim` context trim memory and host boundary; does not rollback automatically |
+| `throughline trim --preflight --host codex`    | Read/resume the explicit Codex thread and verify turn-count guards without rollback/inject |
+| `throughline trim --execute --host codex`      | Explicit Codex rollback-inject path; requires Codex thread identity, injectable DB memory, and rollout/app-server turn-count agreement |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
 
@@ -663,8 +937,12 @@ the folder in VS Code.
 - [`docs/throughline-rollback-context-trim-insight.md`](docs/throughline-rollback-context-trim-insight.md) —
   design insight for context rollback/trim, including why restored memory must
   be framed as current work rather than passive history.
+- [`docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md`](docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md) —
+  current next-phase TODO plan: Codex primary first, Codex rewind-compatible
+  trim next, Claude rewind finalization after that.
 - [`docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md`](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) —
-  integrated TODO plan for Claude/Codex dual support and rollback trim.
+  historical integrated TODO plan and implementation record for Claude/Codex
+  dual support and rollback trim.
 - [`docs/PUBLIC_RELEASE_PLAN.md`](docs/PUBLIC_RELEASE_PLAN.md) — public
   release plan, implementation status by version, § 0 fallback rule, and
   remaining tasks.

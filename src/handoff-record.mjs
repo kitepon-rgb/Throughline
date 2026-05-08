@@ -8,6 +8,7 @@
 
 export const HANDOFF_RECORD_VERSION = 1;
 export const N_RECENT_L2 = 20;
+export const CODEX_SESSION_PREFIX = 'codex:';
 
 const DEFAULT_INTENT = 'continue implementation';
 const DEFAULT_CONSTRAINTS = [
@@ -55,30 +56,47 @@ function distinctOriginSessionIds(...rowGroups) {
   return [...ids].sort();
 }
 
+function inferSourceAdapter(sessionId, originSessionIds) {
+  const ids = [sessionId, ...originSessionIds].filter(Boolean);
+  if (ids.length > 0 && ids.every((id) => String(id).startsWith(CODEX_SESSION_PREFIX))) {
+    return 'codex';
+  }
+  return 'claude';
+}
+
 function loadBodies(db, { sessionId, excludeOriginId, recentTurnLimit }) {
   const hasExclude = Boolean(excludeOriginId);
   const bodiesQuery = hasExclude
     ? `SELECT origin_session_id, turn_number, role, text, created_at
        FROM bodies
        WHERE session_id = ? AND origin_session_id != ?
-       ORDER BY created_at DESC
-       LIMIT ?`
+       ORDER BY created_at DESC`
     : `SELECT origin_session_id, turn_number, role, text, created_at
        FROM bodies
        WHERE session_id = ?
-       ORDER BY created_at DESC
-       LIMIT ?`;
+       ORDER BY created_at DESC`;
 
-  const limitRows = recentTurnLimit * 2; // user/assistant の 2 ロール分
   let desc = [];
   try {
     desc = hasExclude
-      ? db.prepare(bodiesQuery).all(sessionId, excludeOriginId, limitRows)
-      : db.prepare(bodiesQuery).all(sessionId, limitRows);
+      ? db.prepare(bodiesQuery).all(sessionId, excludeOriginId)
+      : db.prepare(bodiesQuery).all(sessionId);
   } catch {
     desc = [];
   }
-  return desc.reverse();
+
+  const selectedTurns = new Set();
+  const selectedRows = [];
+  for (const row of desc) {
+    const key = `${row.origin_session_id}\x00${row.turn_number}`;
+    if (!selectedTurns.has(key)) {
+      if (selectedTurns.size >= recentTurnLimit) continue;
+      selectedTurns.add(key);
+    }
+    selectedRows.push(row);
+  }
+
+  return selectedRows.reverse();
 }
 
 function loadL1Summaries(db, { sessionId, excludeOriginId, bodyRows }) {
@@ -228,7 +246,7 @@ export function buildHandoffRecord(
       mergedInto: session?.merged_into ?? null,
     },
     source: {
-      adapter: 'claude',
+      adapter: inferSourceAdapter(sessionId, originSessionIds),
       inheritance: Boolean(isInheritance),
       excludeOriginId: excludeOriginId ?? null,
       originSessionIds,

@@ -219,7 +219,10 @@ export async function run() {
         userRow ? { content: userRow.text } : null,
         asstRow ? { content: asstRow.text } : null,
       );
-      const { summary } = summarizeToL1(l2ForSummary, { projectPath: cwd ?? process.cwd() });
+      const { summary } = summarizeToL1(l2ForSummary, {
+        projectPath: cwd ?? process.cwd(),
+        hostMode: 'claude-primary',
+      });
 
       db.prepare(
         `INSERT OR IGNORE INTO skeletons

@@ -2,12 +2,12 @@
  * state-file.mjs — セッション単位の状態ファイル管理（共有モジュール）
  *
  * パス: ~/.throughline/state/<session_id>.json
- * 書き手: turn-processor (Stop)
+ * 書き手: turn-processor (Claude Stop), codex-hook (Codex Stop)
  * 読み手: token-monitor
  *
  * 設計判断 (docs/PUBLIC_RELEASE_PLAN.md §4.5/4.6):
  *   - ファイル単位分割で last-writer-wins 問題を解消
- *   - PID 生存チェックで stale 削除（時間窓は使わない）
+ *   - updatedAt ベースで stale 判定（短命 hook process の PID には依存しない）
  *   - projectPath は path.resolve → / → 末尾 / 除去 → Windows lowercase で正規化
  */
 
@@ -37,21 +37,43 @@ export function normalizeProjectPath(p) {
 
 /**
  * セッション状態ファイルを書く
- * @param {{sessionId: string, projectPath: string, transcriptPath: string, pid: number, usage?: object|null}} data
+ * @param {{
+ *   sessionId: string,
+ *   projectPath: string,
+ *   transcriptPath?: string|null,
+ *   rolloutPath?: string|null,
+ *   pid?: number,
+ *   usage?: object|null,
+ *   host?: 'claude'|'codex',
+ * }} data
  *
  * usage: monitor が表示する tokens/model/contextWindowSize をここに固定保存する。
  * Stop hook が readLatestUsage の結果を載せることで、monitor 側が毎フレーム JSONL を
  * 再スキャンする必要がなくなる。旧バージョン互換のため optional (無ければ monitor が
  * transcriptPath を読んでフォールバック)。
  */
-export function writeSessionState({ sessionId, projectPath, transcriptPath, pid, usage }) {
+export function writeSessionState({
+  sessionId,
+  projectPath,
+  transcriptPath,
+  rolloutPath,
+  pid,
+  usage,
+  host,
+}) {
   if (!sessionId) throw new Error('writeSessionState: sessionId is required');
+  const normalizedHost = normalizeHost(host);
+  if (host && normalizedHost === 'unknown') {
+    throw new Error(`writeSessionState: unsupported host ${host}`);
+  }
   if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
-  const file = join(STATE_DIR, `${sessionId}.json`);
+  const file = join(STATE_DIR, stateFilename(sessionId));
   const payload = {
     sessionId,
+    host: normalizedHost === 'unknown' ? 'claude' : normalizedHost,
     projectPath: normalizeProjectPath(projectPath),
     transcriptPath: transcriptPath ?? null,
+    rolloutPath: rolloutPath ?? null,
     pid: pid ?? process.pid,
     updatedAt: Date.now(),
   };
@@ -69,7 +91,7 @@ export const STALE_DELETE_MS = 24 * 60 * 60 * 1000; // 24 時間: ファイル�
 /**
  * 全セッション状態を読む。24 時間超のファイルは削除、壊れたファイルも削除する。
  * 15 分超のファイルは「stale」フラグを付けて返す（monitor 側で隠す判断をする）。
- * @returns {Array<{sessionId: string, projectPath: string, transcriptPath: string|null, updatedAt: number, stale: boolean}>}
+ * @returns {Array<{sessionId: string, host: string, projectPath: string, transcriptPath: string|null, rolloutPath: string|null, updatedAt: number, stale: boolean}>}
  */
 export function readAllSessionStates() {
   if (!existsSync(STATE_DIR)) return [];
@@ -112,6 +134,7 @@ export function readAllSessionStates() {
       }
       continue;
     }
+    parsed = normalizeState(parsed);
     const age = now - (parsed.updatedAt ?? 0);
     if (age > STALE_DELETE_MS) {
       // 24h 超: ハード削除（無制限蓄積防止）
@@ -126,6 +149,27 @@ export function readAllSessionStates() {
     results.push(parsed);
   }
   return results;
+}
+
+function stateFilename(sessionId) {
+  return `${encodeURIComponent(sessionId)}.json`;
+}
+
+function normalizeHost(host) {
+  if (host === undefined || host === null || host === '') return 'claude';
+  if (host === 'claude' || host === 'codex') return host;
+  return 'unknown';
+}
+
+function normalizeState(parsed) {
+  const host = normalizeHost(parsed?.host);
+  return {
+    ...parsed,
+    host,
+    projectPath: normalizeProjectPath(parsed?.projectPath ?? ''),
+    transcriptPath: parsed?.transcriptPath ?? null,
+    rolloutPath: parsed?.rolloutPath ?? null,
+  };
 }
 
 /**
