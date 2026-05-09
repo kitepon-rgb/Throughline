@@ -126,7 +126,7 @@ test('codex-hook stop captures rollout using Codex stdin payload fields', async 
   }
 });
 
-test('codex-hook stop runs auto refresh when verified usage reaches 80%', async () => {
+test('codex-hook stop runs auto refresh when verified usage reaches 75%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
@@ -187,7 +187,7 @@ test('codex-hook stop runs auto refresh when verified usage reaches 80%', async 
   }
 });
 
-test('codex-hook user-prompt-submit injects current-session throughline instruction at 80%', async () => {
+test('codex-hook user-prompt-submit injects current-session throughline instruction at 75%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
@@ -244,7 +244,7 @@ test('codex-hook user-prompt-submit injects current-session throughline instruct
   }
 });
 
-test('codex-hook user-prompt-submit stays quiet below 80%', async () => {
+test('codex-hook user-prompt-submit stays quiet below 75%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
@@ -290,7 +290,7 @@ test('codex-hook user-prompt-submit stays quiet below 80%', async () => {
   }
 });
 
-test('codex-hook post-tool-use injects current-session throughline instruction at 80%', async () => {
+test('codex-hook post-tool-use injects current-session throughline instruction at 75%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';

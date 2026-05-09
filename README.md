@@ -36,7 +36,7 @@ differences do not hide the command. They are registered synchronously
 (`async: false`), matching the Codex hook behavior verified in Caveat. Existing
 non-Throughline Codex hooks are preserved. The prompt and tool-loop hooks read
 the current rollout `token_count` themselves and inject `$throughline` at the
-verified 80% threshold; token-monitor is display-only and is never the trigger
+verified 75% threshold; token-monitor is display-only and is never the trigger
 source. It also installs a global `$throughline` Codex skill. Bare
 `$throughline` runs the scripted current-thread rollback + Throughline DB memory
 injection directly; ask explicitly for status, resume, summarize, diagnostics,
@@ -255,7 +255,7 @@ path. `throughline trim --execute --host codex` now sends the guarded
 rollback + Throughline DB memory injection when app-server turn-count guards and
 injectable DB memory are available. Codex current-session auto-refresh is not a
 token-monitor feature: the Codex `UserPromptSubmit` hook reads the current
-rollout `token_count` and, at the verified 80% threshold, injects a same-session
+rollout `token_count` and, at the verified 75% threshold, injects a same-session
 instruction to run the installed `$throughline` workflow before answering. The
 Codex Stop hook still attempts the guarded live refresh when it naturally fires,
 so non-monitor users get the same threshold behavior.
@@ -537,7 +537,7 @@ Example output:
   presented as exact usage.
 - **Codex auto-refresh is driven by the current Codex session, not the monitor.**
   The Codex `UserPromptSubmit` and `PostToolUse` hooks capture rollout memory
-  and, when verified usage reaches 80%, inject a current-session `$throughline`
+  and, when verified usage reaches 75%, inject a current-session `$throughline`
   instruction before the assistant answers or continues a tool loop. The Codex
   Stop hook also captures DB memory, writes monitor state, and attempts guarded
   rollback + Throughline DB memory injection when it naturally fires above the

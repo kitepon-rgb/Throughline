@@ -123,6 +123,41 @@ function loadL1Summaries(db, { sessionId, excludeOriginId, bodyRows }) {
   return all.filter((s) => !bodySet.has(`${s.origin_session_id}\x00${s.turn_number}`));
 }
 
+/**
+ * L1 ターンの元 body 時刻 (created_at MIN) を batch lookup する。
+ * skeletons.created_at は要約実行時刻なので `throughline detail HH:MM:SS` 解決に
+ * 使えない。元 body は trim 後も bodies テーブルに残っているのが通常で、
+ * (session_id, origin_session_id, turn_number) で MIN を引けば原ターンの時刻が得られる。
+ */
+function loadL1BodyTimes(db, sessionId, l1Rows) {
+  if (!l1Rows || l1Rows.length === 0) return new Map();
+  const tuples = l1Rows
+    .filter((r) => r.origin_session_id != null && r.turn_number != null)
+    .map((r) => [r.origin_session_id, Number(r.turn_number)]);
+  if (tuples.length === 0) return new Map();
+
+  const placeholders = tuples.map(() => '(?, ?, ?)').join(', ');
+  const params = tuples.flatMap(([origin, turn]) => [sessionId, origin, turn]);
+
+  const out = new Map();
+  try {
+    const rows = db
+      .prepare(
+        `SELECT origin_session_id, turn_number, MIN(created_at) AS created_at
+         FROM bodies
+         WHERE (session_id, origin_session_id, turn_number) IN (VALUES ${placeholders})
+         GROUP BY origin_session_id, turn_number`,
+      )
+      .all(...params);
+    for (const r of rows) {
+      out.set(`${r.origin_session_id}\x00${r.turn_number}`, r.created_at);
+    }
+  } catch {
+    // body が無い defensive ケースでは bodyTime null のまま (renderer 側で skeleton 時刻 fallback)
+  }
+  return out;
+}
+
 function loadLatestThinking(db, { sessionId, excludeOriginId }) {
   const hasExclude = Boolean(excludeOriginId);
   const latestQuery = hasExclude
@@ -234,6 +269,7 @@ export function buildHandoffRecord(
   }
 
   const l3References = loadL3References(db, { sessionId, bodyRows });
+  const l1BodyTimes = loadL1BodyTimes(db, sessionId, l1Rows);
   const originSessionIds = distinctOriginSessionIds(bodyRows, l1Rows, thinkingRows);
 
   return {
@@ -263,14 +299,21 @@ export function buildHandoffRecord(
         time: formatTime(r.created_at),
         sourceId: r.source_id ?? null,
       })),
-      l1Summaries: l1Rows.map((r) => ({
-        originSessionId: r.origin_session_id,
-        turnNumber: r.turn_number,
-        role: r.role,
-        summary: r.summary,
-        createdAt: r.created_at,
-        time: formatTime(r.created_at),
-      })),
+      l1Summaries: l1Rows.map((r) => {
+        const bodyTimeMs = l1BodyTimes.get(`${r.origin_session_id}\x00${r.turn_number}`);
+        return {
+          originSessionId: r.origin_session_id,
+          turnNumber: r.turn_number,
+          role: r.role,
+          summary: r.summary,
+          createdAt: r.created_at,
+          time: formatTime(r.created_at),
+          // 元ターンの body 時刻。`throughline detail HH:MM:SS` 解決に使える時刻。
+          // body が無い defensive ケースでは null。
+          bodyTimeMs: bodyTimeMs ?? null,
+          bodyTime: bodyTimeMs != null ? formatTime(bodyTimeMs) : null,
+        };
+      }),
       recentBodies: bodyRows.map((r) => ({
         originSessionId: r.origin_session_id,
         turnNumber: r.turn_number,

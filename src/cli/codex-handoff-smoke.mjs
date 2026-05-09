@@ -101,7 +101,7 @@ function renderTextResult(result) {
   lines.push(`  L1 summaries:           ${result.l1Summaries}`);
   lines.push(`  recent L2 bodies:       ${result.recentBodies}`);
   lines.push(`  L3 references:          ${result.l3References}`);
-  lines.push(`  rendered detail cmds:   ${result.renderedDetailCommands}`);
+  lines.push(`  rendered detail suffixes: ${result.renderedDetailSuffixes}`);
   lines.push('');
   lines.push('  checks:');
   for (const check of result.checks) {

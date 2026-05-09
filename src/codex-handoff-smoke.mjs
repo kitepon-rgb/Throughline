@@ -13,9 +13,12 @@ function addCheck(checks, { id, status, reason }) {
   checks.push({ id, status, reason });
 }
 
-function findDetailCommands(text) {
-  const matches = text.match(/throughline detail \d\d:\d\d:\d\d/g) ?? [];
-  return matches;
+/**
+ * 新仕様: 各 L1/L2 行末尾の `(詳細：…)` suffix を抽出する。
+ * 旧版の `throughline detail HH:MM:SS` 列挙は廃止 (groupL3ByTurn が turn 単位で集約)。
+ */
+function findDetailSuffixes(text) {
+  return text.match(/\(詳細：[^)]+\)/g) ?? [];
 }
 
 export function buildCodexHandoffSmoke(
@@ -39,8 +42,7 @@ export function buildCodexHandoffSmoke(
     maxBodyChars,
   });
   const checks = [];
-  const detailCommands = findDetailCommands(prompt);
-  const uniqueDetailCommands = new Set(detailCommands);
+  const detailSuffixes = findDetailSuffixes(prompt);
 
   addCheck(checks, {
     id: 'new_thread_handoff_header',
@@ -85,11 +87,11 @@ export function buildCodexHandoffSmoke(
     status: prompt.includes('## Throughline: Active Work Context') ? 'fail' : 'pass',
     reason: 'fresh-thread smoke must not accidentally use the full active-work renderer',
   });
-  addCheck(checks, {
-    id: 'detail_commands_deduplicated',
-    status: detailCommands.length === uniqueDetailCommands.size ? 'pass' : 'fail',
-    reason: 'handoff prompt should not repeat the same detail command',
-  });
+  // 旧 `detail_commands_deduplicated` check は L3 の literal command 列挙を
+  // dedup するためのもの。新版は groupL3ByTurn が構造的に turn 単位に集約するため
+  // 不要。「L3 が存在すれば suffix も存在する」は localizeL3Part の挙動次第で
+  // 偽陽性 (例: tool_output だけの turn は label が null で suffix 空) になるので
+  // smoke check には入れない。
   addCheck(checks, {
     id: 'prompt_size_within_limit',
     status: prompt.length <= maxPromptChars ? 'pass' : 'fail',
@@ -111,8 +113,9 @@ export function buildCodexHandoffSmoke(
     l1Summaries: record.memory.l1Summaries.length,
     recentBodies: record.memory.recentBodies.length,
     l3References: record.references.l3.length,
-    renderedDetailCommands: detailCommands.length,
-    uniqueRenderedDetailCommands: uniqueDetailCommands.size,
+    // 新仕様: per-line `(詳細：…)` suffix の出現回数 (turn 単位に集約済み)。
+    // 旧 renderedDetailCommands / uniqueRenderedDetailCommands は廃止。
+    renderedDetailSuffixes: detailSuffixes.length,
     checks,
   };
 

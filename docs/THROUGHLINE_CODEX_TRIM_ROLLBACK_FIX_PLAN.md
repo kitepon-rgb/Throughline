@@ -19,7 +19,7 @@ model-visible input に入ることは controlled smoke で再現していませ
 run の retained text は risk evidence として残す一方、単独では mutation 前 blocker にしません。
 Codex current-thread trim は、明示 `--execute`、Throughline DB injectable memory、
 Codex thread identity、rollout/app-server turn-count guard を条件に実行します。Codex Stop hook
-auto-refresh は verified usage 80% 以上で同じ guarded path を試行し、estimate usage では実行しません。
+auto-refresh は verified usage 75% 以上で同じ guarded path を試行し、estimate usage では実行しません。
 
 最初のインシデント仮説に対する重要な訂正:
 
@@ -644,11 +644,11 @@ TODO:
   という記述を訂正する。
 - [x] hypothesis を compacted replacement-history restore に言及する形へ更新する。
 - [x] Codex Rewind-equivalent trim が complete だという roadmap claim を格下げする。
-- [x] Codex auto-refresh は verified usage 80% 以上で guarded rollback / inject を
+- [x] Codex auto-refresh は verified usage 75% 以上で guarded rollback / inject を
   実行する。estimate usage では実行しない。
-- [x] Codex 80% trigger は token-monitor 依存にしない。Codex `UserPromptSubmit`
+- [x] Codex 75% trigger は token-monitor 依存にしない。Codex `UserPromptSubmit`
   / `PostToolUse` hooks が当該 session の rollout `token_count` を直接読み、
-  verified 80% 以上なら current session へ `$throughline` workflow 実行指示を
+  verified 75% 以上なら current session へ `$throughline` workflow 実行指示を
   注入する。`PostToolUse` により、tool loop 中に閾値を超えた場合も次の継続前に
   同じ判定を走らせる。
 - [x] 新セッションが古い「Codex side complete」claim ではなく、この fix plan から

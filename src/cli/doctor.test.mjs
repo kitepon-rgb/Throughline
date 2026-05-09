@@ -381,17 +381,41 @@ test('readCodexHookDiagnosis detects Codex prompt and Stop hooks', () => {
         2,
       ) + '\n',
     );
-    writeFileSync(join(codexHome, 'config.toml'), '[features]\ncodex_hooks = true\nhooks = true\n');
+    const hooksPath = join(codexHome, 'hooks.json');
+    writeFileSync(
+      join(codexHome, 'config.toml'),
+      [
+        '[features]',
+        'codex_hooks = true',
+        'hooks = true',
+        '',
+        `[hooks.state."${hooksPath}:user_prompt_submit:0:0"]`,
+        'trusted_hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
+        '',
+        `[hooks.state."${hooksPath}:post_tool_use:0:0"]`,
+        'trusted_hash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"',
+        '',
+        `[hooks.state."${hooksPath}:stop:0:0"]`,
+        'trusted_hash = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"',
+        '',
+      ].join('\n'),
+    );
 
     const diagnosis = readCodexHookDiagnosis(codexHome);
     assert.equal(diagnosis.featureEnabled, true);
     assert.equal(diagnosis.codexHooksFeatureEnabled, true);
     assert.equal(diagnosis.hooksFeatureEnabled, true);
+    assert.equal(diagnosis.managedHookTrust.status, 'trusted');
+    assert.equal(diagnosis.managedHookTrust.trustedCount, 3);
+    assert.equal(diagnosis.managedHookTrust.totalCount, 3);
     assert.equal(diagnosis.managedPromptHooks.length, 1);
+    assert.equal(diagnosis.managedPromptHooks[0].throughlineDoctorTrusted, true);
     assert.equal(diagnosis.legacyManagedPromptHooks.length, 1);
     assert.equal(diagnosis.managedPostToolUseHooks.length, 1);
+    assert.equal(diagnosis.managedPostToolUseHooks[0].throughlineDoctorTrusted, true);
     assert.equal(diagnosis.legacyManagedPostToolUseHooks.length, 1);
     assert.equal(diagnosis.managedStopHooks.length, 1);
+    assert.equal(diagnosis.managedStopHooks[0].throughlineDoctorTrusted, true);
     assert.equal(diagnosis.legacyManagedStopHooks.length, 1);
   } finally {
     rmSync(codexHome, { recursive: true, force: true });

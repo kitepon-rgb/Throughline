@@ -397,6 +397,89 @@ function countCapturedCodexSessions(db, projectPath) {
   }
 }
 
+function parseCodexTrustedHookState(configText) {
+  const trustedKeys = new Set();
+  let currentKey = null;
+  let currentTrusted = false;
+
+  function flush() {
+    if (currentKey && currentTrusted) trustedKeys.add(currentKey);
+  }
+
+  for (const line of configText.split(/\r?\n/)) {
+    const section = line.match(/^\s*\[hooks\.state\."([^"]+)"\]\s*$/);
+    if (section) {
+      flush();
+      currentKey = section[1];
+      currentTrusted = false;
+      continue;
+    }
+    if (!currentKey) continue;
+    if (/^\s*\[/.test(line)) {
+      flush();
+      currentKey = null;
+      currentTrusted = false;
+      continue;
+    }
+    if (/^\s*trusted_hash\s*=\s*"sha256:[^"]+"\s*$/.test(line)) {
+      currentTrusted = true;
+    }
+  }
+  flush();
+  return trustedKeys;
+}
+
+function listHooksWithTrust(parsed, eventName, eventKey, hooksPath, trustedStateKeys) {
+  const groups = parsed.hooks?.[eventName] ?? [];
+  return groups.flatMap((group, groupIndex) =>
+    (group.hooks ?? []).map((hook, hookIndex) => {
+      const trustKey = `${hooksPath}:${eventKey}:${groupIndex}:${hookIndex}`;
+      return {
+        ...hook,
+        throughlineDoctorTrustKey: trustKey,
+        throughlineDoctorTrusted: trustedStateKeys.has(trustKey),
+      };
+    }),
+  );
+}
+
+function summarizeHookTrust(hooks, { hooksFeatureEnabled, codexHooksFeatureEnabled } = {}) {
+  if (hooks.length === 0) {
+    return {
+      status: 'no managed hooks',
+      trustedCount: 0,
+      totalCount: 0,
+    };
+  }
+  const trustedCount = hooks.filter(h => h.throughlineDoctorTrusted).length;
+  if (trustedCount === hooks.length) {
+    return {
+      status: 'trusted',
+      trustedCount,
+      totalCount: hooks.length,
+    };
+  }
+  if (hooksFeatureEnabled) {
+    return {
+      status: `${trustedCount}/${hooks.length} trusted - accept hooks in Codex menu`,
+      trustedCount,
+      totalCount: hooks.length,
+    };
+  }
+  if (codexHooksFeatureEnabled) {
+    return {
+      status: 'not recorded (legacy codex_hooks)',
+      trustedCount,
+      totalCount: hooks.length,
+    };
+  }
+  return {
+    status: 'not trusted',
+    trustedCount,
+    totalCount: hooks.length,
+  };
+}
+
 function readCodexHookDiagnosis(codexHome) {
   const hooksPath = join(codexHome, 'hooks.json');
   const configPath = join(codexHome, 'config.toml');
@@ -413,6 +496,12 @@ function readCodexHookDiagnosis(codexHome) {
     featureEnabled: false,
     codexHooksFeatureEnabled: false,
     hooksFeatureEnabled: false,
+    trustedStateKeys: new Set(),
+    managedHookTrust: {
+      status: 'no managed hooks',
+      trustedCount: 0,
+      totalCount: 0,
+    },
     managedPromptHooks: [],
     legacyManagedPromptHooks: [],
     managedPostToolUseHooks: [],
@@ -427,6 +516,7 @@ function readCodexHookDiagnosis(codexHome) {
       out.codexHooksFeatureEnabled = /^\s*codex_hooks\s*=\s*true\s*$/m.test(config);
       out.hooksFeatureEnabled = /^\s*hooks\s*=\s*true\s*$/m.test(config);
       out.featureEnabled = out.codexHooksFeatureEnabled || out.hooksFeatureEnabled;
+      out.trustedStateKeys = parseCodexTrustedHookState(config);
     } catch {
       out.featureEnabled = false;
     }
@@ -441,9 +531,21 @@ function readCodexHookDiagnosis(codexHome) {
   }
 
   out.hooksReadable = true;
-  const promptHooks = (parsed.hooks?.UserPromptSubmit ?? []).flatMap(group => group.hooks ?? []);
-  const postToolUseHooks = (parsed.hooks?.PostToolUse ?? []).flatMap(group => group.hooks ?? []);
-  const stopHooks = (parsed.hooks?.Stop ?? []).flatMap(group => group.hooks ?? []);
+  const promptHooks = listHooksWithTrust(
+    parsed,
+    'UserPromptSubmit',
+    'user_prompt_submit',
+    hooksPath,
+    out.trustedStateKeys,
+  );
+  const postToolUseHooks = listHooksWithTrust(
+    parsed,
+    'PostToolUse',
+    'post_tool_use',
+    hooksPath,
+    out.trustedStateKeys,
+  );
+  const stopHooks = listHooksWithTrust(parsed, 'Stop', 'stop', hooksPath, out.trustedStateKeys);
   out.managedPromptHooks = promptHooks.filter(h => isThroughlineCodexHookCommand(h.command));
   out.legacyManagedPromptHooks = out.managedPromptHooks.filter(h => h.command !== expectedPromptCommand);
   out.managedPostToolUseHooks = postToolUseHooks.filter(h => isThroughlineCodexPostToolUseCommand(h.command));
@@ -452,6 +554,14 @@ function readCodexHookDiagnosis(codexHome) {
   );
   out.managedStopHooks = stopHooks.filter(h => isThroughlineCodexStopCommand(h.command));
   out.legacyManagedStopHooks = out.managedStopHooks.filter(h => h.command !== expectedStopCommand);
+  out.managedHookTrust = summarizeHookTrust(
+    [
+      ...out.managedPromptHooks,
+      ...out.managedPostToolUseHooks,
+      ...out.managedStopHooks,
+    ],
+    out,
+  );
   return out;
 }
 
@@ -484,6 +594,7 @@ function runCodexDiagnosis({
   console.log(`  project:               ${cwd}`);
   console.log(`  CODEX_HOME:            ${codexHome}`);
   console.log(`  Codex hooks feature:   ${hookDiagnosis.featureEnabled ? 'enabled' : 'not enabled'}`);
+  console.log(`  Codex hook trust:      ${hookDiagnosis.managedHookTrust.status}`);
   console.log(`  Codex UserPrompt hook: ${
     hookDiagnosis.managedPromptHooks.length === 0
       ? 'not registered'
@@ -496,6 +607,7 @@ function runCodexDiagnosis({
     console.log(`    command:             ${h.command}`);
     console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
     console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
+    console.log(`    trusted:             ${h.throughlineDoctorTrusted ? 'yes' : 'no'}`);
   }
   console.log(`  Codex PostTool hook:   ${
     hookDiagnosis.managedPostToolUseHooks.length === 0
@@ -509,6 +621,7 @@ function runCodexDiagnosis({
     console.log(`    command:             ${h.command}`);
     console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
     console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
+    console.log(`    trusted:             ${h.throughlineDoctorTrusted ? 'yes' : 'no'}`);
   }
   console.log(`  Codex Stop hook:       ${
     hookDiagnosis.managedStopHooks.length === 0
@@ -522,6 +635,7 @@ function runCodexDiagnosis({
     console.log(`    command:             ${h.command}`);
     console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
     console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
+    console.log(`    trusted:             ${h.throughlineDoctorTrusted ? 'yes' : 'no'}`);
   }
   console.log(`  VSCode monitor task:   ${monitorTaskDiagnosis.status}`);
   if (monitorTaskDiagnosis.path) {

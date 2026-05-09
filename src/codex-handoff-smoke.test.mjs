@@ -68,7 +68,11 @@ test('buildCodexHandoffSmoke: fails when prompt exceeds max size', () => {
   );
 });
 
-test('buildCodexHandoffSmoke: reports rendered detail command deduplication', () => {
+test('buildCodexHandoffSmoke: aggregates same-turn L3 into a single inline (詳細：…) suffix', () => {
+  // 旧版は L3 を独立 `### Detail References` セクションで列挙し、同一 detail command
+  // を dedup していた。新版は groupL3ByTurn が turn 単位に集約して L2 ターンの
+  // 最終 role 行に inline suffix を 1 つ貼る。結果として「同 turn の tool_input +
+  // tool_output」は (詳細：exec_command) 1 件になる。
   const detailRefs = [
     {
       kind: 'tool_input',
@@ -90,14 +94,29 @@ test('buildCodexHandoffSmoke: reports rendered detail command deduplication', ()
     },
   ];
 
-  const result = buildCodexHandoffSmoke(makeRecord({ detailRefs }), { includePrompt: true });
+  const record = makeRecord({ detailRefs });
+  // L3 と turn key が一致する L2 行に上書き (smoke の makeRecord 既定では
+  // recentBodies が originSessionId/turnNumber を持たない)
+  record.memory.recentBodies = [
+    {
+      time: '12:00:02',
+      role: 'assistant',
+      text: 'body of turn 1',
+      originSessionId: 'codex:thread-smoke',
+      turnNumber: 1,
+    },
+  ];
+
+  const result = buildCodexHandoffSmoke(record, { includePrompt: true });
 
   assert.equal(result.status, 'ready');
   assert.equal(result.l3References, 2);
-  assert.equal(result.renderedDetailCommands, 1);
-  assert.equal(result.uniqueRenderedDetailCommands, 1);
+  // 2 件の L3 (tool_input + tool_output) は同一 turn なので 1 件の suffix にまとまる
+  assert.equal(result.renderedDetailSuffixes, 1);
+  assert.match(result.prompt, /\(詳細：exec_command\)/);
+  // 旧 detail_commands_deduplicated check は廃止 (構造的に重複しない)
   assert.equal(
-    result.checks.find((check) => check.id === 'detail_commands_deduplicated')?.status,
-    'pass',
+    result.checks.find((check) => check.id === 'detail_commands_deduplicated'),
+    undefined,
   );
 });

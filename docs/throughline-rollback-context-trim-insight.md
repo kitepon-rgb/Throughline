@@ -263,7 +263,7 @@ Codex で考えられる流れ:
 9. ユーザーは同じ Codex thread で続行する。
 ```
 
-現行実装では、Codex Stop hook 後の 80% automatic refresh は guarded rollback / inject
+現行実装では、Codex Stop hook 後の 75% automatic refresh は guarded rollback / inject
 mutation を試行する。明示 CLI の `throughline trim --execute --host codex --codex-thread-id <id>`
 も env gate なしで実行する。明示 Codex thread identity、injectable Throughline DB memory、
 rollout/app-server turn count guard は live mutation の最低条件であり、durable success は

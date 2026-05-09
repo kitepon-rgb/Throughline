@@ -153,15 +153,15 @@ Usage:
                               (requires --codex-thread-id or env thread id)
   throughline codex-hook user-prompt-submit
                               Codex UserPromptSubmit hook: capture rollout and,
-                              at 80%, inject current-session $throughline
+                              at 75%, inject current-session $throughline
                               instruction from verified rollout token_count
   throughline codex-hook post-tool-use
                               Codex PostToolUse hook: during tool loops, capture
-                              rollout and inject the same 80% $throughline
+                              rollout and inject the same 75% $throughline
                               instruction from verified rollout token_count
   throughline codex-hook stop   Codex native Stop hook: capture rollout,
                               summarize old L2 turns into L1, and run guarded
-                              auto-refresh when verified usage reaches 80%
+                              auto-refresh when verified usage reaches 75%
   throughline codex-summarize   Summarize captured Codex L2 into L1 via Codex CLI
                               (requires a codex:<thread-id> session)
   throughline codex-resume      Render Codex active-work context from DB

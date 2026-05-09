@@ -7,10 +7,10 @@ import {
   runCodexAutoRefresh,
 } from './codex-auto-refresh.mjs';
 
-test('evaluateCodexAutoRefreshUsage: default threshold is 80%', () => {
-  assert.equal(CODEX_AUTO_REFRESH_THRESHOLD, 0.8);
+test('evaluateCodexAutoRefreshUsage: default threshold is 75%', () => {
+  assert.equal(CODEX_AUTO_REFRESH_THRESHOLD, 0.75);
   const below = evaluateCodexAutoRefreshUsage({
-    tokens: 206_719,
+    tokens: 193_799,
     contextWindowSize: 258_400,
     estimated: false,
     contextWindowEstimated: false,
@@ -19,7 +19,7 @@ test('evaluateCodexAutoRefreshUsage: default threshold is 80%', () => {
   assert.equal(below.reason, 'below_threshold');
 
   const atThreshold = evaluateCodexAutoRefreshUsage({
-    tokens: 206_720,
+    tokens: 193_800,
     contextWindowSize: 258_400,
     estimated: false,
     contextWindowEstimated: false,

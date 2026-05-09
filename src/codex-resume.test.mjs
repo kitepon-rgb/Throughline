@@ -85,7 +85,12 @@ test('codex-resume prints active-work context text for explicit Codex session', 
     assert.match(result.stdout, /Source agent: codex/);
     assert.match(result.stdout, /older codex summary/);
     assert.match(result.stdout, /latest codex body/);
-    assert.match(result.stdout, /throughline detail \d\d:\d\d:\d\d/);
+    // 新仕様: 詳細取得方法は header の placeholder で announce
+    assert.match(result.stdout, /throughline detail HH:MM:SS/);
+    // 新仕様: L2 行末尾に inline `(詳細：…)` suffix (turn 2 の tool_input=exec_command 1 件)
+    assert.match(result.stdout, /latest codex body \(詳細：exec_command\)/);
+    // 旧 `### Detail References` セクションは廃止されている
+    assert.ok(!result.stdout.includes('### Detail References'));
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -142,7 +147,11 @@ test('codex-resume can print a fresh-thread handoff prompt', async () => {
     assert.match(result.stdout, /latest/);
     assert.match(result.stdout, /\[entry truncated to 6 chars\]/);
     assert.doesNotMatch(result.stdout, /codex body/);
-    assert.match(result.stdout, /1 detail commands available; omitted from this fresh-thread handoff/);
+    // 新仕様: 旧 Detail References セクションは廃止されたので「N detail commands
+    // available; omitted」メッセージは出ない。--max-detail-refs はバリデーションだけ
+    // 残る no-op フラグになっている。
+    assert.ok(!result.stdout.includes('### Detail References'));
+    assert.ok(!result.stdout.includes('detail commands available; omitted'));
     assert.doesNotMatch(result.stdout, /^\{/);
   } finally {
     rmSync(project, { recursive: true, force: true });

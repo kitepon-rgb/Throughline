@@ -10,6 +10,56 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.9] — 2026-05-09
+
+### Changed
+
+- **Resume context overhaul.** The Claude `/clear` resume injection no longer
+  carries a verbose meta-instruction ("respond with: I have inherited the prior
+  task..."). The header now contains only a one-line natural-continuation cue
+  and the `Bash` invocation contract for `throughline detail HH:MM:SS`. The L2
+  active-work thread is anchored at the very bottom of the injected context so
+  Claude's attention falls on the most recent turn instead of on a recap line.
+  Older L1 summaries are now timestamped with the original turn body time
+  (`bodies.created_at` MIN) instead of the skeleton row's summarization time,
+  so detail commands derived from L1 lines actually resolve.
+- **L3 references collapsed into per-line `(詳細：…)` suffixes.** Both the
+  Claude resume context and the Codex active-work / new-thread handoff
+  renderers no longer print a standalone `### L3 詳細参照` /
+  `### Detail References` section. Instead, every L1 / L2 line ends with a
+  compact `(詳細：…)` suffix that aggregates the L3 evidence belonging to that
+  turn (`本文`, tool name, `思考`, `画像`, etc.), with `×N` only when count > 1.
+  The same-turn user / assistant pair only emits the suffix on the last role to
+  avoid duplicating the per-turn L3 hint. MCP tool names are shortened to the
+  trailing function name (`mcp__plugin_..._playwright__browser_navigate` →
+  `browser_navigate`) so namespace noise does not dominate the suffix.
+- Codex auto-refresh and current-session `$throughline` trigger now use a 75%
+  verified-usage threshold instead of 80%, so Throughline can fire before Codex
+  native auto-compact wins the race.
+- `throughline doctor --codex` now reads the Codex hook trust gate from
+  `~/.codex/config.toml` (`[hooks.state."<hooks.json>:event:i:j"].trusted_hash`)
+  and reports a top-level `Codex hook trust:` summary plus per-hook
+  `trusted: yes/no`. A registered hook that is not yet trusted in the Codex
+  hook acceptance menu may not actually run.
+
+### Added
+
+- `src/l3-summary.mjs`: shared helpers (`shortenMcpToolName`, `localizeL3Part`,
+  `groupL3ByTurn`, `buildPartsSummary`) used by both the Claude resume context
+  and the Codex handoff renderers to build the per-line `(詳細：…)` suffix.
+
+### Notes
+
+- The Codex `--max-detail-refs` CLI flag is preserved for backwards
+  compatibility but is now a validated no-op: the new per-line suffix
+  aggregates L3 references at turn granularity, so a separate cap on a
+  standalone Detail References list is no longer meaningful.
+- `codex-handoff-smoke` now reports `renderedDetailSuffixes` instead of
+  `renderedDetailCommands` / `uniqueRenderedDetailCommands`. The
+  `detail_commands_deduplicated` check has been retired because the new
+  rendering aggregates L3 by turn structurally and cannot emit duplicate
+  detail commands for the same turn.
+
 ## [0.4.8] — 2026-05-09
 
 ### Changed

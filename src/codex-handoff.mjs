@@ -6,6 +6,8 @@
  * can consume it.
  */
 
+import { groupL3ByTurn, buildPartsSummary } from './l3-summary.mjs';
+
 export const THROUGHLINE_HANDOFF_SCHEMA_VERSION = 1;
 export const DEFAULT_CODEX_HANDOFF_DETAIL_REF_LIMIT = 20;
 export const DEFAULT_CODEX_HANDOFF_RECENT_BODY_LIMIT = 8;
@@ -76,14 +78,46 @@ function truncateText(text, maxChars) {
   };
 }
 
-function uniqueDetailRefsByCommand(refs) {
-  const seen = new Set();
+/**
+ * 追加: Codex 用 inline detail suffix の組み立て補助。
+ * - L1: bodyTime (= 元ターン時刻) を行頭に出して `本文` 起点の詳細を案内
+ * - L2: ターン内の最終 role 行 (通常 user→assistant の assistant) にだけ suffix を貼る
+ *   (同じ turn_number に紐付く L3 を user / assistant 両方に貼る冗長を回避)
+ */
+function appendL1Lines(lines, l1Summaries, l3ByTurn) {
+  const l1Lines = [];
+  for (const row of l1Summaries) {
+    if (!row.summary || row.summary === '(no content)') continue;
+    const summary = singleLine(row.summary);
+    const key = `${row.originSessionId}\x00${row.turnNumber}`;
+    const displayTime = row.bodyTime ?? row.time;
+    const partCounts = l3ByTurn.get(key)?.partCounts ?? new Map();
+    // bodyTime が無い defensive ケース (元 body が消えている等) は detail 解決できないので
+    // suffix を付けない (誤誘導しない)。
+    const suffix = row.bodyTime != null
+      ? buildPartsSummary(partCounts, { includeBody: true })
+      : '';
+    l1Lines.push(`[${displayTime}] [${row.role}] ${summary}${suffix}`);
+  }
+  return l1Lines;
+}
+
+function appendL2Lines(bodies, l3ByTurn) {
+  const lastIdxPerTurn = new Map();
+  for (let i = 0; i < bodies.length; i += 1) {
+    const r = bodies[i];
+    if (!r.text) continue;
+    lastIdxPerTurn.set(`${r.originSessionId}\x00${r.turnNumber}`, i);
+  }
   const out = [];
-  for (const ref of refs) {
-    const key = ref.detailCommand;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(ref);
+  for (let i = 0; i < bodies.length; i += 1) {
+    const r = bodies[i];
+    if (!r.text) continue;
+    const key = `${r.originSessionId}\x00${r.turnNumber}`;
+    const isLastOfTurn = lastIdxPerTurn.get(key) === i;
+    const partCounts = isLastOfTurn ? (l3ByTurn.get(key)?.partCounts ?? new Map()) : new Map();
+    const suffix = buildPartsSummary(partCounts);
+    out.push({ row: r, suffix });
   }
   return out;
 }
@@ -92,6 +126,8 @@ export function renderCodexActiveWorkContext(record) {
   if (!record) {
     throw new Error('renderCodexActiveWorkContext: record is required');
   }
+
+  const l3ByTurn = groupL3ByTurn(record.references.l3);
 
   const lines = [];
   lines.push('## Throughline: Active Work Context');
@@ -108,6 +144,10 @@ export function renderCodexActiveWorkContext(record) {
   );
   lines.push(
     'Do not treat every older line as still-current truth. Prefer the latest actionable state.',
+  );
+  lines.push(
+    'For each L1/L2 entry, the time prefix `[HH:MM:SS]` can be passed to ' +
+      '`throughline detail HH:MM:SS` (run via shell) to retrieve the full body and L3 detail of that turn.',
   );
   lines.push('');
   lines.push('### Source');
@@ -130,32 +170,23 @@ export function renderCodexActiveWorkContext(record) {
   }
 
   if (record.memory.l1Summaries.length > 0) {
-    lines.push('');
-    lines.push('### L1 Summaries');
-    for (const row of record.memory.l1Summaries) {
-      if (!row.summary || row.summary === '(no content)') continue;
-      lines.push(`[${row.time}] [${row.role}] ${row.summary.replace(/\n+/g, ' ').trim()}`);
+    const l1Lines = appendL1Lines(lines, record.memory.l1Summaries, l3ByTurn);
+    if (l1Lines.length > 0) {
+      lines.push('');
+      lines.push('### L1 Summaries');
+      lines.push(...l1Lines);
     }
   }
 
   if (record.memory.recentBodies.length > 0) {
-    lines.push('');
-    lines.push('### Active Work Thread (L2)');
-    lines.push('Entries are oldest-to-newest; later entries may supersede earlier hypotheses.');
-    for (const row of record.memory.recentBodies) {
-      if (!row.text) continue;
-      lines.push(`[${row.time}] [${row.role}] ${row.text}`);
-    }
-  }
-
-  if (record.references.l3.length > 0) {
-    lines.push('');
-    lines.push('### Detail References');
-    lines.push(
-      'Use these only when L1/L2 are insufficient. Run the command locally; do not guess missing tool output.',
-    );
-    for (const ref of record.references.l3) {
-      lines.push(`- ${ref.kind}:${ref.toolName} turn ${ref.turnNumber}: ${ref.detailCommand}`);
+    const l2 = appendL2Lines(record.memory.recentBodies, l3ByTurn);
+    if (l2.length > 0) {
+      lines.push('');
+      lines.push('### Active Work Thread (L2)');
+      lines.push('Entries are oldest-to-newest; later entries may supersede earlier hypotheses.');
+      for (const { row, suffix } of l2) {
+        lines.push(`[${row.time}] [${row.role}] ${row.text}${suffix}`);
+      }
     }
   }
 
@@ -163,7 +194,7 @@ export function renderCodexActiveWorkContext(record) {
   lines.push('### Continuation Instruction');
   lines.push(
     'Continue from the latest actionable state represented above. Preserve user instructions and repository constraints. ' +
-      'If details are missing, inspect local files or Throughline detail references before acting.',
+      'If details are missing, run `throughline detail HH:MM:SS` on the relevant entry before acting.',
   );
 
   return lines.join('\n');
@@ -172,6 +203,9 @@ export function renderCodexActiveWorkContext(record) {
 export function renderCodexNewThreadHandoff(
   record,
   {
+    // 旧 Detail References セクション用の制限。L3 が各 L1/L2 行末尾の
+    // `(詳細：…)` suffix に集約された後は描画には影響しないが、CLI flags との
+    // 互換維持のためバリデーションだけ残す。
     maxDetailRefs = DEFAULT_CODEX_HANDOFF_DETAIL_REF_LIMIT,
     maxRecentBodies = DEFAULT_CODEX_HANDOFF_RECENT_BODY_LIMIT,
     maxBodyChars = DEFAULT_CODEX_HANDOFF_BODY_MAX_CHARS,
@@ -222,13 +256,15 @@ export function renderCodexNewThreadHandoff(
     }
   }
 
+  const l3ByTurn = groupL3ByTurn(record.references.l3);
+
   if (record.memory.l1Summaries.length > 0) {
-    lines.push('');
-    lines.push('### L1 Memory Summaries');
-    lines.push('Oldest-to-newest; use later entries when summaries disagree.');
-    for (const row of record.memory.l1Summaries) {
-      if (!row.summary || row.summary === '(no content)') continue;
-      lines.push(`[${row.time}] [${row.role}] ${singleLine(row.summary)}`);
+    const l1Lines = appendL1Lines(lines, record.memory.l1Summaries, l3ByTurn);
+    if (l1Lines.length > 0) {
+      lines.push('');
+      lines.push('### L1 Memory Summaries');
+      lines.push('Oldest-to-newest; use later entries when summaries disagree.');
+      lines.push(...l1Lines);
     }
   }
 
@@ -242,45 +278,33 @@ export function renderCodexNewThreadHandoff(
     lines.push(
       `Long entries are truncated for handoff; full context: throughline codex-resume --session ${record.session.id}`,
     );
+    lines.push(
+      'For each entry, the `[HH:MM:SS]` time prefix can be passed to ' +
+        '`throughline detail HH:MM:SS` (run via shell) to retrieve full body + L3 of that turn.',
+    );
     if (shownBodies.length === 0) {
       lines.push(`${bodies.length} active L2 entries available; omitted from this fresh-thread handoff.`);
     } else if (omittedBodies > 0) {
       lines.push(`Showing latest ${shownBodies.length} of ${bodies.length} active L2 entries; ${omittedBodies} older omitted.`);
     }
-    for (const row of shownBodies) {
-      if (!row.text) continue;
+    const l2 = appendL2Lines(shownBodies, l3ByTurn);
+    for (const { row, suffix } of l2) {
       const body = truncateText(row.text, maxBodyChars);
-      lines.push(`[${row.time}] [${row.role}] ${body.text}`);
+      lines.push(`[${row.time}] [${row.role}] ${body.text}${suffix}`);
       if (body.truncated) {
         lines.push(`[entry truncated to ${maxBodyChars} chars]`);
       }
     }
   }
 
-  if (record.references.l3.length > 0) {
-    const refs = uniqueDetailRefsByCommand(record.references.l3);
-    const shown = maxDetailRefs === 0 ? [] : refs.slice(-maxDetailRefs);
-    const omitted = refs.length - shown.length;
-    lines.push('');
-    lines.push('### Detail References');
-    lines.push('L3 bodies are not pasted here. Use local detail commands only when L1/L2 are insufficient.');
-    if (shown.length === 0) {
-      lines.push(`${refs.length} detail commands available; omitted from this fresh-thread handoff.`);
-    } else {
-      if (omitted > 0) {
-        lines.push(`Showing latest ${shown.length} of ${refs.length} detail commands; ${omitted} older omitted.`);
-      }
-      for (const ref of shown) {
-        lines.push(`- ${ref.kind}:${ref.toolName} turn ${ref.turnNumber}: ${ref.detailCommand}`);
-      }
-    }
-  }
+  // Detail References セクションは廃止 (各 L1/L2 行末尾の `(詳細：…)` suffix で
+  // 同じ情報が turn 単位に集約されるため重複)。
 
   lines.push('');
   lines.push('### Start Instruction');
   lines.push(
     'Continue from the latest actionable state above. Preserve user instructions and repository constraints. ' +
-      'Do not mutate the original Codex thread; inspect local files or detail references before acting when context is missing.',
+      'Do not mutate the original Codex thread; run `throughline detail HH:MM:SS` on the relevant entry before acting when context is missing.',
   );
 
   return lines.join('\n');

@@ -28,7 +28,7 @@
 - Claude-primary の現行 L2 -> L1 要約は `codex-sidecar` が configured の場合に sidecar を優先し、使えない場合は Claude Haiku 経路に戻る。Codex-primary は Codex CLI backend 失敗を明示 error にし、Claude Haiku / raw L2 へ fallback しない。
 - Codex guarded trim は、Codex app-server の `thread/read` / `thread/resume` / `thread/rollback` / `thread/inject_items` を使う。明示 thread identity、rollout/app-server turn count guard、injectable memory がない場合は mutation 前に拒否する。
 - Claude `/rewind` 自動化はまだ有効化しない。
-- Codex automatic refresh mutation は再有効化済み。`80%` の verified usage threshold で rollback / Throughline DB memory inject を試行し、estimate usage では実行しない。Codex native auto-compact より先に Throughline refresh を走らせつつ、70% warning よりは mutation を遅らせる。
+- Codex automatic refresh mutation は再有効化済み。`75%` の verified usage threshold で rollback / Throughline DB memory inject を試行し、estimate usage では実行しない。Codex native auto-compact より先に Throughline refresh を走らせつつ、70% warning よりは mutation を遅らせる。
 
 ## 新セッション引き継ぎ
 
@@ -468,8 +468,8 @@ Phase 5 implementation status (2026-05-06):
   - post-refresh confirmation: execute 後の次 user turn で `doctor --codex` は current thread と latest DB session の一致を維持し、latest DB session は `2026-05-06 22:41:10` へ更新された。`trim --dry-run --host codex --all --json` は `activeTurns = 2`、`rollbackEvents = 1`、`rolledBackTurns = 20` を返し、`codex-resume` は rollback 後の短い active work context を L2 として描画した。
   - monitor adapter 修正: `throughline monitor` は Claude / Codex host-aware state を読む。Codex Stop hook は `codex:<thread_id>` monitor state を書き、Codex rollout path は Claude transcript 用 `transcriptPath` ではなく `rolloutPath` に保存する。2026-05-09 以降、monitor は `~/.throughline/state` だけでなく `~/.codex/sessions/**/rollout-*.jsonl` も直接 discovery するため、state 未生成の現在 Codex thread も表示できる。既存 state がある場合は usage snapshot を保持しつつ discovered rollout path / mtime を合流する。rollout に `event_msg` / `token_count` がある場合は verified usage として表示し、無い場合だけ `estimated: true` / `source = codex-rollout-chars-div-4` の明示 estimate を使う。state filename は URL encode し、`codex:` session id を Windows でも保存可能にした。表示 ID は `codex:` prefix を外した raw thread id 先頭 8 桁。
   - monitor doctor 修正: Codex Stop hook stdout は VSCode chat に必ず見えるとは限らないため、`doctor --codex` に `.vscode/tasks.json` の Throughline Monitor task 診断を追加した。登録済み / 未登録 / JSONC / parse error / broken absolute path と `runOn`、および初回作成後は `Developer: Reload Window` が必要という note を read-only で表示する。
-  - historical automatic refresh 実装: Codex Stop hook は capture / L1 summarize / monitor state 書き込み後、verified usage が verified context window の `90%` 以上なら automatic refresh を試行する経路を持っていた。2026-05-06 incident 後、この経路は blocker として扱い、monitor state / warning / diagnostics は残しても rollback + inject は送らない状態にした。2026-05-08 unblock 後は guarded rollback / inject を再有効化し、2026-05-09 以降は Codex native auto-compact より先に Throughline refresh を走らせるため verified usage `80%` 以上を既定閾値にする。
-  - current-session trigger 修正: Codex auto-refresh を token-monitor の描画ループに置かず、Codex `UserPromptSubmit` / `PostToolUse` hooks が当該 session の rollout `token_count` を直接読んで verified 80% 以上なら `$throughline` workflow 実行指示を同じ user turn または tool loop 継続前の `additionalContext` として注入する。monitor は表示専用で、自動発火の判定元にしない。
+  - historical automatic refresh 実装: Codex Stop hook は capture / L1 summarize / monitor state 書き込み後、verified usage が verified context window の `90%` 以上なら automatic refresh を試行する経路を持っていた。2026-05-06 incident 後、この経路は blocker として扱い、monitor state / warning / diagnostics は残しても rollback + inject は送らない状態にした。2026-05-08 unblock 後は guarded rollback / inject を再有効化し、2026-05-09 以降は Codex native auto-compact より先に Throughline refresh を走らせるため verified usage `75%` 以上を既定閾値にする。
+  - current-session trigger 修正: Codex auto-refresh を token-monitor の描画ループに置かず、Codex `UserPromptSubmit` / `PostToolUse` hooks が当該 session の rollout `token_count` を直接読んで verified 75% 以上なら `$throughline` workflow 実行指示を同じ user turn または tool loop 継続前の `additionalContext` として注入する。monitor は表示専用で、自動発火の判定元にしない。
 
 ## Phase 6: Claude Side Finalization
 
