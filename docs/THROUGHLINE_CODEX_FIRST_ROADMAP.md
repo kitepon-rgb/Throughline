@@ -26,7 +26,7 @@
 - 現行 Claude path は、Claude hooks、slash command、handoff baton、DB、resume context、L1 / L2 / L3 persistence で成立している。
 - 外部モデル的に呼ぶ主要箇所は L2 -> L1 要約。
 - Claude-primary の現行 L2 -> L1 要約は `codex-sidecar` が configured の場合に sidecar を優先し、使えない場合は Claude Haiku 経路に戻る。Codex-primary は Codex CLI backend 失敗を明示 error にし、Claude Haiku / raw L2 へ fallback しない。
-- Codex guarded trim は、Codex app-server の `thread/read` / `thread/resume` / `thread/rollback` / `thread/inject_items` を使う。明示 thread identity、rollout/app-server turn count guard、injectable memory がない場合は mutation 前に拒否する。
+- Codex guarded trim は、Codex app-server の `thread/read` / `thread/resume` / `thread/rollback` / `thread/inject_items` を使う。明示 thread identity と injectable memory がない場合は mutation 前に拒否する。rollout/app-server turn count mismatch は診断に残し、`thread/read` / `thread/resume` が同じ count を返す場合は app-server 側の差分で rollback `numTurns` を補正する。
 - Claude `/rewind` 自動化はまだ有効化しない。
 - Codex automatic refresh mutation は再有効化済み。`75%` の verified usage threshold で rollback / Throughline DB memory inject を試行し、estimate usage では実行しない。Codex native auto-compact より先に Throughline refresh を走らせつつ、70% warning よりは mutation を遅らせる。
 
@@ -40,8 +40,8 @@ Codex 側で実装済み / 診断可能なもの:
 - `codex-summarize`: Codex CLI backend で L2 -> L1 を書ける。Claude Haiku / raw L2 へ fallback しない。
 - `codex-resume`: L1 summary と active L2 context を Codex active-work context / fresh-thread handoff / developer message item として描画できる。
 - `trim --dry-run --host codex` / `doctor --trim --host codex`: rollback / inject plan、memory contract、context reduction estimate、diagnostics を表示する。fresh-thread handoff は代替継続 surface として残すが、current thread trim の代替ではない。
-- `trim --preflight --host codex`: rollout / app-server turn count guard を確認する。restore-safety diagnostics と planned rollback risk は報告するが、拒否条件ではない。
-- `trim --execute --host codex`: live app-server へ guarded rollback + Throughline DB memory inject を送る。env gate や host primitive audit gate は不要。DB memory が無い場合、または rollout/app-server turn count がずれる場合は mutation 前に拒否する。
+- `trim --preflight --host codex`: rollout / app-server turn count を診断し、必要なら app-server count 由来の rollback 数補正 preview を表示する。restore-safety diagnostics と planned rollback risk は報告するが、拒否条件ではない。
+- `trim --execute --host codex`: live app-server へ guarded rollback + Throughline DB memory inject を送る。env gate や host primitive audit gate は不要。DB memory が無い場合は mutation 前に拒否する。rollout/app-server turn count がずれる場合は、`thread/read` / `thread/resume` が一致していれば app-server count を正として rollback `numTurns` を補正する。
 - `codex-visibility-smoke`: injected active-work memory が次 model turn で model-visible になることを確認済み。
 - `codex-rollback-model-visible-smoke`: controlled two-phase smoke。`--prepare` は unique marker を含む user turn を開始して 1 turn rollback し、`--verify` は full marker を含まない prefix-only prompt で rollback 済み marker が model-visible かを測る。これは実 current thread を mutate するため明示 env 必須。live run では `--marker-file` を使い、full marker を同一 thread の chat/tool output に出さない。
 - `codex-restore-smoke`: fresh app-server process を複数回起動し、`thread/read` / `thread/resume` / paginated `thread/turns/list` turn count が rollout active turn count と一致し続けるかを read-only で確認できる。ただし proof scope は `app_server_process_restart_only` で、VS Code restart-safe 証明ではない。
@@ -318,7 +318,7 @@ TODO:
   - post-inject visibility check
 - [x] execute env gate を外せる条件を再検討した。
   - 2026-05-07 correction: live app-server smoke / post-inject visibility / worktree 非破壊性だけでは不十分だったため、一時的に `THROUGHLINE_EXPERIMENTAL_CODEX_TRIM_EXECUTE=1` gate を戻した。
-  - 2026-05-08 unblock: controlled rollback model-visible smoke が app-server restart 境界と VS Code reload/reconnect 境界の両方で `not-reproduced` だったため、env gate / host primitive audit gate / restore-safety-only blocker を解除した。現行 blocker は thread identity、Throughline DB injectable memory、rollout/app-server turn-count mismatch。
+  - 2026-05-08 unblock: controlled rollback model-visible smoke が app-server restart 境界と VS Code reload/reconnect 境界の両方で `not-reproduced` だったため、env gate / host primitive audit gate / restore-safety-only blocker を解除した。2026-05-09 update: rollout/app-server turn-count mismatch も blocker から外し、app-server `thread/read` / `thread/resume` が一致する場合は差分補正で rollback `numTurns` を決める。
 - [x] partial rollback の multi-turn harness を作る。
 - [x] rollback marker / injected memory が live `thread/resume` 後も効くか確認する。
 - [x] ローカルファイル変更が戻らないことを、実ファイル付き smoke で確認する。
@@ -328,7 +328,7 @@ TODO:
   - `throughline codex-restore-smoke --codex-thread-id <id>` は fresh app-server process を複数回起動し、rollout active turn count と `thread/read` / `thread/resume` / paginated `thread/turns/list` の一致を確認する。
   - proof scope は `app_server_process_restart_only`。VS Code restart / reconnect 越しの rollback / inject durability はまだ証明しない。
 - [x] failure mode を固定する。
-  - turn count mismatch
+  - turn count mismatch diagnostic / app-server-count rollback adjustment
   - inject visibility timeout
   - app-server unavailable
   - thread not found
@@ -344,10 +344,10 @@ TODO:
 Phase 4 implementation status (2026-05-07):
 
 - [x] `throughline trim --preflight --host codex --codex-thread-id <id>` は `thread/read` / `thread/resume` まで実行し、rollback / inject は送らない。
-- [x] historical: `throughline trim --execute --host codex --codex-thread-id <id>` は guarded execute を行う実装だった。2026-05-07 correction では env gate と host primitive audit gate を戻して一時 blocked にした。2026-05-08 unblock では controlled rollback model-visible smoke が再現しなかったため、env gate / host primitive audit gate / restore-safety-only blocker を外し、DB memory と rollout/app-server turn-count guard を残した。
-- [x] rollout source を使う場合、rollback 前に rollout active turn count と app-server `thread/read` / `thread/resume` turn count を照合する。不一致なら rollback / inject を送らず refuse する。
+- [x] historical: `throughline trim --execute --host codex --codex-thread-id <id>` は guarded execute を行う実装だった。2026-05-07 correction では env gate と host primitive audit gate を戻して一時 blocked にした。2026-05-08 unblock では controlled rollback model-visible smoke が再現しなかったため、env gate / host primitive audit gate / restore-safety-only blocker を外し、DB memory と rollout/app-server turn-count diagnostics を残した。
+- [x] rollout source を使う場合、rollback 前に rollout active turn count と app-server `thread/read` / `thread/resume` turn count を照合する。不一致でも refuse せず診断に残す。`readTurns === resumedTurns` なら planned rollback turns に `readTurns - expectedTurns` を足して `thread/rollback.numTurns` を送る。
 - [x] guarded execute は `thread/rollback` -> `thread/inject_items` -> post-inject `thread/read` polling の順に進む。`turn/start` は呼ばない。
-- [x] fake app-server harness で partial rollback、delayed inject visibility、mismatch refusal、mutation not sent preflight を固定した。
+- [x] fake app-server harness で partial rollback、delayed inject visibility、mismatch adjustment、mutation not sent preflight を固定した。
 - [x] `thread/resume` 後に injected memory が維持されることを、実 Codex host smoke として確認済み。
 - [x] 実 Codex host での next model turn visibility smoke は Phase 3 の `codex-visibility-smoke` で確認済み。active-work developer message が次の model turn の agent delta に反映された。
 - [x] 実 Codex host で `trim --preflight --host codex --codex-thread-id 019dfa40-1cc8-7d13-a110-16b09364fa6a --json` を実行し、guard が mutation 前に read / resume count を照合することを確認した。
@@ -419,7 +419,7 @@ TODO:
 - [x] Codex trim / setup まで含む command surface を決める。
   - `throughline trim --host codex`
   - `throughline trim --preflight --host codex --codex-thread-id <id>`
-  - `throughline trim --execute --host codex --codex-thread-id <id>` (DB memory と rollout/app-server turn-count guard がそろう場合に current-thread rollback / inject を実行)
+  - `throughline trim --execute --host codex --codex-thread-id <id>` (DB memory がある場合に current-thread rollback / inject を実行し、rollout/app-server turn-count mismatch は診断と `numTurns` 補正に使う)
   - `doctor --codex` / `codex-capture` / `codex-summarize` / `codex-resume --memo-stdin` / `codex-visibility-smoke`
 - [x] Codex primary の doctor を追加または拡張する。
 - [x] Codex primary の setup / install 手順を追加する。
@@ -461,7 +461,7 @@ Phase 5 implementation status (2026-05-06):
   - 最終確認: hook shape 変更後に新しく開始した VSCode-origin Codex session で 1 turn 完了後、`throughline doctor --codex` を実行した。`current Codex thread` は `019dfd62-9a9d-7211-bf91-89d8e3fc908e`、`latest DB session` は `codex:019dfd62-9a9d-7211-bf91-89d8e3fc908e` で一致し、`Codex hooks feature: enabled`、`Codex Stop hook: registered`、command は `/usr/bin/node /home/kite/projects/Throughline/bin/throughline.mjs codex-hook stop`、`async: false`、`timeoutSec: 300` だった。VSCode-origin の自然 Stop hook による DB capture も解決済みとして扱う。
   - historical 2026-05-07 correction: 以下の Codex trim smoke は live app-server primitive の履歴として残す。ただし 2026-05-06 incident 後、restart / reconnect 越しの durable context trim 成功とは一時的に扱わず、`$throughline` / Codex Stop hook の automatic mutation を止めていた。
   - 2026-05-09 UX 修正: bare `$throughline` は `doctor --codex` / `trim --dry-run --all` / `trim --preflight --all` を AI に順番実行させる説明 surface ではなく、`throughline trim --execute --host codex --all --json` を直接実行する scripted current-thread refresh に戻す。注入 memory は L2 最新 20 full bodies + L1 older summaries + L3 references only。diagnostics / dry-run / preflight / fresh-thread handoff は明示要求時だけ使う。
-  - memory contract 修正: Codex guarded trim でも注入 memory は元の `/tl` 思想を正とする。古い turn は L1 summaries、直近 20 turn は L2 full bodies、L3 は reference only で、L3 bodies / tool payloads は注入しない。rollout source は rollback candidate / app-server turn count guard の根拠であり、Throughline DB memory がある場合に rollout active work preview を注入 memory として使わない。DB memory が無い execute は rollout preview を注入せず、mutation 前に拒否する。
+  - memory contract 修正: Codex guarded trim でも注入 memory は元の `/tl` 思想を正とする。古い turn は L1 summaries、直近 20 turn は L2 full bodies、L3 は reference only で、L3 bodies / tool payloads は注入しない。rollout source は rollback candidate と app-server turn-count 補正の根拠であり、Throughline DB memory がある場合に rollout active work preview を注入 memory として使わない。DB memory が無い execute は rollout preview を注入せず、mutation 前に拒否する。
   - doctor visibility 修正: `doctor --codex` は旧 context refresh readiness として rollback source、inject memory source、memory contract、L1 summaries / recent L2 bodies / L3 references-only count、heuristic reduction estimate を表示していた。実 thread `019dfd62-9a9d-7211-bf91-89d8e3fc908e` では live readiness として `context refresh: ready`、`rollback source: codex-rollout`、`inject memory source: throughline-db`、`memory contract: older L1 + latest 20 L2 full bodies + L3 references only` を確認した。ただし incident 後は restart-safe readiness ではない。
   - 削減量の記録: `trim --dry-run --host codex` は rollout text がある場合に `contextReductionEstimate` を返す。2026-05-06 の現在 thread `019dfd62-9a9d-7211-bf91-89d8e3fc908e` では通常 keep-recent preview だと `capturedTurns = 14` / `keepRecent = 20` のため `rollbackTurns = 0`、推定削減量も 0 だった。旧 bare `$throughline` context refresh は `--all` を使っていたため、この keep-recent preview の 0 は「Codex で削減できない」という意味ではない。
   - historical live-only `$throughline` context refresh smoke: 同じ VSCode-origin thread `019dfd62-9a9d-7211-bf91-89d8e3fc908e` で `trim --dry-run --host codex --all --json` -> `trim --preflight --host codex --all --json` -> `trim --execute --host codex --all` を実行した。preflight は rollout/app-server turn count `20 / 20` match、execute は `rollbackSent = true`、`injectSent = true`、`injectedItems = 1`、`rollback candidate turns = 20`。直前見積もりは `rollbackEstimatedTokens = 179780`、`injectedMemoryEstimatedTokens = 2009`、`netEstimatedTokens = 177771`、`reductionPct = 99` (`chars / 4` heuristic)。これは live app-server smoke であり、restart-safe durability の証明ではない。
@@ -515,7 +515,7 @@ TODO:
 
 ## 次の作業
 
-Codex primary の capture / summarize / resume は完了扱い。Codex trim execute / auto-refresh も 2026-05-08 の controlled rollback model-visible smoke 後に再有効化済み。[THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) の Phase 0-4、read-only app-server process restart smoke、local restore source audit、host primitive audit、manual VS Code restore smoke protocol、実 VS Code reload / reconnect marker proof、rollback 非復活 verifier、controlled rollback model-visible smoke surface は実装済み。incident-shaped live rollback run は `restoreSafety.status = risk` で、`compacted.replacement_history` retention と rollback 済み text match を診断上は観測した。後続の app-server response 分類では retained text が `aggregatedOutput` の引用に限定され、direct user message / model-visible reproduction とは分けて扱う。host primitive audit でも current-thread rollback non-resurrection primitive は見つかっていないが、これは diagnostic-only で、DB memory と rollout/app-server turn-count guard がそろう `trim --execute` を塞がない。
+Codex primary の capture / summarize / resume は完了扱い。Codex trim execute / auto-refresh も 2026-05-08 の controlled rollback model-visible smoke 後に再有効化済み。[THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) の Phase 0-4、read-only app-server process restart smoke、local restore source audit、host primitive audit、manual VS Code restore smoke protocol、実 VS Code reload / reconnect marker proof、rollback 非復活 verifier、controlled rollback model-visible smoke surface は実装済み。incident-shaped live rollback run は `restoreSafety.status = risk` で、`compacted.replacement_history` retention と rollback 済み text match を診断上は観測した。後続の app-server response 分類では retained text が `aggregatedOutput` の引用に限定され、direct user message / model-visible reproduction とは分けて扱う。host primitive audit でも current-thread rollback non-resurrection primitive は見つかっていないが、これは diagnostic-only で、DB memory がある `trim --execute` を塞がない。rollout/app-server turn-count mismatch は診断と app-server-count `numTurns` 補正に使う。
 
 再開時は次を実施する:
 

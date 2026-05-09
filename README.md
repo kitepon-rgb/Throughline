@@ -252,8 +252,11 @@ Haiku path. This is an explicit compatibility mode, not silent auto-detection.
 looked like a rolled-back user prompt could reappear after VS Code restart /
 reconnect, but controlled model-visible rollback smokes did not reproduce that
 path. `throughline trim --execute --host codex` now sends the guarded
-rollback + Throughline DB memory injection when app-server turn-count guards and
-injectable DB memory are available. Codex current-session auto-refresh is not a
+rollback + Throughline DB memory injection when injectable DB memory is
+available. If the Codex rollout and app-server turn counts differ, Throughline
+keeps the mismatch as diagnostics and, when `thread/read` and `thread/resume`
+agree, adjusts `thread/rollback.numTurns` from the app-server count. Codex
+current-session auto-refresh is not a
 token-monitor feature: the Codex `UserPromptSubmit` hook reads the current
 rollout `token_count` and, at the verified 75% threshold, injects a same-session
 instruction to run the installed `$throughline` workflow before answering. The
@@ -695,7 +698,7 @@ entry to the `tasks` array yourself:
 | `throughline codex-sidecar-diagnostics`        | Check `codex-sidecar` diagnostics status for this project     |
 | `throughline codex-sidecar-dry-run`            | Print a normalized read-only sidecar request without running the app server |
 | `throughline trim --dry-run --host codex`      | Preview Codex same-thread context trim memory and host boundary; does not rollback automatically |
-| `throughline trim --preflight --host codex`    | Read/resume the explicit Codex thread and verify turn-count guards without rollback/inject |
+| `throughline trim --preflight --host codex`    | Read/resume the explicit Codex thread and preview any app-server-count rollback adjustment without rollback/inject |
 | `throughline trim --execute --host codex`      | Scripted Codex current-thread rollback + Throughline DB memory inject; this is what bare `$throughline` runs in Codex |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |

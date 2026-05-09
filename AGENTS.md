@@ -58,7 +58,8 @@ VS Code restart / reconnect 後に rollback 済み user prompt が復活した i
 Codex 側をやり直さず、現行状態から継続する。2026-05-08 時点では Codex
 current-thread trim は `trim --execute --host codex --all` で guarded rollback +
 Throughline DB developer-memory inject を送れる。必須条件は Codex thread identity、
-Throughline DB injectable memory、rollout/app-server turn-count guard であり、
+Throughline DB injectable memory であり、rollout/app-server turn-count mismatch は
+diagnostic と app-server count 由来の rollback `numTurns` 補正に使う。
 `restoreSafety.status = risk`、planned restore-safety risk、host primitive audit は
 diagnostic-only として扱う。developer memory inject は item-level で、現行 Codex
 host では即時 `thread/read` の turn count を増やさない場合がある。durable success は

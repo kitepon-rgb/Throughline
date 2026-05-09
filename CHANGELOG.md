@@ -10,6 +10,20 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.10] — 2026-05-09
+
+### Fixed
+
+- Codex current-thread trim no longer refuses execution solely because the
+  rollout active turn count differs from the Codex app-server count. When
+  `thread/read` and `thread/resume` agree, Throughline now treats the mismatch
+  as diagnostics and adjusts `thread/rollback.numTurns` by the app-server delta.
+  For example, `expectedTurns = 6` and `readTurns = resumedTurns = 7` under
+  `--all` now sends `numTurns: 7`.
+- `trim --preflight --host codex` now reports the same rollback adjustment
+  preview instead of returning `preflight-refused` for this recoverable
+  mismatch.
+
 ## [0.4.9] — 2026-05-09
 
 ### Changed

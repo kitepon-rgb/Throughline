@@ -15,11 +15,13 @@
 
 この文書は「rollback は欠けていた delete primitive かもしれない」という洞察を残すもの。実装時は、未検証の host primitive を本線仕様にせず、次フェーズ計画 [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) の Codex Rewind 互換 Phase で実測してから本線 UX に進む。
 
-2026-05-06 update: Codex app-server の `thread/rollback` / `thread/inject_items` は live host primitive として実測済み。Throughline CLI には明示 `--codex-thread-id` または `THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` による current-thread identity、rollout/app-server turn count guard、guarded execute が入った。
+2026-05-06 update: Codex app-server の `thread/rollback` / `thread/inject_items` は live host primitive として実測済み。Throughline CLI には明示 `--codex-thread-id` または `THROUGHLINE_CODEX_THREAD_ID` / `CODEX_THREAD_ID` による current-thread identity、rollout/app-server turn count diagnostics、guarded execute が入った。
 
 2026-05-07 correction: VS Code restart / reconnect 後に rollback 済み user prompt が復活したように見える incident が起きたため、Codex rollback / inject は restart-safe な context trim primitive としていったん未証明へ戻した。特に `compacted.replacement_history` など、live app-server read/resume 以外の restore source を検証するまで、`$throughline` と Codex Stop hook auto-refresh は mutation を自動実行しない方針にした。Claude `/rewind` 自動化はまだ有効化しない。
 
-2026-05-08 unblock: その後の切り分けで、incident thread の retained text は app-server response 上では `aggregatedOutput` など quoted/tool-output field に分類され、controlled rollback model-visible smoke は app-server restart 境界と VS Code reload/reconnect 境界の両方で `not-reproduced` だった。これを受け、Codex `trim --execute --host codex` と Stop hook auto-refresh の過剰 blocker は解除する。`compacted.replacement_history` retention、restore-safety risk、host primitive audit は引き続き diagnostics だが、単独では mutation 前 refusal にしない。DB memory 不在と rollout/app-server turn-count 不一致は引き続き mutation 前 blocker。
+2026-05-08 unblock: その後の切り分けで、incident thread の retained text は app-server response 上では `aggregatedOutput` など quoted/tool-output field に分類され、controlled rollback model-visible smoke は app-server restart 境界と VS Code reload/reconnect 境界の両方で `not-reproduced` だった。これを受け、Codex `trim --execute --host codex` と Stop hook auto-refresh の過剰 blocker は解除する。`compacted.replacement_history` retention、restore-safety risk、host primitive audit は引き続き diagnostics だが、単独では mutation 前 refusal にしない。DB memory 不在は引き続き mutation 前 blocker。
+
+2026-05-09 update: rollout/app-server turn-count 不一致も mutation 前 blocker から外した。app-server `thread/read` / `thread/resume` が同じ count を返す場合、planned rollback turns に `readTurns - expectedTurns` を足して `thread/rollback.numTurns` を送る。`expectedTurns = 6` / `readTurns = resumedTurns = 7` / `--all` なら `numTurns = 7`。
 
 2026-05-09 skill UX: bare `$throughline` は diagnostics / dry-run / preflight を AI に順番実行させる surface ではなく、`throughline trim --execute --host codex --all --json` を直接走らせる scripted current-thread refresh とする。目的は rollback と、Throughline DB の L2 最新 20 full bodies + older L1 summaries + L3 references-only memory injection のみ。doctor / dry-run / preflight / fresh-thread handoff / restore-safety / host primitive audit は明示診断用であり、通常 `$throughline` の前段にはしない。
 
@@ -265,8 +267,8 @@ Codex で考えられる流れ:
 
 現行実装では、Codex Stop hook 後の 75% automatic refresh は guarded rollback / inject
 mutation を試行する。明示 CLI の `throughline trim --execute --host codex --codex-thread-id <id>`
-も env gate なしで実行する。明示 Codex thread identity、injectable Throughline DB memory、
-rollout/app-server turn count guard は live mutation の最低条件であり、durable success は
+も env gate なしで実行する。明示 Codex thread identity と injectable Throughline DB memory
+は live mutation の最低条件であり、rollout/app-server turn-count mismatch は診断と app-server count 由来の rollback `numTurns` 補正に使う。durable success は
 post-execute rollout evidence で `execute-durable-verified` として別判定する。
 
 重要な考え:

@@ -209,6 +209,48 @@ export function buildThreadRollbackRequest({ id, threadId, numTurns }) {
   };
 }
 
+export function resolveRollbackTurnsForAppServer({
+  plannedRollbackTurns,
+  expectedTurns = null,
+  readTurns = null,
+  resumedTurns = null,
+} = {}) {
+  if (!Number.isInteger(plannedRollbackTurns) || plannedRollbackTurns < 1) {
+    throw new Error('resolveRollbackTurnsForAppServer: plannedRollbackTurns must be an integer >= 1');
+  }
+  assertOptionalTurnCount(expectedTurns, 'resolveRollbackTurnsForAppServer: expectedTurns');
+
+  const result = {
+    plannedRollbackTurns,
+    requestedRollbackTurns: plannedRollbackTurns,
+    adjustment: 0,
+    basis: 'planned',
+    reason: 'using_planned_rollback_turns',
+  };
+
+  if (
+    Number.isInteger(expectedTurns) &&
+    Number.isInteger(readTurns) &&
+    Number.isInteger(resumedTurns) &&
+    readTurns === resumedTurns &&
+    readTurns !== expectedTurns
+  ) {
+    const adjustment = readTurns - expectedTurns;
+    const adjustedTurns = plannedRollbackTurns + adjustment;
+    if (adjustedTurns >= 1) {
+      return {
+        plannedRollbackTurns,
+        requestedRollbackTurns: Math.min(adjustedTurns, readTurns),
+        adjustment,
+        basis: 'app_server_turn_count',
+        reason: 'adjusted_by_app_server_turn_delta',
+      };
+    }
+  }
+
+  return result;
+}
+
 export function buildThreadInjectItemsRequest({ id, threadId, items }) {
   assertRequestId(id, 'buildThreadInjectItemsRequest');
   assertNonEmptyString(threadId, 'buildThreadInjectItemsRequest: threadId');
@@ -313,6 +355,12 @@ export async function runCodexTrimPreflight({
     );
     const readTurns = countTurns(beforeRead);
     const resumedTurns = countTurns(resumed);
+    const rollbackResolution = resolveRollbackTurnsForAppServer({
+      plannedRollbackTurns: rollbackTurns,
+      expectedTurns,
+      readTurns,
+      resumedTurns,
+    });
 
     return {
       status: 'preflight-ready',
@@ -321,6 +369,8 @@ export async function runCodexTrimPreflight({
       injectSent: false,
       readTurns,
       resumedTurns,
+      rollbackRequestedTurns: rollbackResolution.requestedRollbackTurns,
+      rollbackResolution,
       turnCountCheck: compareTurnCounts({
         expectedTurns,
         readTurns,
@@ -329,7 +379,7 @@ export async function runCodexTrimPreflight({
       rollbackRequestPreview: buildThreadRollbackRequest({
         id: 'rollback-preview',
         threadId,
-        numTurns: rollbackTurns,
+        numTurns: rollbackResolution.requestedRollbackTurns,
       }),
       notifications: [...new Set(client.notifications)],
       stderr: client.stderr,
@@ -964,27 +1014,17 @@ export async function runCodexTrimExecution({
       readTurns,
       resumedTurns,
     });
-    if (turnCountCheck.status === 'mismatch' || turnCountCheck.status === 'unknown') {
-      return {
-        status: 'refused',
-        reason: 'codex_rollout_app_server_turn_mismatch',
-        threadId,
-        rollbackSent: false,
-        injectSent: false,
-        injectedItems: 0,
-        readTurns,
-        resumedTurns,
-        rollbackRequestedTurns: rollbackTurns,
-        turnCountCheck,
-        notifications: [...new Set(client.notifications)],
-        stderr: client.stderr,
-      };
-    }
+    const rollbackResolution = resolveRollbackTurnsForAppServer({
+      plannedRollbackTurns: rollbackTurns,
+      expectedTurns,
+      readTurns,
+      resumedTurns,
+    });
     const rollback = await client.request(
       buildThreadRollbackRequest({
         id: randomUUID(),
         threadId,
-        numTurns: rollbackTurns,
+        numTurns: rollbackResolution.requestedRollbackTurns,
       }),
     );
     const inject = await client.request(
@@ -1016,7 +1056,8 @@ export async function runCodexTrimExecution({
       injectedItems: 1,
       readTurns,
       resumedTurns,
-      rollbackRequestedTurns: rollbackTurns,
+      rollbackRequestedTurns: rollbackResolution.requestedRollbackTurns,
+      rollbackResolution,
       rollbackResultTurns,
       injectResultTurns,
       afterTurns: postInjectRead.turns,

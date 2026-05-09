@@ -33,7 +33,7 @@ Claude Code transcript と handoff behavior は守りつつ、Codex primary brid
 ## 優先順位
 
 1. Throughline を Codex primary で使えるようにする。Codex primary の L2 -> L1 backend は Codex CLI を本線にする。
-2. Codex で Claude Rewind 相当の context trim を完成させる。2026-05-08 時点では Codex current-thread trim execute / auto-refresh は再有効化済みで、DB memory と turn-count guard を必須にする。
+2. Codex で Claude Rewind 相当の context trim を完成させる。2026-05-09 時点では Codex current-thread trim execute / auto-refresh は再有効化済みで、DB memory を必須にし、turn-count mismatch は diagnostics と app-server count 由来の rollback `numTurns` 補正に使う。
 3. そのあと Claude 側の `/rewind` UX / 自動化 surface を詰める。
 
 Claude transcript handling の置き換えから始めないでください。Codex 対応は adapter / bridge / Codex primary entrypoint として追加します。

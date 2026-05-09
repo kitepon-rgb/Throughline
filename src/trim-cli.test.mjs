@@ -137,6 +137,7 @@ rl.on('line', (line) => {
       send({ id: msg.id, error: { code: -32000, message: 'mutation must not be called' } });
       return;
     }
+    appendFileSync(log, 'ROLLBACK_TURNS:' + msg.params.numTurns + '\\n');
     turns = turns.slice(0, Math.max(0, turns.length - msg.params.numTurns));
     appendRollout({ type: 'event_msg', payload: { type: 'thread_rolled_back', num_turns: msg.params.numTurns } });
     send({ id: msg.id, result: { thread: { id: threadId, turns } } });
@@ -843,7 +844,7 @@ test('trim CLI preflight proceeds when compacted history already retains target 
   }
 });
 
-test('trim CLI execute refuses before rollback when rollout and app-server turn counts differ', async () => {
+test('trim CLI execute adjusts rollback turns from app-server count when counts differ', async () => {
   const home = makeTempHome();
   const codexHome = makeTempHome();
   const project = makeTempProject();
@@ -853,12 +854,12 @@ test('trim CLI execute refuses before rollback when rollout and app-server turn 
     writeCodexRollout(codexHome, {
       project,
       threadId,
-      turnCount: 22,
+      turnCount: 6,
     });
     const { script, log } = makeFakeCodexAppServer(project, {
       allowMutation: true,
       threadId,
-      turnCount: 21,
+      turnCount: 7,
     });
     const result = runTrim(
       home,
@@ -868,8 +869,7 @@ test('trim CLI execute refuses before rollback when rollout and app-server turn 
         'codex',
         '--codex-thread-id',
         threadId,
-        '--keep-recent',
-        '20',
+        '--all',
         '--execute',
         '--codex-app-server-bin',
         script,
@@ -881,17 +881,25 @@ test('trim CLI execute refuses before rollback when rollout and app-server turn 
 
     assert.equal(result.status, 1);
     const payload = JSON.parse(result.stdout);
-    assert.equal(payload.status, 'execute-refused');
-    assert.equal(payload.reason, 'codex_rollout_app_server_turn_mismatch');
-    assert.equal(payload.execution.rollbackSent, false);
-    assert.equal(payload.execution.injectSent, false);
+    assert.notEqual(payload.status, 'execute-refused');
+    assert.equal(payload.execution.rollbackSent, true);
+    assert.equal(payload.execution.injectSent, true);
+    assert.equal(payload.execution.rollbackRequestedTurns, 7);
     assert.equal(payload.execution.turnCountCheck.status, 'mismatch');
+    assert.deepEqual(payload.execution.rollbackResolution, {
+      plannedRollbackTurns: 6,
+      requestedRollbackTurns: 7,
+      adjustment: 1,
+      basis: 'app_server_turn_count',
+      reason: 'adjusted_by_app_server_turn_delta',
+    });
 
     const calledMethods = readFileSync(log, 'utf8');
     assert.match(calledMethods, /thread\/read/);
     assert.match(calledMethods, /thread\/resume/);
-    assert.doesNotMatch(calledMethods, /thread\/rollback/);
-    assert.doesNotMatch(calledMethods, /thread\/inject_items/);
+    assert.match(calledMethods, /thread\/rollback/);
+    assert.match(calledMethods, /ROLLBACK_TURNS:7/);
+    assert.match(calledMethods, /thread\/inject_items/);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

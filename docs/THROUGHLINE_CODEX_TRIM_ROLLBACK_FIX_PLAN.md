@@ -18,7 +18,9 @@ quoted/tool-output field に残り得ることは確認済みですが、それ�
 model-visible input に入ることは controlled smoke で再現していません。incident-shaped
 run の retained text は risk evidence として残す一方、単独では mutation 前 blocker にしません。
 Codex current-thread trim は、明示 `--execute`、Throughline DB injectable memory、
-Codex thread identity、rollout/app-server turn-count guard を条件に実行します。Codex Stop hook
+Codex thread identity を条件に実行します。rollout/app-server turn-count mismatch は診断に残し、
+app-server `thread/read` / `thread/resume` が同じ count を返す場合は、その差分で rollback `numTurns`
+を補正します。Codex Stop hook
 auto-refresh は verified usage 75% 以上で同じ guarded path を試行し、estimate usage では実行しません。
 
 最初のインシデント仮説に対する重要な訂正:
@@ -293,7 +295,8 @@ TODO:
     repair contract が blocked の場合は拒否していた。
   - 2026-05-08 unblock: host primitive audit は diagnostic-only に変更した。
     現行 Codex CLI に same-thread repair primitive が無い事実は表示するが、
-    DB memory と rollout/app-server turn-count guard がそろう execute を塞がない。
+    DB memory がある execute を塞がない。rollout/app-server turn-count mismatch は
+    診断と app-server count 由来の rollback `numTurns` 補正に使う。
   - `~/.codex/state_5.sqlite` の `threads` table は rollout path / metadata を持つが、
     turn bodies は持たない。turn body の主根拠は rollout JSONL 側である可能性が
     高いが、VS Code extension restore source は別途未確定。
@@ -624,8 +627,9 @@ TODO:
     mutation 前 blocker にはしない。
 - [x] 明示 `trim --execute --host codex` の製品判断を固定する。
   - 判断: 明示 `--execute` で実行する。env opt-in と host primitive audit gate は外す。
-    DB memory が無い場合、または rollout/app-server turn count guard が合わない場合は
-    mutation 前に拒否する。実行後は `execute-sent-live-only` /
+    DB memory が無い場合は mutation 前に拒否する。rollout/app-server turn count がずれる場合は
+    refusal ではなく診断に残し、app-server count を正として rollback `numTurns` を補正する。
+    実行後は `execute-sent-live-only` /
     `execute-unverified` / `execute-durable-verified` で結果を分ける。
 
 受け入れ条件:
@@ -673,5 +677,9 @@ TODO:
 作業量や複雑さを理由に目標を下げない。2026-05-08 時点の製品仕様は、
 同一 Codex thread で guarded rollback + Throughline DB memory inject を実行し、
 rollout 上の新 rollback event と injected active-work memory で durable evidence を確認すること。
-restore-safety / host primitive audit は diagnostics として残すが、単独では execute / auto-refresh の blocker にしない。
-mutation 前 refusal は thread identity、Throughline DB injectable memory、rollout/app-server turn-count mismatch に限定する。
+restore-safety / host primitive audit / rollout-app-server turn-count mismatch は diagnostics として残すが、単独では execute / auto-refresh の blocker にしない。
+mutation 前 refusal は thread identity と Throughline DB injectable memory に限定する。
+2026-05-09 update: rollout/app-server turn-count mismatch は mutation 前 refusal から外した。
+app-server `thread/read` / `thread/resume` が同じ count を返す場合、planned rollback turns に
+`readTurns - expectedTurns` を足して `thread/rollback.numTurns` を送る。例:
+`expectedTurns = 6` / `readTurns = resumedTurns = 7` / `--all` なら `numTurns = 7`。

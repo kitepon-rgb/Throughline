@@ -19,6 +19,7 @@ import {
   compareTurnCounts,
   encodeAppServerMessage,
   parseAppServerLine,
+  resolveRollbackTurnsForAppServer,
   runCodexModelVisibilitySmoke,
   runCodexRollbackModelVisiblePrepare,
   runCodexRollbackModelVisibleVerify,
@@ -200,6 +201,50 @@ test('compareTurnCounts: rejects invalid expected turn count', () => {
         resumedTurns: 2,
       }),
     /expectedTurns must be a non-negative integer/,
+  );
+});
+
+test('resolveRollbackTurnsForAppServer adjusts planned rollback by app-server turn delta', () => {
+  assert.deepEqual(
+    resolveRollbackTurnsForAppServer({
+      plannedRollbackTurns: 6,
+      expectedTurns: 6,
+      readTurns: 7,
+      resumedTurns: 7,
+    }),
+    {
+      plannedRollbackTurns: 6,
+      requestedRollbackTurns: 7,
+      adjustment: 1,
+      basis: 'app_server_turn_count',
+      reason: 'adjusted_by_app_server_turn_delta',
+    },
+  );
+
+  assert.deepEqual(
+    resolveRollbackTurnsForAppServer({
+      plannedRollbackTurns: 2,
+      expectedTurns: 22,
+      readTurns: 21,
+      resumedTurns: 21,
+    }),
+    {
+      plannedRollbackTurns: 2,
+      requestedRollbackTurns: 1,
+      adjustment: -1,
+      basis: 'app_server_turn_count',
+      reason: 'adjusted_by_app_server_turn_delta',
+    },
+  );
+
+  assert.equal(
+    resolveRollbackTurnsForAppServer({
+      plannedRollbackTurns: 6,
+      expectedTurns: 6,
+      readTurns: 7,
+      resumedTurns: 8,
+    }).requestedRollbackTurns,
+    6,
   );
 });
 

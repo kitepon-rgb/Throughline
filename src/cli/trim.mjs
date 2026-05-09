@@ -366,15 +366,6 @@ async function runPreflight(parsed, plan) {
     expectedTurns: expectedCodexAppServerTurns(plan),
     command,
   });
-  const turnCountStatus = preflight.turnCountCheck?.status;
-  if (turnCountStatus === 'mismatch' || turnCountStatus === 'unknown') {
-    return {
-      status: 'preflight-refused',
-      reason: preflight.turnCountCheck.reason,
-      plan,
-      preflight,
-    };
-  }
 
   return {
     status: 'preflight-ready',
