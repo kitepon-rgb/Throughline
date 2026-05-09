@@ -26,10 +26,15 @@ throughline install     # hook / Codex skill / VS Code monitor task を登録
 `/clear` を打てば新セッションはゼロからではなく、**思考の途中から再開** される。
 `/clear` を経由しない新規 chat / VS Code 再起動では `/tl` で前任を指名できる。
 
+<details>
+<summary><b>Codex も併用する場合</b> Codex hooks も登録される — クリックで詳細</summary>
+
 Codex では `UserPromptSubmit` / `PostToolUse` / `Stop` hook と `$throughline`
 skill も登録する。75% 自動発火は token-monitor 依存ではなく、当該 Codex
 セッションの rollout `token_count` を hook が読み、prompt 送信時または tool loop
 途中の閾値到達時に同じセッションへ `$throughline` 実行指示を注入する。
+
+</details>
 
 ## 他の手段との比較
 
@@ -136,6 +141,28 @@ L3 に保存された `kind` 別 (ツール入力 / ツール出力 / hook 出�
 Throughline 0.4.1+ の引き継ぎは 2 経路です。主経路は typed `/clear` または
 `/tl` が書く baton で、`source='clear'` の auto path は `/clear` が
 UserPromptSubmit hook に届かない場合の補助です。
+
+```mermaid
+flowchart LR
+    U["ユーザーが入力<br/>/clear または /tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
+    W --> B[("handoff_batons<br/>SQLite")]
+    M["VS Code メニュー<br/>clear"] -->|UserPromptSubmit に届かない| X["baton 無し"]
+    NS["次の SessionStart"] --> C{"baton<br/>あり?"}
+    B -.-> C
+    X -.-> C
+    C -->|あり| P1["baton path<br/>(主経路)<br/>指名された前任を merge"]
+    C -->|無し / source='clear'| P2["auto path<br/>(補助)<br/>findLatestClaudePredecessor"]
+    C -->|無し / source!='clear'| P3["新規セッション<br/>merge 無し"]
+    P1 --> INJ["L1 + L2 + L3 references を注入"]
+    P2 --> INJ
+
+    classDef primary fill:#7c5cff,stroke:#1a1f2e,color:#fff
+    classDef fallback fill:#3aa0ff,stroke:#1a1f2e,color:#fff
+    classDef neutral fill:#4a5568,stroke:#1a1f2e,color:#fff
+    class P1 primary
+    class P2 fallback
+    class P3,INJ neutral
+```
 
 ### baton path (primary): typed `/clear` または `/tl`
 

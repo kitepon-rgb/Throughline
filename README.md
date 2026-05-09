@@ -27,6 +27,9 @@ type `/clear` — the new session resumes mid-thought instead of starting from
 zero. (For non-`/clear` boundaries such as a brand-new chat or a VSCode
 restart, type `/tl` first to mark the predecessor.)
 
+<details>
+<summary><b>Also using Codex?</b> Global install registers Codex hooks too — click for details.</summary>
+
 Global install also registers Codex `UserPromptSubmit`, `PostToolUse`, and
 `Stop` hooks in `~/.codex/hooks.json` and enables both
 `[features].codex_hooks = true` and `[features].hooks = true` in
@@ -41,6 +44,8 @@ source. It also installs a global `$throughline` Codex skill. Bare
 `$throughline` runs the scripted current-thread rollback + Throughline DB memory
 injection directly; ask explicitly for status, resume, summarize, diagnostics,
 or fresh-thread handoff when you want those read-only surfaces instead.
+
+</details>
 
 ## How it compares
 
@@ -153,6 +158,28 @@ Throughline 0.4.1+ supports two inheritance paths. The **baton path is the
 primary route**; the source-`clear` auto path is the fallback for cases where
 the user's `/clear` does not reach the `UserPromptSubmit` hook (for example
 the VSCode extension's menu-driven `/clear`).
+
+```mermaid
+flowchart LR
+    U["User types<br/>/clear or /tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
+    W --> B[("handoff_batons<br/>SQLite")]
+    M["VSCode menu<br/>clear"] -->|no UserPromptSubmit| X["no baton"]
+    NS["Next SessionStart"] --> C{"baton<br/>present?"}
+    B -.-> C
+    X -.-> C
+    C -->|yes| P1["baton path<br/>(primary)<br/>merge that exact predecessor"]
+    C -->|no, source='clear'| P2["auto path<br/>(fallback)<br/>findLatestClaudePredecessor"]
+    C -->|no, source!='clear'| P3["fresh session<br/>no merge"]
+    P1 --> INJ["inject L1 + L2 + L3 refs"]
+    P2 --> INJ
+
+    classDef primary fill:#7c5cff,stroke:#1a1f2e,color:#fff
+    classDef fallback fill:#3aa0ff,stroke:#1a1f2e,color:#fff
+    classDef neutral fill:#4a5568,stroke:#1a1f2e,color:#fff
+    class P1 primary
+    class P2 fallback
+    class P3,INJ neutral
+```
 
 ### baton path (primary): typed `/clear` or `/tl` → deterministic inheritance
 
