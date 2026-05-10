@@ -8,6 +8,7 @@ import {
   buildCodexPostToolUseHookCommand,
   buildCodexStopHookCommand,
   buildCodexUserPromptSubmitHookCommand,
+  resolveCodexHookNodePath,
   run,
   resolveThroughlineOnPath,
 } from './install.mjs';
@@ -513,6 +514,38 @@ test('resolveThroughlineOnPath: finds throughline binary in PATH directory', () 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('resolveCodexHookNodePath: prefers a stable PATH node symlink when it resolves to current Node', () => {
+  const stableNode = join('/opt/homebrew/bin', process.platform === 'win32' ? 'node.exe' : 'node');
+  const cellarNode = join('/opt/homebrew/Cellar/node/26.0.0/bin', process.platform === 'win32' ? 'node.exe' : 'node');
+  const realNode = join('/opt/homebrew/Cellar/node/26.0.0/bin', process.platform === 'win32' ? 'node.exe' : 'node');
+  const result = resolveCodexHookNodePath({
+    env: { PATH: '/opt/homebrew/bin' },
+    execPath: cellarNode,
+    exists: (p) => p === stableNode,
+    realpath: (p) => {
+      if (p === stableNode || p === cellarNode) return realNode;
+      throw new Error(`unexpected path: ${p}`);
+    },
+  });
+  assert.equal(result, stableNode);
+});
+
+test('resolveCodexHookNodePath: falls back to process execPath when PATH node is different', () => {
+  const pathNode = join('/usr/local/bin', process.platform === 'win32' ? 'node.exe' : 'node');
+  const execPath = join('/opt/homebrew/Cellar/node/26.0.0/bin', process.platform === 'win32' ? 'node.exe' : 'node');
+  const result = resolveCodexHookNodePath({
+    env: { PATH: '/usr/local/bin' },
+    execPath,
+    exists: (p) => p === pathNode,
+    realpath: (p) => {
+      if (p === pathNode) return '/different/node';
+      if (p === execPath) return '/current/node';
+      throw new Error(`unexpected path: ${p}`);
+    },
+  });
+  assert.equal(result, execPath);
 });
 
 test('install is idempotent: second run keeps exactly one tl.md and one hook entry', async () => {

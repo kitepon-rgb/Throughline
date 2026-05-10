@@ -11,7 +11,7 @@
  * script path で登録する。
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, rmSync, realpathSync } from 'node:fs';
 import { join, dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -62,22 +62,58 @@ function quoteCommandPath(p) {
   return /\s/.test(p) ? `"${p.replace(/"/g, '\\"')}"` : p;
 }
 
+function safeRealpath(p, realpath = realpathSync.native) {
+  try {
+    return realpath(p);
+  } catch {
+    return null;
+  }
+}
+
+export function resolveCodexHookNodePath({
+  env = process.env,
+  execPath = process.execPath,
+  platform = process.platform,
+  exists = existsSync,
+  realpath = realpathSync.native,
+} = {}) {
+  const execRealpath = safeRealpath(execPath, realpath);
+  const pathEnv = env.PATH || env.Path || '';
+  const dirs = pathEnv.split(delimiter).filter(Boolean);
+  const names = platform === 'win32'
+    ? ['node.exe', 'node.cmd', 'node.bat', 'node']
+    : ['node'];
+
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = join(dir, name);
+      if (!exists(candidate)) continue;
+      const candidateRealpath = safeRealpath(candidate, realpath);
+      if (execRealpath && candidateRealpath && candidateRealpath === execRealpath) {
+        return candidate;
+      }
+    }
+  }
+
+  return execPath;
+}
+
 export function buildCodexStopHookCommand({
-  nodePath = process.execPath,
+  nodePath = resolveCodexHookNodePath(),
   cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
 } = {}) {
   return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook stop`;
 }
 
 export function buildCodexUserPromptSubmitHookCommand({
-  nodePath = process.execPath,
+  nodePath = resolveCodexHookNodePath(),
   cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
 } = {}) {
   return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook user-prompt-submit`;
 }
 
 export function buildCodexPostToolUseHookCommand({
-  nodePath = process.execPath,
+  nodePath = resolveCodexHookNodePath(),
   cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
 } = {}) {
   return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook post-tool-use`;
