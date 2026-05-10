@@ -10,6 +10,8 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.11] — 2026-05-10
+
 ### Changed
 
 - Disabled Codex automatic current-thread refresh from `UserPromptSubmit`,
@@ -22,6 +24,17 @@ shipped to npm but were not individually tagged on GitHub.
   which creates a new Codex app-server thread, injects developer handoff memory,
   and opens the selected host. Explicit `throughline trim --execute --host codex`
   remains available as a diagnostic current-thread rollback / inject command.
+
+### Fixed
+
+- Codex hooks registered by `throughline install` now resolve the Node
+  executable through `PATH` (matching `process.execPath` by `realpath`) instead
+  of always hard-coding `process.execPath`. On Homebrew-installed Node on macOS,
+  `process.execPath` points at a Cellar-versioned binary that disappears on the
+  next `brew upgrade`, leaving stale absolute paths in `~/.codex/hooks.json`.
+  The new resolver prefers a stable `PATH` entry (e.g. `/opt/homebrew/bin/node`)
+  and falls back to `process.execPath` only when no PATH entry resolves to the
+  same binary.
 
 ## [0.4.10] — 2026-05-09
 
