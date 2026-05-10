@@ -1,6 +1,7 @@
 import { getDb } from '../db.mjs';
 import { buildHandoffRecord } from '../handoff-record.mjs';
 import { buildCodexHandoffSmoke } from '../codex-handoff-smoke.mjs';
+import { sameProjectPath } from '../project-path.mjs';
 
 async function readStdin() {
   let raw = '';
@@ -75,16 +76,15 @@ function parseArgs(args) {
 }
 
 function findLatestCodexSessionId(db, projectPath) {
-  const row = db
+  const rows = db
     .prepare(
-      `SELECT session_id
+      `SELECT session_id, project_path
        FROM sessions
-       WHERE lower(project_path) = lower(?)
-         AND session_id LIKE 'codex:%'
-       ORDER BY updated_at DESC
-       LIMIT 1`,
+       WHERE session_id LIKE 'codex:%'
+       ORDER BY updated_at DESC`,
     )
-    .get(projectPath);
+    .all();
+  const row = rows.find((candidate) => sameProjectPath(candidate.project_path, projectPath));
   return row?.session_id ?? null;
 }
 

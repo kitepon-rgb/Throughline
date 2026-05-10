@@ -117,7 +117,7 @@ test('codex-hook stop captures rollout using Codex stdin payload fields', async 
     assert.equal(monitorState.usage.source, 'codex-rollout-token-count');
     assert.equal(result.monitorState.sessionId, `codex:${threadId}`);
     assert.equal(result.autoRefresh.status, 'skipped');
-    assert.equal(result.autoRefresh.reason, 'below_threshold');
+    assert.equal(result.autoRefresh.reason, 'codex_auto_refresh_disabled');
     assert.equal(monitorTaskCwd, project);
   } finally {
     db.close();
@@ -126,12 +126,12 @@ test('codex-hook stop captures rollout using Codex stdin payload fields', async 
   }
 });
 
-test('codex-hook stop runs auto refresh when verified usage reaches 75%', async () => {
+test('codex-hook stop captures only and does not auto refresh at 75%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
   const db = makeDb();
-  let autoRefreshArgs = null;
+  let runAutoRefreshCalled = false;
   try {
     const rolloutPath = writeRollout(codexHome, {
       id: threadId,
@@ -161,7 +161,7 @@ test('codex-hook stop runs auto refresh when verified usage reaches 75%', async 
       ensureMonitorTask: () => {},
       writeMonitorState: () => {},
       runAutoRefresh: async (args) => {
-        autoRefreshArgs = args;
+        runAutoRefreshCalled = true;
         return {
           status: 'refreshed-live',
           reason: 'rollback_and_inject_sent_live',
@@ -170,16 +170,9 @@ test('codex-hook stop runs auto refresh when verified usage reaches 75%', async 
     });
 
     assert.equal(result.status, 'ok');
-    assert.equal(result.autoRefresh.status, 'refreshed-live');
-    assert.equal(autoRefreshArgs.threadId, threadId);
-    assert.equal(autoRefreshArgs.codexThreadIdSource, 'payload:session_id');
-    assert.equal(autoRefreshArgs.codexHome, codexHome);
-    assert.equal(autoRefreshArgs.projectPath, project);
-    assert.equal(autoRefreshArgs.sessionId, `codex:${threadId}`);
-    assert.equal(autoRefreshArgs.usage.tokens, 240_000);
-    assert.equal(autoRefreshArgs.usage.contextWindowSize, 258400);
-    assert.equal(autoRefreshArgs.usage.estimated, false);
-    assert.equal(autoRefreshArgs.command, 'codex');
+    assert.equal(result.autoRefresh.status, 'skipped');
+    assert.equal(result.autoRefresh.reason, 'codex_auto_refresh_disabled');
+    assert.equal(runAutoRefreshCalled, false);
   } finally {
     db.close();
     rmSync(codexHome, { recursive: true, force: true });
@@ -187,7 +180,7 @@ test('codex-hook stop runs auto refresh when verified usage reaches 75%', async 
   }
 });
 
-test('codex-hook user-prompt-submit injects current-session throughline instruction at 75%', async () => {
+test('codex-hook user-prompt-submit does not inject auto-refresh instruction at 75%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
@@ -227,16 +220,76 @@ test('codex-hook user-prompt-submit injects current-session throughline instruct
     });
 
     assert.equal(result.status, 'ok');
-    assert.equal(result.autoRefreshPrompt.status, 'ready');
-    assert.equal(result.autoRefreshPrompt.reason, 'threshold_reached');
-    assert.match(result.autoRefreshPrompt.context, /Before answering the user prompt/);
-    assert.match(result.autoRefreshPrompt.context, /throughline trim --execute --host codex --all --json/);
-    assert.match(result.autoRefreshPrompt.context, /current Codex rollout token_count/);
-    const output = JSON.parse(result.autoRefreshPrompt.output);
-    assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-    assert.match(output.hookSpecificOutput.additionalContext, /installed \$throughline workflow/);
+    assert.equal(result.autoRefreshPrompt.status, 'skipped');
+    assert.equal(result.autoRefreshPrompt.reason, 'codex_auto_refresh_disabled');
+    assert.equal(result.autoRefreshPrompt.output, undefined);
     assert.equal(result.captured.sessionId, `codex:${threadId}`);
     assert.equal(monitorState.sessionId, `codex:${threadId}`);
+  } finally {
+    db.close();
+    rmSync(codexHome, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('codex-hook prompt and tool hooks both stay quiet when auto-refresh is disabled', async () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  const db = makeDb();
+  const autoRefreshStateStore = makeMemoryAutoRefreshStateStore();
+  try {
+    const rolloutPath = writeRollout(codexHome, {
+      id: threadId,
+      cwd: project,
+      events: [
+        event('user_message', { message: 'hook request' }),
+        event('task_started'),
+        turnContext({ model: 'gpt-5.5', cwd: project }),
+        event('agent_message', { message: 'hook answer' }),
+        event('task_complete'),
+        tokenCountEvent({
+          inputTokens: 240_000,
+          outputTokens: 67,
+          contextWindow: 258400,
+        }),
+      ],
+    });
+
+    const first = await runCodexUserPromptSubmitHook({
+      payload: {
+        session_id: threadId,
+        transcript_path: rolloutPath,
+        cwd: project,
+        prompt: 'next user prompt',
+      },
+      env: {},
+      db,
+      ensureMonitorTask: () => {},
+      writeMonitorState: () => {},
+      autoRefreshStateStore,
+    });
+    const second = await runCodexPostToolUseHook({
+      payload: {
+        session_id: threadId,
+        transcript_path: rolloutPath,
+        cwd: project,
+        hook_event_name: 'PostToolUse',
+        tool_name: 'exec_command',
+      },
+      env: {},
+      db,
+      ensureMonitorTask: () => {},
+      writeMonitorState: () => {},
+      autoRefreshStateStore,
+    });
+
+    assert.equal(first.autoRefreshPrompt.status, 'skipped');
+    assert.equal(first.autoRefreshPrompt.reason, 'codex_auto_refresh_disabled');
+    assert.equal(first.autoRefreshPrompt.output, undefined);
+    assert.equal(second.autoRefreshPrompt.status, 'skipped');
+    assert.equal(second.autoRefreshPrompt.reason, 'codex_auto_refresh_disabled');
+    assert.equal(second.autoRefreshPrompt.output, undefined);
   } finally {
     db.close();
     rmSync(codexHome, { recursive: true, force: true });
@@ -281,7 +334,7 @@ test('codex-hook user-prompt-submit stays quiet below 75%', async () => {
 
     assert.equal(result.status, 'ok');
     assert.equal(result.autoRefreshPrompt.status, 'skipped');
-    assert.equal(result.autoRefreshPrompt.reason, 'below_threshold');
+    assert.equal(result.autoRefreshPrompt.reason, 'codex_auto_refresh_disabled');
     assert.equal(result.autoRefreshPrompt.output, undefined);
   } finally {
     db.close();
@@ -290,7 +343,7 @@ test('codex-hook user-prompt-submit stays quiet below 75%', async () => {
   }
 });
 
-test('codex-hook post-tool-use injects current-session throughline instruction at 75%', async () => {
+test('codex-hook post-tool-use does not inject auto-refresh instruction at 75%', async () => {
   const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
   const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
@@ -327,13 +380,9 @@ test('codex-hook post-tool-use injects current-session throughline instruction a
     });
 
     assert.equal(result.status, 'ok');
-    assert.equal(result.autoRefreshPrompt.status, 'ready');
-    assert.equal(result.autoRefreshPrompt.reason, 'threshold_reached');
-    assert.match(result.autoRefreshPrompt.context, /Before continuing the current tool loop/);
-    assert.match(result.autoRefreshPrompt.context, /throughline trim --execute --host codex --all --json/);
-    const output = JSON.parse(result.autoRefreshPrompt.output);
-    assert.equal(output.hookSpecificOutput.hookEventName, 'PostToolUse');
-    assert.match(output.hookSpecificOutput.additionalContext, /installed \$throughline workflow/);
+    assert.equal(result.autoRefreshPrompt.status, 'skipped');
+    assert.equal(result.autoRefreshPrompt.reason, 'codex_auto_refresh_disabled');
+    assert.equal(result.autoRefreshPrompt.output, undefined);
   } finally {
     db.close();
     rmSync(codexHome, { recursive: true, force: true });
@@ -373,6 +422,59 @@ test('codex-hook stop reports camelCase payload thread id source', async () => {
     assert.equal(result.status, 'ok');
     assert.equal(result.codexThreadIdSource, 'payload:sessionId');
     assert.equal(result.captured.sessionId, `codex:${threadId}`);
+  } finally {
+    db.close();
+    rmSync(codexHome, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('codex-hook stop ignores auto-refresh backoff store while disabled', async () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'tl-codex-hook-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-hook-project-'));
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  const db = makeDb();
+  const autoRefreshStateStore = makeMemoryAutoRefreshStateStore();
+  try {
+    const rolloutPath = writeRollout(codexHome, {
+      id: threadId,
+      cwd: project,
+      events: [
+        event('user_message', { message: 'hook request' }),
+        event('task_started'),
+        turnContext({ model: 'gpt-5.5', cwd: project }),
+        event('agent_message', { message: 'hook answer' }),
+        event('task_complete'),
+        tokenCountEvent({
+          inputTokens: 240_000,
+          outputTokens: 67,
+          contextWindow: 258400,
+        }),
+      ],
+    });
+
+    const result = await runCodexStopHook({
+      payload: {
+        session_id: threadId,
+        transcript_path: rolloutPath,
+        cwd: project,
+      },
+      env: {},
+      db,
+      ensureMonitorTask: () => {},
+      writeMonitorState: () => {},
+      autoRefreshStateStore,
+      runAutoRefresh: async (args) => {
+        assert.fail('runAutoRefresh should not be called while Codex auto-refresh is disabled');
+        return {
+          status: 'skipped',
+          reason: 'auto_refresh_backoff',
+        };
+      },
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.autoRefresh.reason, 'codex_auto_refresh_disabled');
   } finally {
     db.close();
     rmSync(codexHome, { recursive: true, force: true });
@@ -457,4 +559,17 @@ function tokenCountEvent({ inputTokens, outputTokens, contextWindow }) {
       model_context_window: contextWindow,
     },
   });
+}
+
+function makeMemoryAutoRefreshStateStore() {
+  const states = new Map();
+  return {
+    read(threadId) {
+      const state = states.get(threadId);
+      return state ? structuredClone(state) : null;
+    },
+    write(threadId, state) {
+      states.set(threadId, structuredClone(state));
+    },
+  };
 }

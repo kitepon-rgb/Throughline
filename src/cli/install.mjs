@@ -526,8 +526,8 @@ export async function run(args = []) {
   console.log('  Stop             → throughline process-turn   (L1 要約 + L2 本文保存 + L3 詳細保存)');
   console.log('  UserPromptSubmit → throughline prompt-submit  (/tl & /clear バトン書き込み)');
   if (codex) {
-    console.log(`  Codex UserPromptSubmit → ${buildCodexUserPromptSubmitHookCommand()} (75% 到達時に current session へ $throughline 指示を注入)`);
-    console.log(`  Codex PostToolUse      → ${buildCodexPostToolUseHookCommand()} (tool loop 中も 75% 到達時に $throughline 指示を注入)`);
+    console.log(`  Codex UserPromptSubmit → ${buildCodexUserPromptSubmitHookCommand()} (capture / monitor state only; auto refresh disabled)`);
+    console.log(`  Codex PostToolUse      → ${buildCodexPostToolUseHookCommand()} (capture / monitor state only; auto refresh disabled)`);
     console.log(`  Codex Stop             → ${buildCodexStopHookCommand()} (Codex rollout capture + L1 要約)`);
   }
   console.log('');

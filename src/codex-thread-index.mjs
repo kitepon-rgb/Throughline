@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 
@@ -169,5 +169,11 @@ function compareCandidates(a, b) {
 }
 
 function normalizePath(value) {
-  return resolve(value).split(sep).join('/').replace(/\/+$/, '').toLowerCase();
+  let resolved = resolve(value);
+  try {
+    if (existsSync(resolved)) resolved = realpathSync.native(resolved);
+  } catch {
+    // Keep the lexical path when it cannot be resolved.
+  }
+  return resolved.split(sep).join('/').replace(/\/+$/, '').toLowerCase();
 }

@@ -1,5 +1,6 @@
 import { inspectCodexPlannedRollbackRestoreSafety } from './codex-rollout-memory.mjs';
 import { buildHandoffRecord, N_RECENT_L2 } from './handoff-record.mjs';
+import { sameProjectPath } from './project-path.mjs';
 import { estimateTokens } from './token-estimator.mjs';
 
 export const DEFAULT_TRIM_KEEP_RECENT = N_RECENT_L2;
@@ -31,15 +32,14 @@ function loadSession(db, sessionId) {
 export function findLatestSessionIdForProject(db, projectPath) {
   if (!projectPath) return null;
   try {
-    const row = db
+    const rows = db
       .prepare(
-        `SELECT session_id
+        `SELECT session_id, project_path
          FROM sessions
-         WHERE lower(project_path) = lower(?)
-         ORDER BY updated_at DESC
-         LIMIT 1`,
+         ORDER BY updated_at DESC`,
       )
-      .get(projectPath);
+      .all();
+    const row = rows.find((candidate) => sameProjectPath(candidate.project_path, projectPath));
     return row?.session_id ?? null;
   } catch {
     return null;

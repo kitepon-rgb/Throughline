@@ -10,6 +10,19 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Changed
+
+- Disabled Codex automatic current-thread refresh from `UserPromptSubmit`,
+  `PostToolUse`, and `Stop` hooks. The hooks now capture rollout memory and
+  monitor state, then return `codex_auto_refresh_disabled` without injecting
+  `$throughline` or sending rollback/inject. The lower-level auto-refresh helper
+  is also default-disabled.
+- Changed the Codex `$throughline` skill back to a new-thread handoff flow:
+  bare `$throughline` now runs `throughline codex-handoff-start --execute`,
+  which creates a new Codex app-server thread, injects developer handoff memory,
+  and opens the selected host. Explicit `throughline trim --execute --host codex`
+  remains available as a diagnostic current-thread rollback / inject command.
+
 ## [0.4.10] — 2026-05-09
 
 ### Fixed
@@ -139,10 +152,13 @@ shipped to npm but were not individually tagged on GitHub.
 
 - Changed the installed Codex `$throughline` skill so bare `$throughline` runs
   the scripted current-thread refresh directly:
-  `throughline trim --execute --host codex --all --json`. Doctor, dry-run,
+  `throughline trim --execute --host codex --all`. Doctor, dry-run,
   preflight, restore-safety analysis, host primitive audit, and fresh-thread
   handoff remain available only when explicitly requested instead of being the
   normal skill path.
+- Changed Codex auto-refresh hook instructions to avoid `--json` on execute so
+  the full trim plan / memory preview is not reintroduced as tool output after
+  rollback.
 
 ## [0.4.2] — 2026-05-09
 
@@ -296,12 +312,14 @@ shipped to npm but were not individually tagged on GitHub.
   `--print-prompt` can include the combined prompt for audit. Live model smoke
   requires `THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1` and does not
   mutate the current Codex thread.
-- `throughline codex-handoff-start`, a guided read-only fresh-thread start plan
+- `throughline codex-handoff-start`, a guided fresh-thread start plan
   for Codex handoff. It reports the structural smoke command, model-smoke dry-run
   boundary, handoff render command, optional live model smoke command, and can
   include the handoff prompt with `--print-prompt`. When `--memo-stdin` is used,
   the replay commands include `--memo-stdin` and the output reminds callers to
-  pipe the same memo.
+  pipe the same memo. With `--execute`, it starts a new app-server thread,
+  injects developer handoff memory with `thread/inject_items`, and opens it
+  through `--open-host auto|vscode|cli|none`.
 - `throughline doctor --codex`, a read-only Codex-primary diagnostic that shows
   current thread env identity, rollout candidates for the cwd, captured
   `codex:<thread_id>` DB sessions, context refresh blockage, new-thread

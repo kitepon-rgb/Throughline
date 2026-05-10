@@ -124,13 +124,13 @@ test('global install registers Codex session hooks and enables hooks features', 
       .flatMap(g => g.hooks ?? [])
       .find(h => h.command === expectedPromptCommand);
     assert.ok(promptHook, 'Codex UserPromptSubmit should have absolute throughline.mjs codex-hook user-prompt-submit');
-    assert.equal(promptHook.async, false, 'Codex UserPromptSubmit hook should be synchronous for context injection');
+    assert.equal(promptHook.async, false, 'Codex UserPromptSubmit hook should be synchronous for capture/monitor state');
     assert.equal(promptHook.timeoutSec, 30, 'Codex UserPromptSubmit hook should be short');
     const postToolUseHook = hooks.hooks.PostToolUse
       .flatMap(g => g.hooks ?? [])
       .find(h => h.command === expectedPostToolUseCommand);
     assert.ok(postToolUseHook, 'Codex PostToolUse should have absolute throughline.mjs codex-hook post-tool-use');
-    assert.equal(postToolUseHook.async, false, 'Codex PostToolUse hook should be synchronous for context injection');
+    assert.equal(postToolUseHook.async, false, 'Codex PostToolUse hook should be synchronous for capture/monitor state');
     assert.equal(postToolUseHook.timeoutSec, 30, 'Codex PostToolUse hook should be short');
     const config = readFileSync(join(home.dir, '.codex', 'config.toml'), 'utf8');
     assert.match(config, /^\[features\]\ncodex_hooks = true/m);
@@ -158,9 +158,10 @@ test('global install copies Throughline Codex skill to ~/.codex/skills/', async 
     const metadataBody = readFileSync(metadata, 'utf8');
     assert.match(skillBody, /name: throughline/);
     assert.match(skillBody, /Bare "\$throughline"/);
-    assert.match(skillBody, /throughline trim --execute --host codex --all/);
-    assert.match(skillBody, /do not run doctor \/ dry-run \/ handoff \/ preflight first/);
-    assert.match(metadataBody, /scripted current-thread rollback \+ Throughline memory inject/);
+    assert.match(skillBody, /throughline codex-handoff-start --execute/);
+    assert.match(skillBody, /do not run doctor \/ dry-run \/ preflight first/);
+    assert.match(metadataBody, /start a new Codex thread with Throughline handoff memory/);
+    assert.doesNotMatch(metadataBody, /scripted current-thread rollback/);
     assert.doesNotMatch(metadataBody, /preview blocked Codex trim/);
     assert.doesNotMatch(metadataBody, /inspect guarded Codex trim/);
   } finally {

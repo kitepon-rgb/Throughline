@@ -14,6 +14,7 @@ import {
   buildThreadReadRequest,
   buildThreadResumeRequest,
   buildThreadRollbackRequest,
+  buildThreadStartRequest,
   buildThreadTurnsListRequest,
   buildTurnStartRequest,
   compareTurnCounts,
@@ -21,6 +22,7 @@ import {
   parseAppServerLine,
   resolveRollbackTurnsForAppServer,
   runCodexModelVisibilitySmoke,
+  runCodexNewThreadHandoff,
   runCodexRollbackModelVisiblePrepare,
   runCodexRollbackModelVisibleVerify,
   runCodexTrimPreflight,
@@ -85,6 +87,12 @@ test('buildInitializeRequest opts into the experimental app-server API', () => {
 
 test('thread request builders encode the verified rollback/inject flow', () => {
   const threadId = 'thread-1';
+  assert.deepEqual(buildThreadStartRequest({ id: 'start-1', cwd: '/repo' }), {
+    id: 'start-1',
+    method: CODEX_APP_SERVER_METHODS.threadStart,
+    params: { cwd: '/repo', sessionStartSource: 'clear' },
+  });
+
   assert.deepEqual(buildThreadReadRequest({ id: 1, threadId }), {
     id: 1,
     method: CODEX_APP_SERVER_METHODS.threadRead,

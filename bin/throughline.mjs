@@ -182,10 +182,12 @@ Usage:
                               Use --memo-stdin to prepend current-work memo.
                               Live smoke requires THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1
   throughline codex-handoff-start
-                              Guided read-only fresh-thread handoff start plan:
+                              Fresh-thread Codex handoff start plan:
                               structural smoke, model-smoke dry-run boundary,
                               render command, optional --print-prompt, and
-                              --memo-stdin replay guidance
+                              --memo-stdin replay guidance. Use --execute to
+                              create a new app-server thread, inject handoff
+                              memory, and open it with --open-host auto|vscode|cli|none
   throughline codex-visibility-smoke
                               Experimental: inject Codex active-work memory and
                               start a marker-check model turn. Requires

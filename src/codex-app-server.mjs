@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 export const CODEX_APP_SERVER_METHODS = Object.freeze({
   initialize: 'initialize',
   initialized: 'initialized',
+  threadStart: 'thread/start',
   threadRead: 'thread/read',
   threadResume: 'thread/resume',
   threadTurnsList: 'thread/turns/list',
@@ -122,6 +123,32 @@ export function buildInitializeRequest({
 export function buildInitializedNotification() {
   return {
     method: CODEX_APP_SERVER_METHODS.initialized,
+  };
+}
+
+export function buildThreadStartRequest({
+  id,
+  cwd,
+  approvalPolicy = null,
+  sandbox = null,
+  model = null,
+  sessionStartSource = 'clear',
+}) {
+  assertRequestId(id, 'buildThreadStartRequest');
+  assertNonEmptyString(cwd, 'buildThreadStartRequest: cwd');
+  if (sessionStartSource !== 'startup' && sessionStartSource !== 'clear') {
+    throw new Error('buildThreadStartRequest: sessionStartSource must be startup or clear');
+  }
+  return {
+    id,
+    method: CODEX_APP_SERVER_METHODS.threadStart,
+    params: compactNullish({
+      cwd,
+      approvalPolicy,
+      sandbox,
+      model,
+      sessionStartSource,
+    }),
   };
 }
 
@@ -1406,6 +1433,116 @@ export async function runCodexRollbackModelVisibleVerify({
   }
 }
 
+export async function runCodexNewThreadHandoff({
+  cwd,
+  prompt,
+  command = 'codex',
+  commandArgs = ['app-server', '--listen', 'stdio://'],
+  timeoutMs = 120_000,
+  requestTimeoutMs = 60_000,
+  waitForTurn = true,
+  sessionStartSource = 'clear',
+  delivery = 'user-turn',
+} = {}) {
+  assertNonEmptyString(cwd, 'runCodexNewThreadHandoff: cwd');
+  assertNonEmptyString(prompt, 'runCodexNewThreadHandoff: prompt');
+  assertNonEmptyString(command, 'runCodexNewThreadHandoff: command');
+  if (!Array.isArray(commandArgs)) {
+    throw new Error('runCodexNewThreadHandoff: commandArgs must be an array');
+  }
+  if (sessionStartSource !== 'startup' && sessionStartSource !== 'clear') {
+    throw new Error('runCodexNewThreadHandoff: sessionStartSource must be startup or clear');
+  }
+  if (delivery !== 'user-turn' && delivery !== 'developer-item') {
+    throw new Error('runCodexNewThreadHandoff: delivery must be user-turn or developer-item');
+  }
+
+  const client = startAppServerClient({
+    command,
+    args: commandArgs,
+    cwd,
+    timeoutMs,
+    requestTimeoutMs,
+  });
+
+  try {
+    await initializeThroughlineAppServerClient(client, {
+      clientName: 'throughline-codex-new-thread-handoff',
+      clientTitle: 'Throughline Codex New Thread Handoff',
+    });
+
+    const threadStart = await client.request(
+      buildThreadStartRequest({
+        id: randomUUID(),
+        cwd,
+        sessionStartSource,
+      }),
+    );
+    const threadId = findThreadIdInAppServerPayload(threadStart);
+    if (!isCodexThreadId(threadId)) {
+      throw new Error(`thread/start did not return a Codex thread id: ${JSON.stringify(threadStart).slice(0, 500)}`);
+    }
+
+    if (delivery === 'developer-item') {
+      await client.request(
+        buildThreadInjectItemsRequest({
+          id: randomUUID(),
+          threadId,
+          items: [buildDeveloperMessageItem(prompt)],
+        }),
+      );
+      return {
+        status: 'started',
+        reason: 'new_thread_started_and_developer_memory_injected',
+        threadId,
+        delivery,
+        injectSent: true,
+        turnStatus: 'not-started',
+        notifications: [...new Set(client.notifications)],
+        agentText: collectAgentText(client.notificationEvents),
+        stderr: client.stderr,
+      };
+    }
+
+    await client.request(buildTurnStartRequest({ id: randomUUID(), threadId, text: prompt }));
+    const observedTurnEvent = waitForTurn
+      ? await client.waitForNotification({
+          predicate: (event) => event.method === 'turn/completed' || event.method === 'turn/failed',
+          timeoutMs: requestTimeoutMs,
+        })
+      : null;
+    const turnStatus =
+      observedTurnEvent?.method === 'turn/completed'
+        ? 'completed'
+        : observedTurnEvent?.method === 'turn/failed'
+          ? 'failed'
+          : waitForTurn
+            ? 'timeout'
+            : 'unchecked';
+
+    return {
+      status: turnStatus === 'failed' || turnStatus === 'timeout' ? 'started-unverified' : 'started',
+      reason:
+        turnStatus === 'completed'
+          ? 'new_thread_started_and_turn_completed'
+          : turnStatus === 'failed'
+            ? 'new_thread_started_but_turn_failed'
+            : turnStatus === 'timeout'
+              ? 'new_thread_started_but_turn_completion_not_observed'
+              : 'new_thread_started_without_waiting_for_turn',
+      threadId,
+      delivery,
+      injectSent: false,
+      turnStatus,
+      notifications: [...new Set(client.notifications)],
+      agentText: collectAgentText(client.notificationEvents),
+      stderr: client.stderr,
+    };
+  } finally {
+    await client.close();
+  }
+}
+
 function initializeThroughlineAppServerClient(client, { clientName, clientTitle }) {
   return client
     .request(
@@ -1425,6 +1562,25 @@ function extractRollbackModelVisibleMarkers(text, markerPrefix) {
   const escaped = markerPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`${escaped}[A-Za-z0-9_-]+`, 'g');
   return [...new Set(text.match(pattern) ?? [])];
+}
+
+function findThreadIdInAppServerPayload(value) {
+  if (!isRecord(value)) return null;
+  if (isCodexThreadId(value.id)) return value.id;
+  if (isCodexThreadId(value.threadId)) return value.threadId;
+  if (isRecord(value.thread)) {
+    const nested = findThreadIdInAppServerPayload(value.thread);
+    if (nested) return nested;
+  }
+  if (isRecord(value.params)) {
+    const nested = findThreadIdInAppServerPayload(value.params);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function isCodexThreadId(value) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 async function waitForThreadTurnCount({ client, threadId, expectedTurns, attempts, delayMs }) {

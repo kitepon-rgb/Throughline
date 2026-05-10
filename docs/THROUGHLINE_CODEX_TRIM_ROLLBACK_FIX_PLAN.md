@@ -18,10 +18,15 @@ quoted/tool-output field に残り得ることは確認済みですが、それ�
 model-visible input に入ることは controlled smoke で再現していません。incident-shaped
 run の retained text は risk evidence として残す一方、単独では mutation 前 blocker にしません。
 Codex current-thread trim は、明示 `--execute`、Throughline DB injectable memory、
-Codex thread identity を条件に実行します。rollout/app-server turn-count mismatch は診断に残し、
-app-server `thread/read` / `thread/resume` が同じ count を返す場合は、その差分で rollback `numTurns`
-を補正します。Codex Stop hook
-auto-refresh は verified usage 75% 以上で同じ guarded path を試行し、estimate usage では実行しません。
+Codex thread identity を条件にした診断用 path として残します。rollout/app-server
+turn-count mismatch は診断に残し、app-server `thread/read` / `thread/resume` が同じ
+count を返す場合は、その差分で rollback `numTurns` を補正します。
+2026-05-10 update: live token_count 実験で、rollback / inject 後に token count が
+一時的に下がっても同一 thread で戻る挙動を確認したため、Codex automatic
+current-thread refresh は無効化します。`UserPromptSubmit` / `PostToolUse` / `Stop`
+hooks は capture / monitor state write のみ行い、`codex_auto_refresh_disabled` で
+quiet にします。bare `$throughline` は `codex-handoff-start --execute` による
+app-server 新スレッド handoff とします。
 
 最初のインシデント仮説に対する重要な訂正:
 
@@ -648,13 +653,11 @@ TODO:
   という記述を訂正する。
 - [x] hypothesis を compacted replacement-history restore に言及する形へ更新する。
 - [x] Codex Rewind-equivalent trim が complete だという roadmap claim を格下げする。
-- [x] Codex auto-refresh は verified usage 75% 以上で guarded rollback / inject を
-  実行する。estimate usage では実行しない。
-- [x] Codex 75% trigger は token-monitor 依存にしない。Codex `UserPromptSubmit`
-  / `PostToolUse` hooks が当該 session の rollout `token_count` を直接読み、
-  verified 75% 以上なら current session へ `$throughline` workflow 実行指示を
-  注入する。`PostToolUse` により、tool loop 中に閾値を超えた場合も次の継続前に
-  同じ判定を走らせる。
+- [x] Codex auto-refresh は無効化する。明示 `trim --execute --host codex` は
+  diagnostic current-thread rollback / inject として残す。
+- [x] Codex `UserPromptSubmit` / `PostToolUse` hooks は token-monitor 依存にせず
+  rollout capture / monitor state write だけを行う。verified 75% 以上でも current
+  session へ `$throughline` workflow 実行指示を注入しない。
 - [x] 新セッションが古い「Codex side complete」claim ではなく、この fix plan から
   再開できるように `CLAUDE.md` を更新する。
 
@@ -674,11 +677,11 @@ TODO:
 5. フェーズ 4: durable host behavior を調査し、製品仕様を決める。
 6. フェーズ 5: 挙動修正後に広範な docs を更新する。
 
-作業量や複雑さを理由に目標を下げない。2026-05-08 時点の製品仕様は、
-同一 Codex thread で guarded rollback + Throughline DB memory inject を実行し、
-rollout 上の新 rollback event と injected active-work memory で durable evidence を確認すること。
-restore-safety / host primitive audit / rollout-app-server turn-count mismatch は diagnostics として残すが、単独では execute / auto-refresh の blocker にしない。
-mutation 前 refusal は thread identity と Throughline DB injectable memory に限定する。
+作業量や複雑さを理由に目標を下げない。2026-05-10 時点の製品仕様は、
+通常 `$throughline` を新スレッド handoff prompt とし、Codex hooks は automatic
+current-thread mutation を行わないこと。明示 `trim --execute --host codex` は診断用
+current-thread rollback / inject として残す。restore-safety / host primitive audit /
+rollout-app-server turn-count mismatch は diagnostics として残す。
 2026-05-09 update: rollout/app-server turn-count mismatch は mutation 前 refusal から外した。
 app-server `thread/read` / `thread/resume` が同じ count を返す場合、planned rollback turns に
 `readTurns - expectedTurns` を足して `thread/rollback.numTurns` を送る。例:

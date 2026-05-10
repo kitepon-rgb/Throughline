@@ -37,13 +37,14 @@ Global install also registers Codex `UserPromptSubmit`, `PostToolUse`, and
 `bin/throughline.mjs` through an absolute Node path, so Codex App Server PATH
 differences do not hide the command. They are registered synchronously
 (`async: false`), matching the Codex hook behavior verified in Caveat. Existing
-non-Throughline Codex hooks are preserved. The prompt and tool-loop hooks read
-the current rollout `token_count` themselves and inject `$throughline` at the
-verified 75% threshold; token-monitor is display-only and is never the trigger
-source. It also installs a global `$throughline` Codex skill. Bare
-`$throughline` runs the scripted current-thread rollback + Throughline DB memory
-injection directly; ask explicitly for status, resume, summarize, diagnostics,
-or fresh-thread handoff when you want those read-only surfaces instead.
+non-Throughline Codex hooks are preserved. The prompt and tool-loop hooks capture
+rollout memory and write monitor state, but they do not inject `$throughline` at
+usage thresholds; token-monitor is display-only and is never an auto-refresh
+trigger. It also installs a global `$throughline` Codex skill. Bare
+`$throughline` starts a new Codex thread through app-server, injects Throughline
+DB handoff memory as a developer item, and opens that thread in the selected
+host; ask explicitly for current-thread rollback diagnostics when you want the
+guarded `trim --execute --host codex` surface.
 
 </details>
 
@@ -250,6 +251,7 @@ throughline codex-summarize --session codex:<thread-id> --json
 throughline codex-resume --session codex:<thread-id>
 throughline codex-resume --session codex:<thread-id> --format handoff
 throughline codex-handoff-start --session codex:<thread-id>
+throughline codex-handoff-start --session codex:<thread-id> --execute --open-host vscode
 throughline codex-handoff-smoke --session codex:<thread-id>
 throughline codex-handoff-model-smoke --session codex:<thread-id> --dry-run --json
 THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1 \
@@ -275,20 +277,14 @@ summarization. When `codex-sidecar` is configured for `summarize-l1`,
 Throughline can use it for that step; otherwise it keeps the existing Claude
 Haiku path. This is an explicit compatibility mode, not silent auto-detection.
 
-**Codex rollback / inject is enabled.** The 2026-05-06 incident initially
-looked like a rolled-back user prompt could reappear after VS Code restart /
-reconnect, but controlled model-visible rollback smokes did not reproduce that
-path. `throughline trim --execute --host codex` now sends the guarded
-rollback + Throughline DB memory injection when injectable DB memory is
-available. If the Codex rollout and app-server turn counts differ, Throughline
-keeps the mismatch as diagnostics and, when `thread/read` and `thread/resume`
-agree, adjusts `thread/rollback.numTurns` from the app-server count. Codex
-current-session auto-refresh is not a
-token-monitor feature: the Codex `UserPromptSubmit` hook reads the current
-rollout `token_count` and, at the verified 75% threshold, injects a same-session
-instruction to run the installed `$throughline` workflow before answering. The
-Codex Stop hook still attempts the guarded live refresh when it naturally fires,
-so non-monitor users get the same threshold behavior.
+**Codex current-thread rollback / inject is explicit-only.** The 2026-05-06
+incident initially looked like a rolled-back user prompt could reappear after
+VS Code restart / reconnect, and later live experiments showed token usage can
+drop briefly and then return in the same thread. For that reason, Codex hooks do
+not perform automatic current-thread refresh. `throughline trim --execute --host
+codex` remains available as an explicit diagnostic current-thread path when
+injectable DB memory is available. Bare `$throughline` instead starts a new
+thread with the handoff prompt, matching the safer Claude-style handoff model.
 
 `throughline codex-host-primitive-audit` can inspect the installed Codex
 app-server schema read-only. On the current tested Codex CLI, it finds
@@ -371,6 +367,7 @@ throughline codex-capture --codex-thread-id <id> --json
 throughline codex-summarize --session codex:<id> --json
 throughline codex-resume --session codex:<id> --format handoff
 throughline codex-handoff-start --session codex:<id>
+throughline codex-handoff-start --session codex:<id> --print-prompt
 throughline codex-handoff-smoke --session codex:<id> --json
 throughline codex-handoff-model-smoke --session codex:<id> --dry-run --json
 # optional model smoke; uses codex exec --ephemeral --sandbox read-only:
@@ -384,7 +381,7 @@ throughline trim --dry-run --host codex --codex-thread-id <id>
 throughline trim --dry-run --host codex --codex-thread-id <id> --preview-max-chars 4000
 throughline trim --preflight --host codex --codex-thread-id <id>
 CODEX_THREAD_ID=<id> throughline trim --preflight --host codex
-throughline trim --execute --host codex --all --json
+throughline trim --execute --host codex --all
 # read-only app-server process restart smoke; not full VS Code restart-safe proof:
 # THROUGHLINE_EXPERIMENTAL_CODEX_RESTORE_SMOKE=1 throughline codex-restore-smoke --codex-thread-id <id> --json
 # read-only local restore source inventory; not full VS Code restart-safe proof:
@@ -514,7 +511,9 @@ trim. The guided entrypoint is
 structural smoke, model-smoke dry-run boundary, handoff render command, optional
 live model smoke, and can include the prompt with `--print-prompt`. With
 `--memo-stdin`, it also propagates `--memo-stdin` into the replay commands and
-reminds you to pipe the same memo when using them separately. The
+reminds you to pipe the same memo when using them separately. Add `--execute`
+to create a new Codex app-server thread, inject the handoff memory as a
+developer item, and open it with `--open-host auto|vscode|cli|none`. The
 individual commands remain available: validate the fresh-thread handoff with
 `throughline codex-handoff-smoke --session codex:<thread-id>`, optionally audit
 the model-smoke boundary with
@@ -523,7 +522,7 @@ render it with `throughline codex-resume --session codex:<thread-id> --format ha
 then start a new Codex thread with that context. This does not mutate the current
 thread. `trim --execute --host codex` is the current-thread mutation path and
 still requires explicit execution, injectable Throughline DB memory, and
-rollout/app-server turn-count agreement.
+explicit Codex thread identity.
 Human-readable dry-run output truncates the inline memory preview for scanability;
 the full text remains in `--json` as `memoryPreview.text`, and for Codex the
 fresh-thread continuation can be guided with `codex-handoff-start` or rendered
@@ -565,13 +564,11 @@ Example output:
   Codex rollout has no token-count event, Throughline can show an explicit
   estimate with `estimated: true` and the monitor marks it with `est`; it is not
   presented as exact usage.
-- **Codex auto-refresh is driven by the current Codex session, not the monitor.**
-  The Codex `UserPromptSubmit` and `PostToolUse` hooks capture rollout memory
-  and, when verified usage reaches 75%, inject a current-session `$throughline`
-  instruction before the assistant answers or continues a tool loop. The Codex
-  Stop hook also captures DB memory, writes monitor state, and attempts guarded
-  rollback + Throughline DB memory injection when it naturally fires above the
-  threshold.
+- **Codex auto-refresh is disabled.** The Codex `UserPromptSubmit` and
+  `PostToolUse` hooks capture rollout memory and write monitor state, but they
+  do not inject `$throughline` instructions. The Codex Stop hook also captures
+  DB memory, writes monitor state, and stays quiet instead of sending rollback +
+  injection above a threshold.
 - **1M-context detection** is automatic. It checks the `[1m]` suffix in the
   transcript, falls back to string matching on `1M context`, and finally
   promotes to 1M if observed usage exceeds 200k.
@@ -712,7 +709,7 @@ entry to the `tasks` array yourself:
 | `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |
 | `throughline codex-resume --session codex:<id>` | Render Codex active-work context from a captured Codex session |
 | `throughline codex-resume --session codex:<id> --format handoff` | Render a concise fresh-thread handoff prompt without mutating the current thread |
-| `throughline codex-handoff-start --session codex:<id>` | Guided read-only start plan for moving the handoff prompt into a new Codex thread; use `--print-prompt` to include the prompt and `--memo-stdin` to carry a current-work memo |
+| `throughline codex-handoff-start --session codex:<id>` | Guided start plan for moving handoff memory into a new Codex thread; add `--execute` to create the thread through app-server, inject developer memory, and open it with `--open-host auto\|vscode\|cli\|none`; use `--print-prompt` to include the prompt and `--memo-stdin` to carry a current-work memo |
 | `throughline codex-handoff-smoke --session codex:<id>` | Read-only validation that the fresh-thread handoff prompt is pasteable before starting a new thread |
 | `throughline codex-handoff-model-smoke --session codex:<id>` | Experimental marker smoke for the handoff prompt. `--dry-run` checks readiness / command boundary without starting Codex exec; `--memo-stdin` carries a current-work memo; live `codex exec --ephemeral --sandbox read-only` requires explicit env opt-in |
 | `throughline codex-visibility-smoke --session codex:<id>` | Experimental Codex app-server marker smoke; injects memory and starts a model turn |
@@ -726,7 +723,7 @@ entry to the `tasks` array yourself:
 | `throughline codex-sidecar-dry-run`            | Print a normalized read-only sidecar request without running the app server |
 | `throughline trim --dry-run --host codex`      | Preview Codex same-thread context trim memory and host boundary; does not rollback automatically |
 | `throughline trim --preflight --host codex`    | Read/resume the explicit Codex thread and preview any app-server-count rollback adjustment without rollback/inject |
-| `throughline trim --execute --host codex`      | Scripted Codex current-thread rollback + Throughline DB memory inject; this is what bare `$throughline` runs in Codex |
+| `throughline trim --execute --host codex`      | Explicit diagnostic Codex current-thread rollback + Throughline DB memory inject; bare `$throughline` does not run this automatically |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
 

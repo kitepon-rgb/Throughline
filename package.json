@@ -30,7 +30,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test src/*.test.mjs src/cli/*.test.mjs"
+    "test": "node --import ./src/test-env.mjs --test src/*.test.mjs src/cli/*.test.mjs"
   },
   "engines": {
     "node": ">=22.5"

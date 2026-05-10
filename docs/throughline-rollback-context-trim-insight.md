@@ -9,7 +9,7 @@
 | 文書 | 役割 |
 |---|---|
 | [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) | 2026-05-06 以降の次フェーズ計画。Codex primary と Codex Rewind 互換を先行する |
-| [THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | 2026-05-06 incident 後の修正計画。2026-05-08 の controlled smoke 後、automatic mutation は再有効化し、restore-safety / host primitive audit は diagnostics として残す |
+| [THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | 2026-05-06 incident 後の修正計画。2026-05-10 の live token_count 実験後、Codex automatic current-thread mutation は無効化し、通常 `$throughline` は新スレッド handoff に戻す |
 | [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | この気づきと Claude / Codex 両対応計画を統合した旧計画と実装履歴。完了済み根拠として参照する |
 | [THROUGHLINE_CODEX_DUAL_SUPPORT.md](THROUGHLINE_CODEX_DUAL_SUPPORT.md) | Throughline を Claude primary のまま Codex adapter / sidecar に対応させる architecture brief |
 
@@ -23,7 +23,9 @@
 
 2026-05-09 update: rollout/app-server turn-count 不一致も mutation 前 blocker から外した。app-server `thread/read` / `thread/resume` が同じ count を返す場合、planned rollback turns に `readTurns - expectedTurns` を足して `thread/rollback.numTurns` を送る。`expectedTurns = 6` / `readTurns = resumedTurns = 7` / `--all` なら `numTurns = 7`。
 
-2026-05-09 skill UX: bare `$throughline` は diagnostics / dry-run / preflight を AI に順番実行させる surface ではなく、`throughline trim --execute --host codex --all --json` を直接走らせる scripted current-thread refresh とする。目的は rollback と、Throughline DB の L2 最新 20 full bodies + older L1 summaries + L3 references-only memory injection のみ。doctor / dry-run / preflight / fresh-thread handoff / restore-safety / host primitive audit は明示診断用であり、通常 `$throughline` の前段にはしない。
+2026-05-09 skill UX: bare `$throughline` は diagnostics / dry-run / preflight を AI に順番実行させる surface ではなく、`throughline trim --execute --host codex --all` を直接走らせる scripted current-thread refresh としていた。目的は rollback と、Throughline DB の L2 最新 20 full bodies + older L1 summaries + L3 references-only memory injection のみだった。2026-05-10 以降は `--json` の full plan / memory preview が tool output として context を再膨張させるため、通常 path では付けないようにした。
+
+2026-05-10 rollback UX correction: 追加 live 実験で、current-thread rollback / inject 後に token_count が一時的に下がっても同一 thread で戻る挙動を確認した。これを受け、Codex automatic current-thread refresh は無効化し、`UserPromptSubmit` / `PostToolUse` / `Stop` hooks は capture / monitor state write のみ行う。bare `$throughline` は `throughline codex-handoff-start --execute` による app-server 新スレッド handoff とし、明示 `trim --execute --host codex` は診断用 current-thread path として残す。
 
 2026-05-07 host primitive audit: `throughline codex-host-primitive-audit` で installed Codex app-server schema を機械監査した。`thread/rollback` / `thread/inject_items` / `thread/compact/start` / `thread/start` / `thread/fork` / `thread/resume` は存在するが、rollback 済み user text を current-thread の model-visible input へ復活させない deletion / isolation / projection primitive は見つからなかった。`thread/resume(history)` は schema 上 `[UNSTABLE] FOR CODEX CLOUD - DO NOT USE` で、`thread_id` も ignored になるため、Throughline の current-thread repair primitive には採用しない。
 
@@ -265,11 +267,13 @@ Codex で考えられる流れ:
 9. ユーザーは同じ Codex thread で続行する。
 ```
 
-現行実装では、Codex Stop hook 後の 75% automatic refresh は guarded rollback / inject
-mutation を試行する。明示 CLI の `throughline trim --execute --host codex --codex-thread-id <id>`
-も env gate なしで実行する。明示 Codex thread identity と injectable Throughline DB memory
-は live mutation の最低条件であり、rollout/app-server turn-count mismatch は診断と app-server count 由来の rollback `numTurns` 補正に使う。durable success は
-post-execute rollout evidence で `execute-durable-verified` として別判定する。
+現行実装では、Codex hooks からの 75% automatic refresh は無効化している。明示 CLI の
+`throughline trim --execute --host codex --codex-thread-id <id>` は診断用 current-thread
+path として env gate なしで実行できる。明示 Codex thread identity と injectable
+Throughline DB memory は live mutation の最低条件であり、rollout/app-server
+turn-count mismatch は診断と app-server count 由来の rollback `numTurns` 補正に使う。
+durable success は post-execute rollout evidence で `execute-durable-verified` として
+別判定する。
 
 重要な考え:
 

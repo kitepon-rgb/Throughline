@@ -1,7 +1,7 @@
 interface:
   display_name: "Throughline"
-  short_description: "Operate Throughline memory, Codex capture, resume, and trim"
-  default_prompt: "Use $throughline to run the scripted current-thread rollback + Throughline memory inject, or explicitly ask for status, resume, summarize, diagnostics, or fresh-thread handoff."
+  short_description: "Operate Throughline memory, Codex capture, resume, and handoff"
+  default_prompt: "Use $throughline to start a new Codex thread with Throughline handoff memory, or explicitly ask for status, resume, summarize, diagnostics, or current-thread rollback."
 
 policy:
   allow_implicit_invocation: true

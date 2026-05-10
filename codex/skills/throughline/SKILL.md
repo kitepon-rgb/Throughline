@@ -1,6 +1,6 @@
 ---
 name: throughline
-description: Use when the user asks to use Throughline from Codex, continue or restore Throughline memory, run Codex trim/rewind/rollback, inject remembered context, summarize a captured Codex session, or check whether the Throughline Codex Stop hook captured the current session. Hide long Throughline command details behind this workflow.
+description: Use when the user asks to use Throughline from Codex, continue or restore Throughline memory, prepare a new Codex thread handoff, summarize a captured Codex session, or check whether the Throughline Codex Stop hook captured the current session. Hide long Throughline command details behind this workflow.
 ---
 
 # Throughline
@@ -8,10 +8,11 @@ description: Use when the user asks to use Throughline from Codex, continue or r
 Use this skill to operate Throughline from Codex without making the user type long
 commands.
 
-If the user invokes `$throughline` by itself, treat that as a request to run the
-scripted current-thread refresh now. The normal path is not an AI planning
-exercise: it rolls back the current Codex thread and injects Throughline DB
-memory using the original `/tl` contract.
+If the user invokes `$throughline` by itself, treat that as a request to prepare
+a fresh Codex thread handoff from the current Throughline memory. The normal
+path is not a current-thread trim/rollback path: it starts a new Codex thread
+through app-server, injects the handoff memory as a developer item, and opens
+that thread in the selected host.
 
 ## Core Rule
 
@@ -19,10 +20,10 @@ Do not ask the user for a Codex thread id when the current environment can
 provide it. Prefer the current `CODEX_THREAD_ID` / `THROUGHLINE_CODEX_THREAD_ID`
 identity.
 
-For bare `$throughline`, do not run doctor / dry-run / handoff / preflight first
-and do not ask for confirmation. Execute the script command directly. If it
+For bare `$throughline`, do not run doctor / dry-run / preflight first and do
+not ask for confirmation. Execute the handoff-start command directly. If it
 fails, report the error plainly instead of silently falling back to another
-memory source or a fresh-thread handoff.
+memory source or current-thread rollback.
 
 ## Common Requests
 
@@ -31,13 +32,12 @@ memory source or a fresh-thread handoff.
 Run:
 
 ```bash
-throughline trim --execute --host codex --all --json
+throughline codex-handoff-start --execute
 ```
 
-This is the scripted Codex context-refresh flow. It mutates the current Codex
-thread by sending rollback + Throughline DB memory injection. Report only the
-execution status, whether rollback / inject were sent, whether durable evidence
-was observed, and the selected memory session.
+This is the Codex new-thread continuation flow. It does not mutate the current
+Codex thread. Report the new thread id, open status, and any manual resume
+command if the host could not be opened automatically.
 
 The injected memory must preserve the original `/tl` memory contract:
 
@@ -80,11 +80,11 @@ If the user wants to continue in a fresh Codex thread instead of mutating the
 current thread, use:
 
 ```bash
-throughline codex-handoff-start --session codex:<current-thread-id> --print-prompt
+throughline codex-handoff-start --session codex:<current-thread-id> --execute
 ```
 
-If the user gave a current-work memo, pipe it with `--memo-stdin`. This is
-read-only and does not mutate the current thread.
+If the user gave a current-work memo, pipe it with `--memo-stdin`. This starts a
+new thread and does not mutate the current thread.
 
 ### "summarize"
 
@@ -99,18 +99,17 @@ back to Claude Haiku.
 
 ### "trim" / "rewind" / "rollback" / "context cleanup"
 
-Default to the same scripted execute flow as bare `$throughline` when the user
-asks to trim, rewind, rollback, clean up context, or use Throughline memory.
+Default to the same fresh-thread handoff flow as bare `$throughline` when the
+user asks to trim, rewind, rollback, clean up context, or use Throughline
+memory, unless they explicitly ask to mutate the current Codex thread.
 
 Execute:
 
 ```bash
-throughline trim --execute --host codex --all --json
+throughline codex-handoff-start --execute
 ```
 
-Report only the essential outcome. Do not introduce fresh-thread handoff,
-restore-safety analysis, host primitive audit, or dry-run planning unless the
-user explicitly asks for those diagnostics.
+Report only the essential outcome, especially the new thread id and open status.
 
 Preview:
 
@@ -121,7 +120,7 @@ throughline trim --dry-run --host codex
 Safe new-thread continuation:
 
 ```bash
-throughline codex-handoff-start --session codex:<current-thread-id> --json
+throughline codex-handoff-start --session codex:<current-thread-id> --execute --json
 ```
 
 Report the context reduction estimate from the dry-run when present:
@@ -146,17 +145,19 @@ Execute path:
 throughline trim --execute --host codex --all
 ```
 
-This is the same command used by bare `$throughline`.
+This is an explicit current-thread rollback / inject diagnostic path. Do not use
+it for bare `$throughline`.
 
 ## User-Facing Explanation
 
 Explain the behavior simply:
 
 - normal Codex turn end: Stop hook captures DB memory and writes monitor state
-- `$throughline` / context refresh: one script command mutates the current Codex
-  thread by rollback + memory inject
-- injected memory is L2 latest 20 full bodies + older L1 summaries + L3
+- `$throughline` / context handoff: one script command builds new-thread
+  handoff memory from Throughline DB, injects it into a new Codex thread as a
+  developer item, and opens that thread
+- handoff memory is L2 latest 20 full bodies + older L1 summaries + L3
   references only
-- diagnostics such as doctor, dry-run, preflight, fresh-thread handoff, restore
-  safety, and host primitive audit are optional tools, not the normal
+- diagnostics such as doctor, dry-run, preflight, current-thread rollback,
+  restore safety, and host primitive audit are optional tools, not the normal
   `$throughline` path

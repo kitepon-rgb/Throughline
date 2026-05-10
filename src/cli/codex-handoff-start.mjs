@@ -3,7 +3,10 @@ import { buildHandoffRecord } from '../handoff-record.mjs';
 import { renderCodexNewThreadHandoff } from '../codex-handoff.mjs';
 import { buildCodexHandoffSmoke } from '../codex-handoff-smoke.mjs';
 import { buildCodexHandoffModelSmokePrompt } from '../codex-handoff-model-smoke.mjs';
+import { runCodexNewThreadHandoff } from '../codex-app-server.mjs';
 import { estimateTokens } from '../token-estimator.mjs';
+import { sameProjectPath } from '../project-path.mjs';
+import { spawnSync } from 'node:child_process';
 
 async function readStdin() {
   let raw = '';
@@ -43,6 +46,11 @@ function parseArgs(args) {
     maxDetailRefs: undefined,
     maxRecentBodies: undefined,
     maxBodyChars: undefined,
+    execute: false,
+    openHost: 'auto',
+    codexAppServerBin: null,
+    timeoutMs: 120_000,
+    requestTimeoutMs: 60_000,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -67,6 +75,24 @@ function parseArgs(args) {
       out.maxRecentBodies = parseNonNegativeInteger(args, ++i, '--max-recent-bodies');
     } else if (arg === '--max-body-chars') {
       out.maxBodyChars = parseNonNegativeInteger(args, ++i, '--max-body-chars');
+    } else if (arg === '--execute') {
+      out.execute = true;
+    } else if (arg === '--open-host') {
+      const value = args[++i];
+      if (!['auto', 'vscode', 'cli', 'none'].includes(value)) {
+        throw new Error('--open-host must be auto, vscode, cli, or none');
+      }
+      out.openHost = value;
+    } else if (arg === '--codex-app-server-bin') {
+      const value = args[++i];
+      if (!value || value.startsWith('-')) {
+        throw new Error('--codex-app-server-bin requires a command path');
+      }
+      out.codexAppServerBin = value;
+    } else if (arg === '--timeout-ms') {
+      out.timeoutMs = parsePositiveInteger(args, ++i, '--timeout-ms');
+    } else if (arg === '--request-timeout-ms') {
+      out.requestTimeoutMs = parsePositiveInteger(args, ++i, '--request-timeout-ms');
     } else if (!arg.startsWith('-') && !out.sessionId) {
       out.sessionId = arg;
     } else {
@@ -78,16 +104,15 @@ function parseArgs(args) {
 }
 
 function findLatestCodexSessionId(db, projectPath) {
-  const row = db
+  const rows = db
     .prepare(
-      `SELECT session_id
+      `SELECT session_id, project_path
        FROM sessions
-       WHERE lower(project_path) = lower(?)
-         AND session_id LIKE 'codex:%'
-       ORDER BY updated_at DESC
-       LIMIT 1`,
+       WHERE session_id LIKE 'codex:%'
+       ORDER BY updated_at DESC`,
     )
-    .get(projectPath);
+    .all();
+  const row = rows.find((candidate) => sameProjectPath(candidate.project_path, projectPath));
   return row?.session_id ?? null;
 }
 
@@ -170,7 +195,9 @@ function buildGuidance({ sessionId, parsed, handoffSmoke, handoffPrompt }) {
     reason: ready ? 'fresh_thread_handoff_start_ready' : 'handoff_smoke_not_ready',
     sessionId,
     mutatesCurrentThread: false,
-    startThreadManually: true,
+    startThreadManually: !parsed.execute,
+    execute: parsed.execute,
+    openHost: parsed.openHost,
     handoffSmoke,
     modelPromptChars: modelPrompt.length,
     estimatedModelPromptTokens: estimateTokens(modelPrompt),
@@ -187,7 +214,9 @@ function buildGuidance({ sessionId, parsed, handoffSmoke, handoffPrompt }) {
           ...(parsed.memoStdin
             ? ['When replaying individual commands, pipe the same memo because they include --memo-stdin.']
             : []),
-          'Start a new Codex thread and provide the handoff prompt as the opening context.',
+          parsed.execute
+            ? 'This command will start a new Codex thread through app-server, inject handoff memory, then open the selected host.'
+            : 'Start a new Codex thread and provide the handoff prompt as the opening context.',
         ]
       : [
           'Fix the failing handoff smoke checks before starting a new Codex thread.',
@@ -204,11 +233,22 @@ function renderTextResult(result) {
   lines.push(`  reason:            ${result.reason}`);
   lines.push(`  session:           ${result.sessionId}`);
   lines.push(`  mutates thread:    ${result.mutatesCurrentThread ? 'yes' : 'no'}`);
+  lines.push(`  execute:           ${result.execute ? 'yes' : 'no'}`);
+  lines.push(`  open host:         ${result.openHost}`);
   lines.push(`  handoff smoke:     ${result.handoffSmoke.status}`);
   lines.push(`  prompt chars:      ${result.handoffSmoke.promptChars}/${result.handoffSmoke.maxPromptChars}`);
   lines.push(`  model prompt:      ${result.modelPromptChars}`);
   if (result.memoReplayNote) {
     lines.push(`  memo replay:       ${result.memoReplayNote}`);
+  }
+  if (result.newThread) {
+    lines.push(`  new thread:        ${result.newThread.threadId}`);
+    lines.push(`  turn status:       ${result.newThread.turnStatus}`);
+  }
+  if (result.open) {
+    lines.push(`  open status:       ${result.open.status}`);
+    lines.push(`  vscode url:        ${result.open.vscodeUrl}`);
+    lines.push(`  resume command:    ${result.open.resumeCommand}`);
   }
   lines.push('');
   lines.push('  commands:');
@@ -226,6 +266,114 @@ function renderTextResult(result) {
     lines.push(result.prompt);
   }
   return lines.join('\n');
+}
+
+function resolveOpenHost(host) {
+  if (host !== 'auto') return host;
+  if (
+    process.env.VSCODE_IPC_HOOK_CLI ||
+    process.env.VSCODE_IPC_HOOK ||
+    process.env.TERM_PROGRAM === 'vscode' ||
+    process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE === 'codex_vscode'
+  ) {
+    return 'vscode';
+  }
+  return 'cli';
+}
+
+function openStartedCodexThread({ threadId, host, cwd }) {
+  const resolvedHost = resolveOpenHost(host);
+  const vscodeUrl = `vscode://openai.chatgpt/local/${encodeURIComponent(threadId)}`;
+  const resumeCommand = `codex resume ${threadId} --no-alt-screen`;
+  if (resolvedHost === 'none') {
+    return {
+      status: 'skipped',
+      reason: 'open_host_none',
+      host: resolvedHost,
+      vscodeUrl,
+      resumeCommand,
+    };
+  }
+
+  if (resolvedHost === 'vscode') {
+    const result =
+      process.platform === 'darwin'
+        ? spawnSync('open', [vscodeUrl], { encoding: 'utf8' })
+        : process.platform === 'win32'
+          ? spawnSync('cmd.exe', ['/c', 'start', '', vscodeUrl], { encoding: 'utf8' })
+          : spawnSync('xdg-open', [vscodeUrl], { encoding: 'utf8' });
+    if (result.status !== 0) {
+      return {
+        status: 'failed',
+        reason: 'vscode_deep_link_open_failed',
+        host: resolvedHost,
+        vscodeUrl,
+        resumeCommand,
+        error: (result.stderr || result.stdout || '').trim(),
+      };
+    }
+    return {
+      status: 'opened',
+      reason: 'vscode_deep_link_opened',
+      host: resolvedHost,
+      vscodeUrl,
+      resumeCommand,
+    };
+  }
+
+  if (resolvedHost === 'cli') {
+    if (process.platform === 'darwin') {
+      const shellCommand = `cd ${shQuote(cwd)} && TERM=xterm-256color codex resume ${shQuote(threadId)} --no-alt-screen`;
+      const result = spawnSync('osascript', [], {
+        input: `tell application "Terminal"
+  activate
+  do script ${appleString(shellCommand)}
+end tell
+`,
+        encoding: 'utf8',
+      });
+      if (result.status !== 0) {
+        return {
+          status: 'failed',
+          reason: 'terminal_open_failed',
+          host: resolvedHost,
+          vscodeUrl,
+          resumeCommand,
+          error: (result.stderr || result.stdout || '').trim(),
+        };
+      }
+      return {
+        status: 'opened',
+        reason: 'terminal_resume_opened',
+        host: resolvedHost,
+        vscodeUrl,
+        resumeCommand,
+      };
+    }
+    return {
+      status: 'manual',
+      reason: 'cli_auto_open_unsupported_on_platform',
+      host: resolvedHost,
+      vscodeUrl,
+      resumeCommand,
+    };
+  }
+
+  return {
+    status: 'failed',
+    reason: 'unsupported_open_host',
+    host: resolvedHost,
+    vscodeUrl,
+    resumeCommand,
+  };
+}
+
+function shQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function appleString(value) {
+  return `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
 export async function run(args) {
@@ -280,9 +428,35 @@ export async function run(args) {
     result.prompt = handoffPrompt;
   }
 
+  if (parsed.execute && result.status === 'ready') {
+    const startResult = await runCodexNewThreadHandoff({
+      cwd: process.cwd(),
+      prompt: handoffPrompt,
+      command: parsed.codexAppServerBin ?? 'codex',
+      commandArgs: parsed.codexAppServerBin ? [] : ['app-server', '--listen', 'stdio://'],
+      timeoutMs: parsed.timeoutMs,
+      requestTimeoutMs: parsed.requestTimeoutMs,
+      waitForTurn: false,
+      delivery: 'developer-item',
+    });
+    const openResult = openStartedCodexThread({
+      threadId: startResult.threadId,
+      host: parsed.openHost,
+      cwd: process.cwd(),
+    });
+    result.status = startResult.status === 'started' && openResult.status !== 'failed' ? 'started' : 'started-unverified';
+    result.reason =
+      startResult.status === 'started' && openResult.status !== 'failed'
+        ? 'new_thread_handoff_started'
+        : 'new_thread_handoff_started_but_open_unverified';
+    result.startThreadManually = openResult.status === 'manual';
+    result.newThread = startResult;
+    result.open = openResult;
+  }
+
   if (parsed.json) process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   else process.stdout.write(renderTextResult(result) + '\n');
-  process.exit(result.status === 'ready' ? 0 : 1);
+  process.exit(result.status === 'ready' || result.status === 'started' ? 0 : 1);
 }
 
 export const _internal = {

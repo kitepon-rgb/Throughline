@@ -71,36 +71,11 @@ function suppressExperimentalWarnings() {
   });
 }
 
-export function codexContextOutput(text, eventName = 'UserPromptSubmit') {
-  return JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: eventName,
-      additionalContext: text,
-    },
-  });
-}
-
-function renderAutoRefreshContext({ usage, decision, threadId, eventName = 'UserPromptSubmit' }) {
-  const tokens = Number(usage?.tokens);
-  const contextWindowSize = Number(usage?.contextWindowSize);
-  const ratio = Number(decision?.ratio);
-  const percent = Number.isFinite(ratio) ? `${(ratio * 100).toFixed(1)}%` : 'unknown';
-  const timing =
-    eventName === 'PostToolUse'
-      ? 'Before continuing the current tool loop, run the installed $throughline workflow now.'
-      : 'Before answering the user prompt, run the installed $throughline workflow now.';
-  return [
-    '[throughline] Codex context refresh threshold reached for this current session.',
-    `Thread: ${threadId}`,
-    `Usage: ${Number.isFinite(tokens) ? tokens : 'unknown'} / ${Number.isFinite(contextWindowSize) ? contextWindowSize : 'unknown'} (${percent}); threshold ${(decision.threshold * 100).toFixed(0)}%.`,
-    '',
-    timing,
-    'Execute exactly:',
-    'throughline trim --execute --host codex --all --json',
-    '',
-    'Report only the execution status, whether rollback/inject were sent, durable evidence if present, and the selected memory session; then continue from the refreshed context.',
-    'This trigger was computed from the current Codex rollout token_count, not from token-monitor output.',
-  ].join('\n');
+function codexAutoRefreshDisabledResult() {
+  return {
+    status: 'skipped',
+    reason: 'codex_auto_refresh_disabled',
+  };
 }
 
 async function captureCodexHookSession({
@@ -236,20 +211,20 @@ export async function runCodexStopHook({
   ensureMonitorTask = null,
   buildMonitorUsage = null,
   runAutoRefresh = null,
+  autoRefreshStateStore = null,
 } = {}) {
-  const [{ runCodexAutoRefresh }, capturedState] = await Promise.all([
-    import('../codex-auto-refresh.mjs'),
-    captureCodexHookSession({
-      args,
-      payload,
-      env,
-      db,
-      writeMonitorState,
-      ensureMonitorTask,
-      buildMonitorUsage,
-      summarize: true,
-    }),
-  ]);
+  void runAutoRefresh;
+  void autoRefreshStateStore;
+  const capturedState = await captureCodexHookSession({
+    args,
+    payload,
+    env,
+    db,
+    writeMonitorState,
+    ensureMonitorTask,
+    buildMonitorUsage,
+    summarize: true,
+  });
 
   if (capturedState.status !== 'ok') {
     return {
@@ -261,28 +236,6 @@ export async function runCodexStopHook({
     };
   }
 
-  let autoRefresh = null;
-  try {
-    autoRefresh = await (runAutoRefresh ?? runCodexAutoRefresh)({
-      db: capturedState.db,
-      threadId: capturedState.identity.codexThreadId,
-      codexThreadIdSource: capturedState.identity.codexThreadIdSource,
-      codexHome: capturedState.codexHome,
-      projectPath: capturedState.captured.projectPath ?? capturedState.projectPath,
-      sessionId: capturedState.captured.sessionId,
-      usage: capturedState.usage,
-      command: env.THROUGHLINE_CODEX_APP_SERVER_BIN ?? process.env.THROUGHLINE_CODEX_APP_SERVER_BIN ?? 'codex',
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'unknown';
-    autoRefresh = {
-      status: 'error',
-      reason: 'auto_refresh_failed',
-      message: msg,
-    };
-    process.stderr.write(`[codex-hook:auto-refresh] ${msg}\n`);
-  }
-
   return {
     status: 'ok',
     reason: 'codex_rollout_captured',
@@ -290,7 +243,7 @@ export async function runCodexStopHook({
     captured: capturedState.captured,
     summarized: capturedState.summarized,
     monitorState: capturedState.monitorState,
-    autoRefresh,
+    autoRefresh: codexAutoRefreshDisabledResult(),
   };
 }
 
@@ -302,6 +255,7 @@ export async function runCodexUserPromptSubmitHook({
   writeMonitorState = null,
   ensureMonitorTask = null,
   buildMonitorUsage = null,
+  autoRefreshStateStore = null,
 } = {}) {
   return runCodexContextRefreshInstructionHook({
     eventName: 'UserPromptSubmit',
@@ -312,6 +266,7 @@ export async function runCodexUserPromptSubmitHook({
     writeMonitorState,
     ensureMonitorTask,
     buildMonitorUsage,
+    autoRefreshStateStore,
   });
 }
 
@@ -323,6 +278,7 @@ export async function runCodexPostToolUseHook({
   writeMonitorState = null,
   ensureMonitorTask = null,
   buildMonitorUsage = null,
+  autoRefreshStateStore = null,
 } = {}) {
   return runCodexContextRefreshInstructionHook({
     eventName: 'PostToolUse',
@@ -333,6 +289,7 @@ export async function runCodexPostToolUseHook({
     writeMonitorState,
     ensureMonitorTask,
     buildMonitorUsage,
+    autoRefreshStateStore,
   });
 }
 
@@ -345,20 +302,20 @@ async function runCodexContextRefreshInstructionHook({
   writeMonitorState = null,
   ensureMonitorTask = null,
   buildMonitorUsage = null,
+  autoRefreshStateStore = null,
 } = {}) {
-  const [{ evaluateCodexAutoRefreshUsage }, capturedState] = await Promise.all([
-    import('../codex-auto-refresh.mjs'),
-    captureCodexHookSession({
-      args,
-      payload,
-      env,
-      db,
-      writeMonitorState,
-      ensureMonitorTask,
-      buildMonitorUsage,
-      summarize: false,
-    }),
-  ]);
+  void eventName;
+  void autoRefreshStateStore;
+  const capturedState = await captureCodexHookSession({
+    args,
+    payload,
+    env,
+    db,
+    writeMonitorState,
+    ensureMonitorTask,
+    buildMonitorUsage,
+    summarize: false,
+  });
 
   if (capturedState.status !== 'ok') {
     return {
@@ -371,41 +328,13 @@ async function runCodexContextRefreshInstructionHook({
     };
   }
 
-  const decision = evaluateCodexAutoRefreshUsage(capturedState.usage);
-  if (!decision.shouldRefresh) {
-    return {
-      status: 'ok',
-      reason: 'codex_rollout_captured',
-      codexThreadIdSource: capturedState.identity.codexThreadIdSource,
-      captured: capturedState.captured,
-      monitorState: capturedState.monitorState,
-      autoRefreshPrompt: {
-        status: 'skipped',
-        reason: decision.reason,
-        decision,
-      },
-    };
-  }
-
-  const context = renderAutoRefreshContext({
-    usage: capturedState.usage,
-    decision,
-    threadId: capturedState.identity.codexThreadId,
-    eventName,
-  });
   return {
     status: 'ok',
     reason: 'codex_rollout_captured',
     codexThreadIdSource: capturedState.identity.codexThreadIdSource,
     captured: capturedState.captured,
     monitorState: capturedState.monitorState,
-    autoRefreshPrompt: {
-      status: 'ready',
-      reason: 'threshold_reached',
-      decision,
-      context,
-      output: codexContextOutput(context, eventName),
-    },
+    autoRefreshPrompt: codexAutoRefreshDisabledResult(),
   };
 }
 
@@ -475,10 +404,8 @@ export async function run(argv = []) {
 
 export const _internal = {
   codexHomeFromTranscriptPath,
-  codexContextOutput,
   parseArgs,
   parsePayload,
-  renderAutoRefreshContext,
   resolveCodexHookThreadIdentity,
 };
 

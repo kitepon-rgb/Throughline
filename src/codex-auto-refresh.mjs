@@ -1,8 +1,16 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir, platform } from 'node:os';
+import { join, resolve } from 'node:path';
+
 import { runCodexTrimExecution } from './codex-app-server.mjs';
 import { buildCodexRolloutTrimSource } from './codex-rollout-memory.mjs';
 import { buildTrimPlan } from './trim-model.mjs';
 
 export const CODEX_AUTO_REFRESH_THRESHOLD = 0.75;
+export const CODEX_AUTO_REFRESH_USAGE_EPOCH_PERCENT = 5;
+export const CODEX_AUTO_REFRESH_STATE_VERSION = 1;
+
+const MAX_AUTO_REFRESH_STATE_ENTRIES = 50;
 
 export function evaluateCodexAutoRefreshUsage(usage, { threshold = CODEX_AUTO_REFRESH_THRESHOLD } = {}) {
   if (!usage) {
@@ -72,6 +80,8 @@ export async function runCodexAutoRefresh({
   usage = null,
   threshold = CODEX_AUTO_REFRESH_THRESHOLD,
   command = process.env.THROUGHLINE_CODEX_APP_SERVER_BIN ?? 'codex',
+  autoRefreshStateStore = null,
+  enabled = false,
   deps = {},
 } = {}) {
   if (!db) throw new Error('runCodexAutoRefresh: db is required');
@@ -80,6 +90,13 @@ export async function runCodexAutoRefresh({
   }
   if (typeof projectPath !== 'string' || projectPath.length === 0) {
     throw new Error('runCodexAutoRefresh: projectPath is required');
+  }
+
+  if (!enabled) {
+    return {
+      status: 'skipped',
+      reason: 'codex_auto_refresh_disabled',
+    };
   }
 
   const decision = evaluateCodexAutoRefreshUsage(usage, { threshold });
@@ -120,30 +137,89 @@ export async function runCodexAutoRefresh({
     codexThreadIdSource,
     trimSource,
   });
-  if (plan.status === 'unavailable') {
+
+  const rolloutState = buildCodexAutoRefreshRolloutState({ trimSource, plan });
+  const fingerprint = buildCodexAutoRefreshFingerprint({
+    threadId,
+    projectPath,
+    usage,
+    rolloutState,
+  });
+  const backoff = checkCodexAutoRefreshBackoff({
+    autoRefreshStateStore,
+    threadId,
+    fingerprint,
+    family: 'execute',
+    suppressFamilies: ['execute'],
+    rolloutState,
+  });
+  if (backoff.shouldBackoff) {
     return {
       status: 'skipped',
-      reason: plan.reason,
+      reason: 'auto_refresh_backoff',
       decision,
       plan,
+      backoff,
     };
+  }
+
+  if (plan.status === 'unavailable') {
+    return recordCodexAutoRefreshResult({
+      autoRefreshStateStore,
+      threadId,
+      fingerprint,
+      family: 'execute',
+      rolloutState,
+      result: {
+        status: 'skipped',
+        reason: plan.reason,
+        decision,
+        plan,
+      },
+    });
   }
   if (plan.trim.rollbackTurns < 1) {
-    return {
-      status: 'skipped',
-      reason: 'nothing_to_trim',
-      decision,
-      plan,
-    };
+    return recordCodexAutoRefreshResult({
+      autoRefreshStateStore,
+      threadId,
+      fingerprint,
+      family: 'execute',
+      rolloutState,
+      result: {
+        status: 'skipped',
+        reason: 'nothing_to_trim',
+        decision,
+        plan,
+      },
+    });
   }
   if (!hasInjectableMemory(plan.memoryPreview)) {
-    return {
-      status: 'skipped',
-      reason: 'injectable_memory_required',
-      decision,
-      plan,
-    };
+    return recordCodexAutoRefreshResult({
+      autoRefreshStateStore,
+      threadId,
+      fingerprint,
+      family: 'execute',
+      rolloutState,
+      result: {
+        status: 'skipped',
+        reason: 'injectable_memory_required',
+        decision,
+        plan,
+      },
+    });
   }
+
+  recordCodexAutoRefreshOutcome({
+    autoRefreshStateStore,
+    threadId,
+    fingerprint,
+    family: 'execute',
+    outcome: {
+      status: 'started',
+      reason: 'threshold_reached',
+    },
+    rolloutState,
+  });
 
   const execution = await executeTrim({
     threadId,
@@ -154,33 +230,226 @@ export async function runCodexAutoRefresh({
     command,
   });
   if (execution.status === 'refused') {
-    return {
-      status: 'refused',
-      reason: execution.reason,
-      decision,
-      plan,
-      execution,
-    };
+    return recordCodexAutoRefreshResult({
+      autoRefreshStateStore,
+      threadId,
+      fingerprint,
+      family: 'execute',
+      rolloutState,
+      result: {
+        status: 'refused',
+        reason: execution.reason,
+        decision,
+        plan,
+        execution,
+      },
+    });
   }
 
   const postInjectVisibilityStatus = execution.postInjectVisibilityCheck?.status ?? 'unchecked';
   if (postInjectVisibilityStatus !== 'match') {
-    return {
-      status: 'unverified',
-      reason: execution.postInjectVisibilityCheck?.reason ?? 'post_inject_visibility_unverified',
+    return recordCodexAutoRefreshResult({
+      autoRefreshStateStore,
+      threadId,
+      fingerprint,
+      family: 'execute',
+      rolloutState,
+      quietThreadUntilNewUserTurn: Boolean(execution.rollbackSent || execution.injectSent),
+      result: {
+        status: 'unverified',
+        reason: execution.postInjectVisibilityCheck?.reason ?? 'post_inject_visibility_unverified',
+        decision,
+        plan,
+        execution,
+      },
+    });
+  }
+
+  return recordCodexAutoRefreshResult({
+    autoRefreshStateStore,
+    threadId,
+    fingerprint,
+    family: 'execute',
+    rolloutState,
+    quietThreadUntilNewUserTurn: Boolean(execution.rollbackSent || execution.injectSent),
+    result: {
+      status: 'refreshed-live',
+      reason: 'rollback_and_inject_sent_live',
       decision,
       plan,
       execution,
+    },
+  });
+}
+
+export function buildCodexAutoRefreshRolloutState({ captured = null, trimSource = null, plan = null } = {}) {
+  const stats = trimSource?.stats ?? plan?.trim?.rolloutStats ?? captured?.stats ?? {};
+  return {
+    rolloutPath: plan?.trim?.rolloutPath ?? trimSource?.rolloutPath ?? captured?.rolloutPath ?? null,
+    capturedTurns: numberOrNull(plan?.trim?.capturedTurns ?? trimSource?.capturedTurns ?? captured?.capturedTurns),
+    rollbackTurns: numberOrNull(plan?.trim?.rollbackTurns),
+    capturedRows: numberOrNull(captured?.capturedRows),
+    capturedDetails: numberOrNull(captured?.capturedDetails),
+    rollbackEvents: numberOrNull(stats?.rollbackEvents),
+    rolledBackTurns: numberOrNull(stats?.rolledBackTurns),
+    injectedDeveloperMessages: numberOrNull(stats?.injectedDeveloperMessages),
+    userMessagesAfterRollback: numberOrNull(stats?.userMessagesAfterRollback),
+  };
+}
+
+export function buildCodexAutoRefreshFingerprint({
+  threadId,
+  projectPath,
+  usage,
+  rolloutState,
+} = {}) {
+  return JSON.stringify({
+    version: CODEX_AUTO_REFRESH_STATE_VERSION,
+    threadId: typeof threadId === 'string' ? threadId : null,
+    projectPath: normalizeProjectPath(projectPath),
+    usageEpochPercent: usageEpochPercent(usage),
+    contextWindowSize: numberOrNull(usage?.contextWindowSize),
+    usageEstimated: Boolean(usage?.estimated),
+    contextWindowEstimated: Boolean(usage?.contextWindowEstimated),
+    usageSource: typeof usage?.source === 'string' ? usage.source : null,
+    rolloutPath: rolloutState?.rolloutPath ?? null,
+    capturedTurns: numberOrNull(rolloutState?.capturedTurns),
+    rollbackTurns: numberOrNull(rolloutState?.rollbackTurns),
+    rollbackEvents: numberOrNull(rolloutState?.rollbackEvents),
+    rolledBackTurns: numberOrNull(rolloutState?.rolledBackTurns),
+    injectedDeveloperMessages: numberOrNull(rolloutState?.injectedDeveloperMessages),
+    userMessagesAfterRollback: numberOrNull(rolloutState?.userMessagesAfterRollback),
+  });
+}
+
+export function checkCodexAutoRefreshBackoff({
+  autoRefreshStateStore,
+  threadId,
+  fingerprint,
+  family,
+  suppressFamilies = [family],
+  rolloutState = null,
+} = {}) {
+  if (!autoRefreshStateStore) {
+    return { shouldBackoff: false, reason: 'state_store_unavailable' };
+  }
+
+  const state = normalizeAutoRefreshState(autoRefreshStateStore.read(threadId), threadId);
+  const quiet = state.threadQuiet;
+  if (
+    quiet?.family === 'execute' &&
+    suppressFamilies.includes('execute') &&
+    shouldSuppressForThreadQuiet(quiet, rolloutState)
+  ) {
+    return {
+      shouldBackoff: true,
+      reason: 'thread_quiet_until_new_user_turn',
+      family,
+      suppressFamilies,
+      entry: quiet,
+    };
+  }
+
+  const entry = state.entries.find(
+    (candidate) => suppressFamilies.includes(candidate.family) && candidate.fingerprint === fingerprint,
+  );
+  if (entry) {
+    return {
+      shouldBackoff: true,
+      reason: 'matching_refresh_state',
+      family,
+      suppressFamilies,
+      entry,
     };
   }
 
   return {
-    status: 'refreshed-live',
-    reason: 'rollback_and_inject_sent_live',
-    decision,
-    plan,
-    execution,
+    shouldBackoff: false,
+    reason: 'no_matching_refresh_state',
+    family,
+    suppressFamilies,
   };
+}
+
+export function recordCodexAutoRefreshOutcome({
+  autoRefreshStateStore,
+  threadId,
+  fingerprint,
+  family,
+  outcome,
+  rolloutState = null,
+  quietThreadUntilNewUserTurn = false,
+} = {}) {
+  if (!autoRefreshStateStore) return null;
+
+  const state = normalizeAutoRefreshState(autoRefreshStateStore.read(threadId), threadId);
+  const entry = {
+    family,
+    fingerprint,
+    outcomeStatus: outcome?.status ?? null,
+    outcomeReason: outcome?.reason ?? null,
+    recordedAt: Date.now(),
+    rolloutState,
+  };
+  state.entries = [
+    entry,
+    ...state.entries.filter(
+      (candidate) => candidate.family !== family || candidate.fingerprint !== fingerprint,
+    ),
+  ].slice(0, MAX_AUTO_REFRESH_STATE_ENTRIES);
+
+  if (quietThreadUntilNewUserTurn) {
+    state.threadQuiet = {
+      family,
+      reason: 'refresh_sent_quiet_until_new_user_turn',
+      outcomeStatus: outcome?.status ?? null,
+      outcomeReason: outcome?.reason ?? null,
+      recordedAt: entry.recordedAt,
+      userMessagesAfterRollback: numberOrNull(rolloutState?.userMessagesAfterRollback),
+      rollbackEvents: numberOrNull(rolloutState?.rollbackEvents),
+      injectedDeveloperMessages: numberOrNull(rolloutState?.injectedDeveloperMessages),
+    };
+  }
+
+  autoRefreshStateStore.write(threadId, state);
+  return entry;
+}
+
+export function createFileCodexAutoRefreshStateStore({
+  dir = join(homedir(), '.throughline', 'codex-auto-refresh'),
+} = {}) {
+  return {
+    read(threadId) {
+      const file = codexAutoRefreshStatePath(dir, threadId);
+      if (!existsSync(file)) return null;
+      return JSON.parse(readFileSync(file, 'utf8'));
+    },
+    write(threadId, state) {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(codexAutoRefreshStatePath(dir, threadId), JSON.stringify(state));
+    },
+  };
+}
+
+function recordCodexAutoRefreshResult({
+  autoRefreshStateStore,
+  threadId,
+  fingerprint,
+  family,
+  rolloutState,
+  quietThreadUntilNewUserTurn = false,
+  result,
+}) {
+  recordCodexAutoRefreshOutcome({
+    autoRefreshStateStore,
+    threadId,
+    fingerprint,
+    family,
+    outcome: result,
+    rolloutState,
+    quietThreadUntilNewUserTurn,
+  });
+  return result;
 }
 
 function hasInjectableMemory(memoryPreview) {
@@ -191,4 +460,67 @@ function hasInjectableMemory(memoryPreview) {
     text.trim().length > 0 &&
     text !== '(no captured memory available)'
   );
+}
+
+function normalizeAutoRefreshState(value, threadId) {
+  if (!value || typeof value !== 'object') {
+    return {
+      version: CODEX_AUTO_REFRESH_STATE_VERSION,
+      threadId,
+      entries: [],
+      threadQuiet: null,
+    };
+  }
+  return {
+    version: CODEX_AUTO_REFRESH_STATE_VERSION,
+    threadId: typeof value.threadId === 'string' ? value.threadId : threadId,
+    entries: Array.isArray(value.entries) ? value.entries.filter(isRefreshStateEntry) : [],
+    threadQuiet: value.threadQuiet && typeof value.threadQuiet === 'object' ? value.threadQuiet : null,
+  };
+}
+
+function isRefreshStateEntry(entry) {
+  return (
+    entry &&
+    typeof entry === 'object' &&
+    typeof entry.family === 'string' &&
+    typeof entry.fingerprint === 'string'
+  );
+}
+
+function shouldSuppressForThreadQuiet(quiet, rolloutState) {
+  const quietUserMessages = numberOrNull(quiet?.userMessagesAfterRollback);
+  const currentUserMessages = numberOrNull(rolloutState?.userMessagesAfterRollback);
+  if (quietUserMessages === null || currentUserMessages === null) return false;
+  return currentUserMessages <= quietUserMessages;
+}
+
+function usageEpochPercent(usage) {
+  const tokens = Number(usage?.tokens);
+  const contextWindowSize = Number(usage?.contextWindowSize);
+  if (!Number.isFinite(tokens) || !Number.isFinite(contextWindowSize) || contextWindowSize <= 0) {
+    return null;
+  }
+  const percent = (tokens / contextWindowSize) * 100;
+  return Math.floor(percent / CODEX_AUTO_REFRESH_USAGE_EPOCH_PERCENT) * CODEX_AUTO_REFRESH_USAGE_EPOCH_PERCENT;
+}
+
+function normalizeProjectPath(value) {
+  if (typeof value !== 'string' || value.length === 0) return '';
+  let result = resolve(value).replace(/\\/g, '/');
+  if (result.length > 1 && result.endsWith('/')) result = result.slice(0, -1);
+  if (platform() === 'win32') result = result.toLowerCase();
+  return result;
+}
+
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function codexAutoRefreshStatePath(dir, threadId) {
+  if (typeof threadId !== 'string' || threadId.length === 0) {
+    throw new Error('codex auto-refresh state requires threadId');
+  }
+  return join(dir, `${encodeURIComponent(threadId)}.json`);
 }

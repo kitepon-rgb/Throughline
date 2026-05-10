@@ -1,6 +1,7 @@
 import { getDb } from '../db.mjs';
 import { buildHandoffRecord } from '../handoff-record.mjs';
 import { toThroughlineHandoffBlock } from '../codex-handoff.mjs';
+import { sameProjectPath } from '../project-path.mjs';
 
 function parseArgs(args) {
   const out = {
@@ -33,15 +34,14 @@ function parseArgs(args) {
 }
 
 function findLatestSessionId(db, projectPath) {
-  const row = db
+  const rows = db
     .prepare(
-      `SELECT session_id
+      `SELECT session_id, project_path
        FROM sessions
-       WHERE lower(project_path) = lower(?)
-       ORDER BY updated_at DESC
-       LIMIT 1`,
+       ORDER BY updated_at DESC`,
     )
-    .get(projectPath);
+    .all();
+  const row = rows.find((candidate) => sameProjectPath(candidate.project_path, projectPath));
   return row?.session_id ?? null;
 }
 

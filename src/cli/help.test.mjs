@@ -47,7 +47,9 @@ test('CLI help exposes guided Codex handoff and guarded execute semantics', () =
   for (const command of CODEX_HELP_COMMANDS) {
     assert.match(result.stdout, new RegExp(command.replaceAll('-', '\\-')));
   }
-  assert.match(result.stdout, /Guided read-only fresh-thread handoff start plan/);
+  assert.match(result.stdout, /Fresh-thread Codex handoff start plan/);
+  assert.match(result.stdout, /Use --execute to/);
+  assert.match(result.stdout, /--open-host auto\|vscode\|cli\|none/);
   assert.match(result.stdout, /throughline trim --execute/);
   assert.match(result.stdout, /injectable DB memory/);
   assert.match(result.stdout, /matching/);

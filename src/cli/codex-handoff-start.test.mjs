@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,41 @@ function makeTempHome() {
 
 function makeTempProject() {
   return mkdtempSync(join(tmpdir(), 'tl-codex-handoff-start-project-'));
+}
+
+function makeFakeCodexAppServer(dir) {
+  const script = join(dir, 'fake-codex-app-server.mjs');
+  const log = join(dir, 'fake-codex-app-server.log');
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node
+import { appendFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+const log = ${JSON.stringify(log)};
+const rl = createInterface({ input: process.stdin });
+function send(message) { process.stdout.write(JSON.stringify(message) + '\\n'); }
+rl.on('line', (line) => {
+  const msg = JSON.parse(line);
+  appendFileSync(log, JSON.stringify(msg) + '\\n');
+  if (msg.method === 'initialized') return;
+  if (msg.method === 'initialize') {
+    send({ id: msg.id, result: { userAgent: 'fake-codex' } });
+  } else if (msg.method === 'thread/start') {
+    send({ id: msg.id, result: { thread: { id: '019e2000-0000-7000-8000-000000000001', turns: [] } } });
+  } else if (msg.method === 'thread/inject_items') {
+    send({ id: msg.id, result: { thread: { id: msg.params.threadId, turns: [] } } });
+  } else if (msg.method === 'turn/start') {
+    send({ id: msg.id, result: { turn: { id: 'turn-handoff' } } });
+    send({ method: 'item/agentMessage/delta', params: { threadId: msg.params.threadId, turnId: 'turn-handoff', itemId: 'item-1', delta: 'OK' } });
+    send({ method: 'turn/completed', params: { threadId: msg.params.threadId, turnId: 'turn-handoff' } });
+  } else {
+    send({ id: msg.id, error: { code: -32601, message: 'unknown method' } });
+  }
+});
+`,
+  );
+  chmodSync(script, 0o755);
+  return { script, log };
 }
 
 async function seedDb(home, project) {
@@ -187,6 +222,50 @@ test('codex-handoff-start propagates memo-stdin to replay commands in JSON guida
     assert.match(payload.commands.renderPrompt, /--memo-stdin/);
     assert.match(payload.commands.liveModelSmoke, /--memo-stdin --json/);
     assert.equal(payload.prompt, undefined);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('codex-handoff-start execute creates a new app-server thread and can skip opening a host', async () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    await seedDb(home, project);
+    const { script, log } = makeFakeCodexAppServer(project);
+    const result = runStart(home, project, [
+      '--session',
+      'codex:thread-handoff-start',
+      '--execute',
+      '--open-host',
+      'none',
+      '--codex-app-server-bin',
+      script,
+      '--json',
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'started');
+    assert.equal(payload.reason, 'new_thread_handoff_started');
+    assert.equal(payload.execute, true);
+    assert.equal(payload.startThreadManually, false);
+    assert.equal(payload.newThread.threadId, '019e2000-0000-7000-8000-000000000001');
+    assert.equal(payload.newThread.delivery, 'developer-item');
+    assert.equal(payload.newThread.injectSent, true);
+    assert.equal(payload.newThread.turnStatus, 'not-started');
+    assert.equal(payload.open.status, 'skipped');
+    assert.equal(payload.open.vscodeUrl, 'vscode://openai.chatgpt/local/019e2000-0000-7000-8000-000000000001');
+    assert.match(payload.open.resumeCommand, /codex resume 019e2000-0000-7000-8000-000000000001/);
+
+    const fakeLog = readFileSync(log, 'utf8');
+    assert.match(fakeLog, /"method":"thread\/start"/);
+    assert.match(fakeLog, /"sessionStartSource":"clear"/);
+    assert.match(fakeLog, /"method":"thread\/inject_items"/);
+    assert.doesNotMatch(fakeLog, /"method":"turn\/start"/);
+    assert.match(fakeLog, /## Throughline: New Codex Thread Handoff/);
+    assert.match(fakeLog, /latest handoff start body/);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
