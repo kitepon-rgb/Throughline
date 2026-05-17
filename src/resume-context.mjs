@@ -5,8 +5,11 @@
  *   - session-start.mjs (auto path / baton path どちらでも同じ注入)
  *
  * 設計 (docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md):
- *   - 注入順: ヘッダ + 読み方 → L1 要約 → L2 本文（一番下）
- *   - 直前の発話に Claude の attention が向くよう、L2 を末尾に置く
+ *   - 注入順: ヘッダ + 読み方 → 現在地アンカー → L1 要約 → L2 本文（一番下）
+ *   - 「現在地」アンカーは直前の user / assistant turn をヘッダ直下に再掲して
+ *     最初の注意を最新ターンに固定する。L2 末尾アンカーは補強として残す。
+ *     （L2 が長くなると末尾アンカーだけでは前半の古いターンに注意が固着し、
+ *      話の流れを取り違える事例があった）
  *   - L3 は別セクションを設けず、対応する L1 / L2 行にインラインで
  *     `[→ throughline detail HH:MM:SS (kind …)]` ヒントを付ける
  *   - L2 全文があれば最後の assistant turn 自体に「次に何をしようとしていたか」が
@@ -25,11 +28,42 @@ const RESUME_HEADER_TEMPLATE = (turnCount) =>
   `## Throughline: 中断した作業の再開（${turnCount} ターン分の文脈を保持）\n` +
   `\n` +
   `**読み方:**\n` +
+  `- **下の「現在地」が直前のやりとりです。まずここで最新の状態と次の一手を把握してから L1/L2 を読んでください。**\n` +
   `- 直前の対話の自然な続きとして応答してください。\n` +
   '- **各ターンの詳細の取得方法**: **`Bash` ツールで `throughline detail HH:MM:SS` を実行** ' +
   `(該当ターンの本文＋詳細を stdout に返します)`;
 
 const NORMAL_HEADER = '## Throughline: セッション記憶';
+
+// 現在地アンカーは最新 user / assistant 本文を再掲する。長すぎると注入全体が膨らむので
+// この文字数で打ち切り、全文は L2 セクション側を参照させる。
+const ANCHOR_MAX_CHARS = 600;
+
+function truncateForAnchor(text) {
+  const normalized = text.replace(/\n+/g, ' ').trim();
+  if (normalized.length <= ANCHOR_MAX_CHARS) return normalized;
+  return normalized.slice(0, ANCHOR_MAX_CHARS) + ' …';
+}
+
+/**
+ * recentBodies (古い順) から「直前のやりとり」アンカー用に
+ * 最新の user / assistant 行をそれぞれ 1 件ずつ拾う。
+ */
+function pickLatestExchange(recentBodies) {
+  let latestUser = null;
+  let latestAssistant = null;
+  for (let i = recentBodies.length - 1; i >= 0; i -= 1) {
+    const r = recentBodies[i];
+    if (!r.text) continue;
+    if (r.role === 'assistant' && !latestAssistant) {
+      latestAssistant = r;
+    } else if (r.role === 'user' && !latestUser) {
+      latestUser = r;
+    }
+    if (latestUser && latestAssistant) break;
+  }
+  return { latestUser, latestAssistant };
+}
 
 /**
  * L1 + L2 注入テキストを組み立てる。L3 は本文ではなく
@@ -60,6 +94,28 @@ export function buildResumeContext(
   const lines = [header];
 
   const l3ByTurn = groupL3ByTurn(record.references.l3);
+
+  // 現在地アンカー: 引き継ぎ時のみ、最新 user / assistant turn をヘッダ直下に再掲する。
+  // L2 末尾アンカーだけだと、長い L2 で注意が前半に固着して話の流れを取り違える事例があった。
+  if (isInheritance && record.memory.recentBodies.length > 0) {
+    const { latestUser, latestAssistant } = pickLatestExchange(record.memory.recentBodies);
+    const anchorLines = [];
+    if (latestUser) {
+      anchorLines.push(
+        `**最新ユーザー指示** [${latestUser.time}]: ${truncateForAnchor(latestUser.text)}`,
+      );
+    }
+    if (latestAssistant) {
+      anchorLines.push(
+        `**直前のアシスタント** [${latestAssistant.time}]: ${truncateForAnchor(latestAssistant.text)}`,
+      );
+    }
+    if (anchorLines.length > 0) {
+      lines.push('');
+      lines.push('### 現在地 (直前のやりとり)');
+      lines.push(...anchorLines);
+    }
+  }
 
   if (record.memory.l1Summaries.length > 0) {
     const l1Lines = [];

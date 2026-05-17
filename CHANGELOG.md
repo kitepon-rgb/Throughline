@@ -10,6 +10,21 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.4.12] — 2026-05-17
+
+### Changed
+
+- Added a 「現在地 (直前のやりとり)」 anchor at the top of the Claude
+  `/clear` resume context injection. The anchor re-surfaces the latest user
+  directive and the latest assistant turn body (each truncated to 600
+  characters) directly under the header, before the L1 / L2 sections.
+  Observed failure mode: with a long L2 window the model's attention could
+  fixate on the *first* L2 entry (oldest in the window) and mistake an older
+  plan discussion for the current state of the conversation. The anchor pins
+  the latest exchange at the position the model reads first, with the existing
+  L2-tail anchor preserved as reinforcement. The header reading instructions
+  now point to the new anchor as the first bullet.
+
 ## [0.4.11] — 2026-05-10
 
 ### Changed

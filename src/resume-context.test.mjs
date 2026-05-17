@@ -101,11 +101,138 @@ test('buildResumeContext: header is terse and announces the Bash invocation cont
   assert.ok(!text.includes('内訳の読み方'), 'glossary block must be gone');
   assert.ok(!text.includes('現在進行中の作業の active work context'), 'verbose framing must be gone');
 
-  // 残るのは 2 行: 自然な続き + Bash 呼び出し方法
+  // 残るのは 3 行: 現在地参照案内 + 自然な続き + Bash 呼び出し方法
+  assert.match(text, /下の「現在地」が直前のやりとりです/);
   assert.match(text, /直前の対話の自然な続きとして応答してください/);
   assert.match(
     text,
     /\*\*各ターンの詳細の取得方法\*\*: \*\*`Bash` ツールで `throughline detail HH:MM:SS` を実行\*\* \(該当ターンの本文＋詳細を stdout に返します\)/,
+  );
+});
+
+test('buildResumeContext: 現在地 anchor surfaces the latest user/assistant exchange above L1/L2', () => {
+  const db = makeDb();
+  // 25 turns to exercise an L2 window edge and ensure the anchor picks the newest.
+  for (let t = 1; t <= 25; t += 1) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn: t,
+      role: 'user',
+      text: `user turn ${t}`,
+      createdAt: 1000 + t * 10,
+    });
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn: t,
+      role: 'assistant',
+      text: `assistant turn ${t}`,
+      createdAt: 1000 + t * 10 + 1,
+    });
+  }
+
+  const text = buildResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+  });
+
+  assert.ok(text);
+
+  const anchorIdx = text.indexOf('### 現在地 (直前のやりとり)');
+  const l2Idx = text.indexOf('### 直前の対話 (L2 / active work thread, 古い順)');
+  assert.ok(anchorIdx > 0, '現在地 anchor section should be present');
+  assert.ok(l2Idx > anchorIdx, '現在地 anchor must appear before the L2 section');
+
+  // The anchor must point to turn 25 (the latest), not any earlier turn.
+  assert.match(text, /\*\*最新ユーザー指示\*\* \[\d\d:\d\d:\d\d\]: user turn 25$/m);
+  assert.match(text, /\*\*直前のアシスタント\*\* \[\d\d:\d\d:\d\d\]: assistant turn 25$/m);
+});
+
+test('buildResumeContext: 現在地 anchor truncates long bodies but full body still appears in L2', () => {
+  const db = makeDb();
+  const longText = 'a'.repeat(1200);
+  insertBody(db, {
+    session: 'new',
+    origin: 'old',
+    turn: 1,
+    role: 'assistant',
+    text: longText,
+    createdAt: 1000,
+  });
+
+  const text = buildResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+  });
+
+  assert.ok(text);
+
+  const anchorLine = text
+    .split('\n')
+    .find((l) => l.startsWith('**直前のアシスタント**'));
+  assert.ok(anchorLine, '直前のアシスタント anchor line should be present');
+  // Anchor must be truncated with ellipsis (originally 1200 chars > 600 cap).
+  assert.ok(anchorLine.endsWith(' …'), 'long anchor body must end with the ellipsis marker');
+  assert.ok(
+    anchorLine.length < longText.length,
+    'anchor line should be shorter than the original body',
+  );
+
+  // Full body must still appear in the L2 section below.
+  assert.match(text, new RegExp(`\\[assistant\\]: ${longText}`));
+});
+
+test('buildResumeContext: 現在地 anchor is omitted for non-inheritance sessions', () => {
+  const db = makeDb();
+  insertBody(db, {
+    session: 'new',
+    origin: 'old',
+    turn: 1,
+    role: 'assistant',
+    text: 'a body',
+    createdAt: 1000,
+  });
+
+  const text = buildResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: false,
+  });
+
+  assert.ok(text);
+  assert.ok(
+    !text.includes('現在地'),
+    'normal sessions (isInheritance=false) must not include the 現在地 anchor',
+  );
+  assert.ok(
+    !text.includes('最新ユーザー指示'),
+    'normal sessions must not surface a latest-user pointer',
+  );
+});
+
+test('buildResumeContext: 現在地 anchor handles a single-role recent window', () => {
+  const db = makeDb();
+  // Only user rows (no assistant) — anchor should still render with just the user line.
+  insertBody(db, {
+    session: 'new',
+    origin: 'old',
+    turn: 1,
+    role: 'user',
+    text: 'lone user message',
+    createdAt: 1000,
+  });
+
+  const text = buildResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+  });
+
+  assert.ok(text);
+  assert.ok(text.includes('### 現在地 (直前のやりとり)'));
+  assert.match(text, /\*\*最新ユーザー指示\*\* \[\d\d:\d\d:\d\d\]: lone user message/);
+  assert.ok(
+    !text.includes('**直前のアシスタント**'),
+    'no assistant body present → no 直前のアシスタント line',
   );
 });
 
@@ -239,9 +366,11 @@ test('buildResumeContext: L2 entries get inline (詳細：…) suffixes with too
 
   assert.ok(text);
 
+  // Look for the L2 body line specifically (not the 現在地 anchor line which also
+  // contains the latest assistant body).
   const turnWithToolsLine = text
     .split('\n')
-    .find((l) => l.includes('turn with tools'));
+    .find((l) => /^\[\d\d:\d\d:\d\d\] \[assistant\]: turn with tools/.test(l));
   assert.ok(turnWithToolsLine, 'L2 line for turn 5 should exist');
   // - tool_input + tool_output は tool 名で集約 (Bash ×2)
   // - hook 出力 (system) は suffix から除外
@@ -265,7 +394,9 @@ test('buildResumeContext: L2 entries get inline (詳細：…) suffixes with too
     'per-line should not repeat the throughline detail command (the header announces it)',
   );
 
-  const plainLine = text.split('\n').find((l) => l.includes('plain user message'));
+  const plainLine = text
+    .split('\n')
+    .find((l) => /^\[\d\d:\d\d:\d\d\] \[user\]: plain user message/.test(l));
   assert.ok(plainLine, 'L2 line for turn 6 should exist');
   assert.ok(
     !plainLine.includes('詳細：'),
@@ -341,9 +472,14 @@ test('buildResumeContext: (詳細：…) suffix appears only on the last role ro
 
   assert.ok(text);
 
-  const userTurn5 = text.split('\n').find((l) => l.includes('user side of turn 5'));
-  const assistantTurn5 = text.split('\n').find((l) => l.includes('assistant side of turn 5'));
-  const userTurn6 = text.split('\n').find((l) => l.includes('lone user turn'));
+  // Match L2 body lines specifically (`[HH:MM:SS] [role]: ...`) to avoid colliding
+  // with the 現在地 anchor lines (`**最新ユーザー指示** [HH:MM:SS]: ...`).
+  const lines = text.split('\n');
+  const userTurn5 = lines.find((l) => /^\[\d\d:\d\d:\d\d\] \[user\]: user side of turn 5/.test(l));
+  const assistantTurn5 = lines.find(
+    (l) => /^\[\d\d:\d\d:\d\d\] \[assistant\]: assistant side of turn 5/.test(l),
+  );
+  const userTurn6 = lines.find((l) => /^\[\d\d:\d\d:\d\d\] \[user\]: lone user turn/.test(l));
 
   assert.ok(userTurn5 && assistantTurn5 && userTurn6);
   // Turn 5: only assistant (last role of the turn) gets the suffix

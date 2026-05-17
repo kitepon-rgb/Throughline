@@ -216,14 +216,21 @@ this fallback. **The env var only affects the fallback**; typed `/clear` and
 
 Both paths inject the **same** curated memory:
 
+- A **"現在地 (latest exchange)"** anchor (added in v0.4.12) re-surfaces the
+  most recent user directive and the most recent assistant turn directly under
+  the header, each truncated to 600 characters
 - L1 summaries (older turns, one-line)
 - L2 verbatim (most recent 20 turns, full text)
-- L3 references (`throughline detail <time>` retrieval commands; bodies stay in SQLite)
+- L3 references (`throughline detail <time>` retrieval commands, attached
+  inline to each L1/L2 row; bodies stay in SQLite)
 
 The injection is reframed as **"resuming an interrupted task"** rather than
 "reading past logs". The L2 verbatim already contains the last assistant
 turn — what Claude was about to do next — so no separate memo or extended
-thinking section is injected.
+thinking section is injected. The current-state anchor exists because, on
+long L2 windows, attention can fixate on the *first* L2 entry (the oldest
+turn in the window) and misread an old plan discussion as the current task;
+pinning the latest exchange at the top of the injection prevents that drift.
 
 Each merged row keeps its `origin_session_id`, so repeated handoffs
 accumulate memory through chains:

@@ -95,13 +95,14 @@ on SessionStart(source, session_id, project_path):
 
 `consumeBaton` が先発なので「両方同時成立」は構造上発生しない (= baton ありなら baton 経路、無ければ source 判定)。typed `/clear` も UserPromptSubmit hook で baton を書くため、通常はほぼ常に baton path が走る。auto path は VSCode 拡張のメニュー由来 `/clear` のように UserPromptSubmit に届かない経路のためのフォールバック。
 
-### 2.2 注入内容: L1 + L2 + L3 refs のみ (baton/auto どちらの経路でも同一)
+### 2.2 注入内容: 現在地アンカー + L1 + L2 + L3 refs (baton/auto どちらの経路でも同一)
 
-含める:
+含める (順序):
 - ヘッダ + Reading Contract framing (= Codex 側 `renderCodexRolloutMemoryPreview` の写像)
+- **現在地アンカー** (v0.4.12+): 最新 user turn と最新 assistant turn の本文をヘッダ直下に再掲 (各 600 字で truncate)
 - **L1 summaries** (古い turn の一行要約)
 - **L2 bodies** (直近 20 turn の verbatim)
-- **L3 references** (= `throughline detail <時刻>` の取り出しコマンド一覧、Codex 風の `- ${kind}: ${detailCommand}` フォーマット)
+- **L3 references** (= `throughline detail <時刻>` の取り出しコマンド一覧、各 L1/L2 行末尾の inline suffix として集約)
 - Continuation Instruction (= 「これは過去ログではなく現在進行中の作業」と明示)
 
 含めない (= 削除):
@@ -109,7 +110,9 @@ on SessionStart(source, session_id, project_path):
 - 中断直前の thinking (extended thinking セクション)
 - 既存の Claude 向け footer の冗長な使い方説明
 
-理由: L2 全文があれば最後の assistant turn 自体に「次に何をしようとしていたか」が含まれている。memo / thinking は redundant。
+理由:
+- L2 末尾アンカーだけだと、L2 が長いセッションで注意が前半 (= L2 内の最古ターン) に固着し、古い計画ターンを「現在の作業」と誤認するケースがあった (実観測あり)。最新ターンをヘッダ直下にも再掲して、最初に目に入る位置で文脈を固定する。
+- L2 全文があれば最後の assistant turn 自体に「次に何をしようとしていたか」が含まれている。memo / thinking は redundant。
 
 ### 2.3 `/tl` の役割: **残すが簡素化**
 
