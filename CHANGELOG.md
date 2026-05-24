@@ -10,6 +10,12 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-24
+
+This release closes out the v0.5 transcript-injection investigation and
+locks in **path C** (`resume-context.mjs` v2.1 header + 現在地 anchor) as
+the plugin-scope completion form for Throughline.
+
 ### Changed
 
 - Strengthened the Claude `/clear` resume context header with two new
@@ -26,6 +32,44 @@ shipped to npm but were not individually tagged on GitHub.
     confirmation / next move, not by re-executing the already-done item.
     The latest assistant utterance outranks any older numbered list
     referenced from it.
+
+### Research (no shipped behavior change)
+
+Two alternative injection routes were spiked end-to-end against real
+Claude Code (v2.1.145) and both confirmed dead, locking path C as the
+plugin-scope ceiling.
+
+- **D route — transcript JSONL append** (Phase 0-2 / Phase 0-5): four
+  real-machine runs across `SessionStart` (chain `null` orphan) and
+  `UserPromptSubmit` (chain `b` reachable-from-attachment) timings, with
+  both synthetic and real Claude model names. All four runs produced
+  「ない」when the cleared-me was asked to quote the spike tracer. Root
+  cause: Claude Code decides each new turn's `parentUuid` from its
+  in-process memory state and never re-reads the JSONL, so any text a
+  hook writes to `transcript_path` lives on a parallel chain that the
+  next prompt's parent-walk never reaches.
+- **`hookSpecificOutput.initialUserMessage` route** (Phase 0-6): real
+  Claude Code interactive run on 2026-05-24 13:33 (tracer `9220a79c`,
+  session `0979ad20-…`) returned 「ない」, empirically confirming the
+  openclaude source comment that `initialUserMessage` is consumed only
+  for headless orchestrator sessions, not for the interactive `/clear`
+  scenario this project needs.
+
+Both routes are kept in-tree behind marker files
+(`~/.throughline/spike-inject.flag`,
+`~/.throughline/spike-prompt.flag`,
+`~/.throughline/initial-user-message-test.flag`) as research
+infrastructure for future re-evaluation; they are no-op when the flags
+are absent and have no effect on the shipped path.
+
+### Added
+
+- `docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md`: full Phase 0 plan and
+  result log for the D / `initialUserMessage` investigation.
+- `docs/RAG/`: third-party spec knowledge base (Claude Code hooks
+  reference, Anthropic Messages API, sessions docs, openclaude
+  `initialUserMessage` source extract) used as the grounding for the
+  no-go calls above.
 
 ## [0.4.12] — 2026-05-17
 

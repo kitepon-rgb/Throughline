@@ -92,7 +92,8 @@
       "Bash(git commit *)",
       "Bash(git mv *)",
       "Bash(rtk grep *)",
-      "Bash(rtk git *)"
+      "Bash(rtk git *)",
+      "Bash(rtk gh *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kite_\\.throughline\\state",

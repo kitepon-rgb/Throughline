@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -362,6 +364,292 @@ test('process-turn subprocess stores L2 bodies and L3 details in an isolated DB'
     assert.equal(details[2].tool_name, 'Bash');
     assert.equal(details[2].output_text, 'ok\n');
     db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// ---- Phase 0-5 spike (UserPromptSubmit) ----
+
+function seedMergedSession(home, sessionId, originId = 'orig-sess') {
+  // DB を直接作って bodies に origin != session_id を入れ、spikeInject が
+  // recentBodies を返せる状態にする。
+  const dbPath = join(home, '.throughline', 'throughline.db');
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      session_id TEXT PRIMARY KEY,
+      project_path TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      merged_into TEXT
+    );
+    CREATE TABLE IF NOT EXISTS skeletons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      origin_session_id TEXT,
+      turn_number INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS bodies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      origin_session_id TEXT NOT NULL,
+      turn_number INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      token_count INTEGER,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS details (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      origin_session_id TEXT,
+      turn_number INTEGER,
+      tool_name TEXT NOT NULL,
+      input_text TEXT,
+      output_text TEXT,
+      token_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      kind TEXT,
+      source_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS handoff_batons (
+      project_path TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+  db.prepare(
+    `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+     VALUES (?, '/repo', 'active', 1, 2)`,
+  ).run(sessionId);
+  for (const r of [
+    { turn: 1, role: 'user', text: 'past user turn', createdAt: 1000 },
+    { turn: 2, role: 'assistant', text: 'past assistant turn', createdAt: 1100 },
+  ]) {
+    db.prepare(
+      `INSERT INTO bodies (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?)`,
+    ).run(sessionId, originId, r.turn, r.role, r.text, r.createdAt);
+  }
+  db.close();
+}
+
+function touchSpikePromptFlag(home) {
+  const flagPath = join(home, '.throughline', 'spike-prompt.flag');
+  mkdirSync(dirname(flagPath), { recursive: true });
+  writeFileSync(flagPath, '', 'utf8');
+}
+
+function readPromptSpikeLog(home) {
+  const path = join(home, '.throughline', 'logs', 'prompt-spike.log');
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l));
+}
+
+test('Phase 0-5: spike SKIPS when marker file is absent', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    seedMergedSession(home, 'sess-no-marker');
+    const transcriptPath = join(project, 'transcript.jsonl');
+    writeFileSync(transcriptPath, '', 'utf8');
+
+    const result = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'sess-no-marker',
+        cwd: project,
+        prompt: 'hello world',
+        transcript_path: transcriptPath,
+      }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(transcriptPath, 'utf8'), '', 'transcript untouched');
+    assert.equal(readPromptSpikeLog(home).length, 0, 'no spike log entry');
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Phase 0-5: spike LOGS skip_reason when transcript_path is missing in payload', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    seedMergedSession(home, 'sess-no-tp');
+    touchSpikePromptFlag(home);
+
+    const result = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'sess-no-tp',
+        cwd: project,
+        prompt: 'hello world',
+        // transcript_path omitted
+      }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const logs = readPromptSpikeLog(home);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].skip_reason, 'no_transcript_path_in_payload');
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Phase 0-5: spike INJECTS into JSONL chain-reachable from last uuid on first prompt', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    seedMergedSession(home, 'sess-inject');
+    touchSpikePromptFlag(home);
+
+    // Pre-populate transcript with 1 attachment line (= simulates SessionStart hook output)
+    const transcriptPath = join(project, 'transcript.jsonl');
+    const attachmentLine = JSON.stringify({
+      type: 'attachment',
+      uuid: 'pre-attach-uuid',
+      parentUuid: null,
+    });
+    writeFileSync(transcriptPath, attachmentLine + '\n', 'utf8');
+
+    const result = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'sess-inject',
+        cwd: project,
+        prompt: 'tell me the spike-tracer',
+        transcript_path: transcriptPath,
+        version: '2.1.145',
+        gitBranch: 'main',
+      }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const content = readFileSync(transcriptPath, 'utf8');
+    const lines = content.split('\n').filter((l) => l.trim());
+    assert.equal(lines.length, 3, '1 preexisting + 2 spike lines');
+    const firstSpike = JSON.parse(lines[1]);
+    assert.equal(firstSpike.parentUuid, 'pre-attach-uuid', 'chain (b) from last attachment uuid');
+    const lastSpike = JSON.parse(lines[2]);
+    assert.match(
+      lastSpike.message.content[0].text,
+      /\[spike-tracer: [0-9a-f]{8}\]$/,
+      'tracer in last assistant',
+    );
+
+    const logs = readPromptSpikeLog(home);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].parent_uuid_start, 'pre-attach-uuid');
+    assert.equal(logs[0].appended, 2);
+    assert.match(logs[0].tracer, /^[0-9a-f]{8}$/);
+
+    // per-session marker created
+    assert.ok(
+      existsSync(join(home, '.throughline', 'spike-prompt-state', 'sess-inject')),
+      'per-session marker created after successful spike',
+    );
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Phase 0-5: spike is IDEMPOTENT per session (second call is no-op)', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    seedMergedSession(home, 'sess-idem');
+    touchSpikePromptFlag(home);
+
+    const transcriptPath = join(project, 'transcript.jsonl');
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({ type: 'attachment', uuid: 'preU', parentUuid: null }) + '\n',
+      'utf8',
+    );
+
+    const firstPayload = JSON.stringify({
+      session_id: 'sess-idem',
+      cwd: project,
+      prompt: 'first',
+      transcript_path: transcriptPath,
+    });
+    const secondPayload = JSON.stringify({
+      session_id: 'sess-idem',
+      cwd: project,
+      prompt: 'second',
+      transcript_path: transcriptPath,
+    });
+
+    const r1 = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: firstPayload,
+    });
+    assert.equal(r1.status, 0, r1.stderr);
+    const after1 = readFileSync(transcriptPath, 'utf8').split('\n').filter((l) => l.trim()).length;
+
+    const r2 = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: secondPayload,
+    });
+    assert.equal(r2.status, 0, r2.stderr);
+    const after2 = readFileSync(transcriptPath, 'utf8').split('\n').filter((l) => l.trim()).length;
+
+    assert.equal(after2, after1, 'second prompt did not append additional lines');
+    assert.equal(readPromptSpikeLog(home).length, 1, 'only the first call logged');
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Phase 0-5: /tl and /clear prompts do NOT trigger spike', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    seedMergedSession(home, 'sess-slash');
+    touchSpikePromptFlag(home);
+    const transcriptPath = join(project, 'transcript.jsonl');
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({ type: 'attachment', uuid: 'preU', parentUuid: null }) + '\n',
+      'utf8',
+    );
+
+    const r = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'sess-slash',
+        cwd: project,
+        prompt: '/tl',
+        transcript_path: transcriptPath,
+      }),
+    });
+    assert.equal(r.status, 0, r.stderr);
+
+    assert.equal(readPromptSpikeLog(home).length, 0, 'no spike log for /tl');
+    assert.ok(
+      !existsSync(join(home, '.throughline', 'spike-prompt-state', 'sess-slash')),
+      'per-session marker NOT created for /tl',
+    );
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
