@@ -38,14 +38,18 @@ skill も登録する。75% 自動発火は token-monitor 依存ではなく、�
 
 ## 他の手段との比較
 
-| | Throughline | MemGPT / SummaryBufferMemory | 素の Claude Code |
-|---|---|---|---|
-| **圧縮の軸** | コンテンツの **種類** (テキスト vs ツール I/O) | **新旧** (古い → 要約) | 無し |
-| **コーディング用途への適合** | 高 — ツール I/O こそ重い 80% | 中 — 残したい部分まで圧縮される | — |
-| **`/clear` 後の生存** | ✅ SQLite + typed `/clear` / `/tl` バトン | ホスト依存 | ❌ |
-| **誤継承リスク** | 低 (typed `/clear` / `/tl` が前任を指名) | 高 | — |
-| **ランタイム依存** | **ゼロ** (Node 22.5+ 同梱の `node:sqlite`) | 多数 | — |
-| **マルチセッション トークン監視** | ✅ Claude 実測 `message.usage`、Codex rollout `token_count` | — | — |
+| | **Throughline** | `/clear` (組み込み) | `/compact` (組み込み) | MemGPT / SummaryBufferMemory |
+|---|---|---|---|---|
+| **何をする** | ツール I/O を SQLite に退避、本文は残す | ウィンドウを全消去 | ウィンドウ全体を LLM 要約 | 新旧で要約 |
+| **圧縮の軸** | コンテンツの **種類** (テキスト vs ツール I/O) | 無し — 全消去 | **新旧** (一律) | **新旧** (一律) |
+| **境界後に残る記憶** | ✅ 直近 20 ターン本文 + それ以前 L1 + L3 オンデマンド | ❌ ゼロ | △ 一個の要約 (情報欠落) | △ 要約 (情報欠落) |
+| **ツール I/O の扱い** | L3 に退避、`/sc-detail HH:MM:SS` で取り戻せる | 消える | 要約に溶けて読めない | 要約に溶ける |
+| **コーディング用途への適合** | 高 — ツール I/O こそ重い 80% | 低 — 文脈が切れる | 中 — ただし不可逆 | 中 |
+| **誤継承リスク** | 低 (typed `/clear` / `/tl` が前任を指名) | n/a | n/a | 高 |
+| **ランタイム依存** | **ゼロ** (Node 22.5+ 同梱の `node:sqlite`) | n/a | n/a | 多数 |
+| **マルチセッション トークン監視** | ✅ 実測 `message.usage` / Codex rollout `token_count` | — | — | — |
+
+**ひとことで**: `/clear` は全部捨てる、`/compact` は全部混ぜる、Throughline は **書いた本文はそのまま残し、ツール出力 (= 80% の重量物) だけ退避** する。
 
 <details>
 <summary><b>なぜこれが効くのか — 80% ツール I/O 問題</b></summary>
@@ -54,18 +58,25 @@ skill も登録する。75% 自動発火は token-monitor 依存ではなく、�
 ファイル読み込み、Bash 出力、grep 結果。これらは Claude が即座に消費するデータですが、
 コンテキスト上には永久に残り、ウィンドウ上限に向かって押し出されていきます。
 
-Throughline はこの問題を、会話を **時間ではなく種類** で分離することで解決します:
+```mermaid
+xychart-beta
+    title "コーディング 50 ターン後のコンテキスト (典型例)"
+    x-axis ["Throughline 無し", "/clear + Throughline 再開後"]
+    y-axis "コンテキスト内トークン数" 0 --> 140000
+    bar [125000, 13000]
+```
 
 ```
 Throughline 無し (50 ターン、/clear なし):
-  コンテキスト = ユーザー文 + アシスタント文 + ツール I/O + システムメッセージ
-              ≈ 125,000 トークン (うち 80% は二度と読み返さないツール I/O)
+  ユーザー / アシスタント本文  ~25,000 tok  ████
+  ツール I/O (80%)            ~100,000 tok  ████████████████
+                              ≈ 125,000 tok 合計
 
 Throughline 有り (50 ターン → /clear → 再開):
-  コンテキスト = 直近 20 ターンの会話本文 (L2)
-              + それ以前 30 ターンの一行要約 (L1)
-              + ツール I/O ゼロ (L3 — SQLite に退避、必要時にだけ取得)
-              ≈ 13,000 トークン — 同じ判断、同じ文脈、90% 軽量
+  直近 20 ターン L2            ~10,000 tok  ██
+  それ以前 30 ターン L1         ~3,000 tok  ▌
+  ツール I/O                       0 tok    (SQLite 退避、オンデマンド取得)
+                              ≈ 13,000 tok — 90% 軽量
 ```
 
 MemGPT や LangChain の SummaryBufferMemory が **新旧** で圧縮するのに対し、
@@ -210,6 +221,9 @@ S1 (4 ターン) --/clear--> S2 (S1 を auto-merge + 3 ターン追加) --/clear
 
 ---
 
+<details>
+<summary><b>Codex sidecar と Codex trim</b> — operator 向け adapter 詳細 (クリックで展開)</summary>
+
 ## Codex sidecar と Codex trim
 
 Throughline の主軸は引き続き **Claude Code** です。Codex 対応は、Claude hooks /
@@ -226,6 +240,8 @@ memory inject を直接実行します。Claude 側は `/clear` での auto path
 `/tl-trim` slash command は v0.4.0 で廃止されました。current-work framing は
 SessionStart 注入の Reading Contract / Continuation Instruction で同じ意図を
 継承しています。
+
+</details>
 
 ---
 

@@ -50,14 +50,18 @@ guarded `trim --execute --host codex` surface.
 
 ## How it compares
 
-| | Throughline | MemGPT / SummaryBufferMemory | Plain Claude Code |
-|---|---|---|---|
-| **Compression axis** | content **type** (text vs tool I/O) | **recency** (old → summarized) | none |
-| **Coding-assistant fit** | high — tool I/O is the heavy 80% | medium — also compresses what you want to keep | — |
-| **`/clear` survival** | ✅ via SQLite + typed `/clear` / `/tl` baton | depends on host | ❌ |
-| **Auto-inheritance risk** | low (typed `/clear` or `/tl` names the predecessor) | high | — |
-| **Runtime deps** | **zero** (Node 22.5+ built-in `node:sqlite`) | many | — |
-| **Multi-session token monitor** | ✅ Claude real `message.usage`; Codex rollout `token_count` when available | — | — |
+| | **Throughline** | `/clear` (built-in) | `/compact` (built-in) | MemGPT / SummaryBufferMemory |
+|---|---|---|---|---|
+| **What it does** | retire tool I/O to SQLite, keep text in-context | wipe the whole window | LLM-summarize the whole window | recency-based summarize |
+| **Compression axis** | content **type** (text vs tool I/O) | none — full wipe | **recency** (uniform) | **recency** (uniform) |
+| **Memory after the boundary** | ✅ recent 20 turns verbatim + older as L1 + L3 on demand | ❌ zero | △ lossy single summary | △ lossy summary |
+| **Tool I/O handling** | retired to L3, retrievable by `/sc-detail HH:MM:SS` | gone | folded into summary, unreadable | folded into summary |
+| **Coding-assistant fit** | high — tool I/O is the heavy 80% | low — you lose the thread | medium — but irreversible | medium |
+| **Auto-inheritance risk** | low (typed `/clear` / `/tl` names the predecessor) | n/a | n/a | high |
+| **Runtime deps** | **zero** (Node 22.5+ built-in `node:sqlite`) | n/a | n/a | many |
+| **Multi-session token monitor** | ✅ real `message.usage` / Codex rollout `token_count` | — | — | — |
+
+**Short version**: `/clear` throws everything away, `/compact` blurs everything together, Throughline keeps the *text* you wrote verbatim and only retires the *tool output* — which is where 80% of the bloat lives.
 
 <details>
 <summary><b>Why this matters — the 80% tool-I/O problem</b></summary>
@@ -67,24 +71,32 @@ file reads, Bash output, grep results. This data is consumed the moment Claude
 acts on it, but it stays in the context forever, pushing you toward the window
 limit.
 
-Throughline fixes this by separating conversation content by **type, not time**:
+```mermaid
+xychart-beta
+    title "Context after 50 turns of coding work (typical session)"
+    x-axis ["Without Throughline", "After /clear + Throughline resume"]
+    y-axis "Tokens in context" 0 --> 140000
+    bar [125000, 13000]
+```
 
 ```
 Without Throughline (50 turns, no /clear):
-  Context = user text + assistant text + tool I/O + system messages
-          ≈ 125,000 tokens (80% is tool I/O you'll never re-read)
+  user/assistant text  ~25,000 tok  ████
+  tool I/O (80%)      ~100,000 tok  ████████████████
+                       ≈ 125,000 tok total
 
 With Throughline (50 turns → /clear → resume):
-  Context = recent 20 turns of conversation text (L2)
-          + older 30 turns as one-line summaries (L1)
-          + zero tool I/O (L3 — retired to SQLite, on-demand)
-          ≈ 13,000 tokens — same decisions, same context, 90% lighter
+  recent 20 turns L2   ~10,000 tok  ██
+  older 30 turns L1     ~3,000 tok  ▌
+  tool I/O                  0 tok   (retired to SQLite, on-demand)
+                       ≈ 13,000 tok total — 90% lighter
 ```
 
+Throughline separates conversation content by **type, not time**: human-readable
+conversation stays in-context, machine-generated tool output retires to L3.
 Unlike MemGPT or LangChain's SummaryBufferMemory which compress by **recency**
-(old = summarized), Throughline separates by **content type**: human-readable
-conversation stays, machine-generated tool output retires. This is purpose-built
-for coding assistants where tool I/O is heavy but transient.
+(old = summarized), this is purpose-built for coding assistants where tool I/O
+is heavy but transient.
 
 The retired L3 data isn't lost — Claude can pull it back on demand via
 `throughline detail <time>` when a past turn's tool output becomes relevant
@@ -241,6 +253,9 @@ S1 (4 turns) --/clear--> S2 (auto-merges S1, adds 3 turns) --/clear--> S3 (auto-
 ```
 
 ---
+
+<details>
+<summary><b>Codex sidecar and Codex trim</b> — operator-level adapter details (click to expand)</summary>
 
 ## Codex sidecar and Codex trim
 
@@ -534,6 +549,8 @@ Human-readable dry-run output truncates the inline memory preview for scanabilit
 the full text remains in `--json` as `memoryPreview.text`, and for Codex the
 fresh-thread continuation can be guided with `codex-handoff-start` or rendered
 directly with the `codex-resume` command shown in the fresh-thread continuation path.
+
+</details>
 
 ---
 
