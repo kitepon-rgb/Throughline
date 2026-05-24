@@ -93,7 +93,9 @@ test('buildResumeContext: header is terse and announces the Bash invocation cont
   });
 
   assert.ok(text);
-  assert.match(text, /^## Throughline: 中断した作業の再開/);
+  // A 経路: 「直前スレッドの継続応答用コンテキスト」 framing (元の「中断した作業の再開」よりも
+  // 強い directive。モデルが /clear 後の短い prompt を新規依頼として扱うのを抑止する目的)
+  assert.match(text, /^## Throughline: 直前スレッドの継続応答用コンテキスト/);
 
   // 旧版の冗長な行は全部削除
   assert.ok(!text.includes('と報告してください'), 'meta-report instruction must be gone');
@@ -101,13 +103,27 @@ test('buildResumeContext: header is terse and announces the Bash invocation cont
   assert.ok(!text.includes('内訳の読み方'), 'glossary block must be gone');
   assert.ok(!text.includes('現在進行中の作業の active work context'), 'verbose framing must be gone');
 
-  // 残るのは 3 行: 現在地参照案内 + 自然な続き + Bash 呼び出し方法
-  assert.match(text, /下の「現在地」が直前のやりとりです/);
-  assert.match(text, /直前の対話の自然な続きとして応答してください/);
+  // A 経路の必須シグナル: 「あなた自身が直前にユーザーと交わした会話」 + 「新規依頼ではなく続き」
+  // + 短い指示の扱い + 「新規会話ではない」明示
+  assert.match(text, /あなた自身が直前にユーザーと交わした会話/);
+  assert.match(text, /新規依頼ではなく、上記スレッドの \*\*続き\*\*/);
+  assert.match(text, /続きよろしく.*OK.*次は？/s);
+  assert.match(text, /新規会話ではない/);
+  // β 経路 (early-style explicit report-back instruction): モデルが冒頭で
+  // 「引き継いだ状態で続けます」と明示的に表明することで、user が体感する継続感を強める
+  assert.match(text, /応答の冒頭で必ず以下を 1 行宣言/);
+  assert.match(text, /Throughline で前のセッションから .* ターン分の記憶を引き継いだ状態で続けます/);
   assert.match(
     text,
-    /\*\*各ターンの詳細の取得方法\*\*: \*\*`Bash` ツールで `throughline detail HH:MM:SS` を実行\*\* \(該当ターンの本文＋詳細を stdout に返します\)/,
+    /\*\*各ターンの詳細\*\*: \*\*`Bash` ツールで `throughline detail HH:MM:SS` を実行\*\* \(該当ターンの本文＋詳細を stdout に返します\)/,
   );
+
+  // v2.1: 古い番号リスト (1/2/3) を最新ユーザーが「2 をやれ」のように参照しても、
+  // 直前アシスタントで既に実行済みなら再実行ではなく結果確認に回るというガード。
+  // (このセッションで実際にハマった misread の再発防止)
+  assert.match(text, /古い番号リストの再実行禁止/);
+  assert.match(text, /既に直前アシスタントターンで実装\/実行済み/);
+  assert.match(text, /最新アシスタント発話の指示が、過去ターンのリストへの参照より上位/);
 });
 
 test('buildResumeContext: 現在地 anchor surfaces the latest user/assistant exchange above L1/L2', () => {

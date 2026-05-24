@@ -10,6 +10,23 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Changed
+
+- Strengthened the Claude `/clear` resume context header with two new
+  short-message handling rules so the cleared-me side stops misreading
+  follow-up shorts as fresh requests:
+  - **短文/相槌の判定**: any user message that is ≤50 chars or built solely
+    out of acknowledgment / agreement / prompt words (はい / うん / 了解 /
+    OK / やって / 進めて / 続き / 次) must be treated as a GO sign on the
+    previous assistant's proposed next move, not a new request, and the
+    cleared-me must not ask back, re-list options, or pivot to other work.
+  - **古い番号リストの再実行禁止**: when the latest user references an
+    older numbered list (e.g. `2 をやれ`) but the most recent assistant turn
+    already executed that item, the cleared-me must respond with a result
+    confirmation / next move, not by re-executing the already-done item.
+    The latest assistant utterance outranks any older numbered list
+    referenced from it.
+
 ## [0.4.12] — 2026-05-17
 
 ### Changed
