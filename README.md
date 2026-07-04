@@ -844,7 +844,7 @@ The only tolerated silent paths are:
 - JSONL per-line parse tolerance (tail partial writes are part of the format spec)
 - State-file corruption recovery (files are idempotently regenerated next turn)
 
-See [`docs/PUBLIC_RELEASE_PLAN.md §0`](docs/PUBLIC_RELEASE_PLAN.md) for the full
+See [`docs/04_public_release_plan.md §0`](docs/04_public_release_plan.md) for the full
 rule.
 
 ---
@@ -1009,25 +1009,25 @@ the first generation to pick up the auto-start task.
 
 ## Design docs
 
-- [`docs/L1_L2_L3_REDESIGN.md`](docs/L1_L2_L3_REDESIGN.md) — **core design
+- [`docs/01_l1_l2_l3_redesign.md`](docs/01_l1_l2_l3_redesign.md) — **core design
   spec** for the L1/L2/L3 differential layer model (schema v4 base + v5 L3
   classification extension). Authoritative for the memory layering rules.
-- [`docs/INHERITANCE_ON_CLEAR_ONLY.md`](docs/INHERITANCE_ON_CLEAR_ONLY.md) —
+- [`docs/03_inheritance_on_clear_only.md`](docs/03_inheritance_on_clear_only.md) —
   design record for the `/tl` baton handoff system (schema v6–v7). Explains
   why the current inheritance is opt-in rather than heuristic.
-- [`docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md`](docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md) —
+- [`docs/08_codex_dual_support.md`](docs/08_codex_dual_support.md) —
   architecture brief for adding Codex support without replacing the Claude
   Code hook/slash-command path.
-- [`docs/throughline-rollback-context-trim-insight.md`](docs/throughline-rollback-context-trim-insight.md) —
+- [`docs/09_rollback_context_trim_insight.md`](docs/09_rollback_context_trim_insight.md) —
   design insight for context rollback/trim, including why restored memory must
   be framed as current work rather than passive history.
-- [`docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md`](docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md) —
+- [`docs/05_codex_first_roadmap.md`](docs/05_codex_first_roadmap.md) —
   current next-phase TODO plan: Codex primary first, Codex rewind-compatible
   trim next, Claude rewind finalization after that.
-- [`docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md`](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) —
+- [`docs/07_codex_trim_implementation_plan.md`](docs/07_codex_trim_implementation_plan.md) —
   historical integrated TODO plan and implementation record for Claude/Codex
   dual support and rollback trim.
-- [`docs/PUBLIC_RELEASE_PLAN.md`](docs/PUBLIC_RELEASE_PLAN.md) — public
+- [`docs/04_public_release_plan.md`](docs/04_public_release_plan.md) — public
   release plan, implementation status by version, § 0 fallback rule, and
   remaining tasks.
 - [`docs/archive/`](docs/archive/) — superseded design documents kept for

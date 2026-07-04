@@ -13,7 +13,7 @@
 > メニュー由来 `/clear` のように UserPromptSubmit に届かない経路のための
 > fallback で、`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` で OFF にできる (typed
 > `/clear` / `/tl` は env と無関係に引き続き発火する)。詳細は
-> [THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md)。
+> [02_clear_auto_handoff_plan.md](02_clear_auto_handoff_plan.md)。
 >
 > 本書は当時のバトン採用判断を残す履歴ドキュメント。「結局 baton primary に
 > 戻った」という結末は皮肉だが、当時の判断は VSCode 拡張側 source バグへの
@@ -129,7 +129,7 @@ Throughline の SessionStart フックは現在 **同一 project_path の未合�
    - 注入は session-start.mjs 側の `mergeResult.merged` 分岐で既に制御されているので修正不要
    - ただし「同一 session 継続（source='resume'）での注入」が必要か要検討。現状の resume フックは本計画のスコープ外として deferred（別タスクで検討）
 
-4. **[docs/L1_L2_L3_REDESIGN.md](L1_L2_L3_REDESIGN.md) / [CLAUDE.md](../CLAUDE.md) / [README.md](../README.md) の更新**
+4. **[docs/01_l1_l2_l3_redesign.md](01_l1_l2_l3_redesign.md) / [CLAUDE.md](../CLAUDE.md) / [README.md](../README.md) の更新**
    - 「記憶張り替えの発火条件は SessionStart source='clear' のみ」を明記
    - CLAUDE.md 冒頭「設計の核」の「`/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える」の直後に引き継ぎ条件を追記
 
@@ -158,7 +158,7 @@ Throughline の SessionStart フックは現在 **同一 project_path の未合�
 - [src/session-merger.mjs](../src/session-merger.mjs) — 参照のみ（現状維持）
 - [src/session-merger.test.mjs](../src/session-merger.test.mjs) — テスト追加
 - [src/resume-context.mjs](../src/resume-context.mjs) — 参照のみ
-- [CLAUDE.md](../CLAUDE.md) / [docs/L1_L2_L3_REDESIGN.md](L1_L2_L3_REDESIGN.md) / [README.md](../README.md) — ドキュメント更新
+- [CLAUDE.md](../CLAUDE.md) / [docs/01_l1_l2_l3_redesign.md](01_l1_l2_l3_redesign.md) / [README.md](../README.md) — ドキュメント更新
 
 ## Non-Goals (本計画では扱わない)
 

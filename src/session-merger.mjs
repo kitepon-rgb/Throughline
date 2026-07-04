@@ -5,7 +5,7 @@
  *   - SessionStart hook: バトンで指名された旧セッションを mergeSpecificPredecessor で新セッションに張り替え
  *   - Stop hook: resolveMergeTarget で「入力 session_id → 実書き込み先」を解決
  *
- * 設計背景: docs/SESSION_LINKING_DESIGN.md, docs/INHERITANCE_ON_CLEAR_ONLY.md (バトン方式採用)
+ * 設計背景: docs/archive/SESSION_LINKING_DESIGN.md, docs/03_inheritance_on_clear_only.md (バトン方式採用)
  *
  * 旧実装 (案 D: 時間差ヒューリスティック / 自動前任選択) は撤去済み。
  * 引き継ぎはユーザーが /tl を打って書いたバトンによる明示的指名のみで発火する。

@@ -12,6 +12,7 @@ test('npm package files include Claude and Codex agent surfaces', () => {
     '.claude/commands/',
     '.codex-sidecar.yml',
     'docs/',
+    'rag/',
     'CHANGELOG.md',
     'README.md',
     'LICENSE',

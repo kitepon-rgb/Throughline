@@ -9,7 +9,7 @@
  *
  * VS Code の分割ターミナルなどで常時起動しておく。
  *
- * 設計: docs/PUBLIC_RELEASE_PLAN.md §4.5/4.6
+ * 設計: docs/04_public_release_plan.md §4.5/4.6
  *   - 状態ファイルはセッション単位 (~/.throughline/state/<session_id>.json)
  *   - setInterval (1s) + mtime 差分検知で更新を捕捉
  *   - updatedAt 降順ソート、先頭行を ▶ でハイライト

@@ -4,7 +4,7 @@
 2026-05-08 セッションの議論と実機検証、外部仕様調査に基づく。
 A 案 (= /clear で自動引継ぎ + /tl は逃げ道として残す + /tl-trim 廃止) **採択確定**。
 
-> 過去の経緯 (なぜ `/tl` バトンを採用したか) は [INHERITANCE_ON_CLEAR_ONLY.md](INHERITANCE_ON_CLEAR_ONLY.md) を参照。
+> 過去の経緯 (なぜ `/tl` バトンを採用したか) は [03_inheritance_on_clear_only.md](03_inheritance_on_clear_only.md) を参照。
 > 本書は **2026-05-08 時点の現状検証 + 新理想設計** を扱う。
 
 > **2026-05-09 (v0.4.1) update**: 2 経路の優先順位を **入れ替えた**。
@@ -136,7 +136,7 @@ on SessionStart(source, session_id, project_path):
 - 元機能: memo 入力 + dry-run preview 表示
 - 新仕様で memo 廃止 + 軽量化方針 → 役割なし
 - 削除対象:
-  - [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) (slash command)
+  - `.claude/commands/tl-trim.md` (deleted slash command)
   - [src/cli/trim.mjs](../src/cli/trim.mjs) の **Claude path 部分のみ** 削除 (`describeTrimHost('claude')` ブランチ、Claude 用 memory preview 経路など)
   - 関連 test
 - **維持** (Codex 側を壊さないため):
@@ -218,7 +218,7 @@ auto-compaction は Claude Code 内部の context 圧縮で、conversation 連�
 - [ ] **`src/prompt-submit.mjs`**: 維持 (baton 書き込み + ensureMonitorTaskFile)
 - [ ] **[.claude/commands/tl.md](../.claude/commands/tl.md)**: memo 4 項目入力要求を削除、純粋に「baton 立てるだけ」の最小実装に書き換え
 - [x] **`/tl-trim` 関連削除**:
-  - [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) ファイル削除
+  - `.claude/commands/tl-trim.md` ファイル削除
   - **`src/cli/trim.mjs` 自体は維持**: Codex 経路 (`--host codex`, `--preflight`, `--execute`, `--codex-app-server-bin` 等) と doctor `--trim --host claude` で使う `describeTrimHost('claude')` の dry-run 表示が依存しているため、コード削除はしない (= ユーザーが直接 `throughline trim --host claude --dry-run` を打つ余地は残す。実用は SessionStart 自動経路に置き換わる)
 - [ ] **[src/cli/install.mjs](../src/cli/install.mjs)**: Throughline 管理 slash commands の copy 対象リストから `tl-trim.md` を除外。`tl.md` は維持。`src/cli/install.test.mjs` の関連 test も update
 - [ ] **[bin/throughline.mjs](../bin/throughline.mjs) の `showHelp()` 文言 update**:
@@ -246,8 +246,8 @@ auto-compaction は Claude Code 内部の context 圧縮で、conversation 連�
     - `THROUGHLINE_DISABLE_AUTO_HANDOFF` env var 紹介を新規追加
     - 既存 `inflight-memo.log` ファイルは新版で書き込み停止することを README で告知 (= 手動削除提案)
   - [CHANGELOG.md](../CHANGELOG.md): breaking change を明示 (memo 廃止、save-inflight 削除、/tl-trim 削除、`updateBatonMemo` 削除、baton_has_memo フィールド削除)
-  - [INHERITANCE_ON_CLEAR_ONLY.md](INHERITANCE_ON_CLEAR_ONLY.md): 「2026-04 段階の検証 → 2026-05 でバグ修正により案 A 成立、本書は履歴扱い」note 追加
-  - [PUBLIC_RELEASE_PLAN.md](PUBLIC_RELEASE_PLAN.md): version bump + breaking change 反映
+  - [03_inheritance_on_clear_only.md](03_inheritance_on_clear_only.md): 「2026-04 段階の検証 → 2026-05 でバグ修正により案 A 成立、本書は履歴扱い」note 追加
+  - [04_public_release_plan.md](04_public_release_plan.md): version bump + breaking change 反映
 - [ ] **package.json**: **0.4.0** に bump (semver minor、pre-1.0 の breaking)
 - [ ] **caveat 記録**: 「`/clear` SessionStart `source` は 2.1.128 で reliable、過去 #49937 は fix 済み」を public で記録
 
@@ -258,7 +258,7 @@ auto-compaction は Claude Code 内部の context 圧縮で、conversation 連�
 廃止対象:
 - `src/cli/save-inflight.mjs` (~80 行) → 削除
 - `src/cli/trim.mjs` の Claude path 部分 (~30 行) → 削除 (Codex path は維持)
-- [.claude/commands/tl-trim.md](../.claude/commands/tl-trim.md) (~40 行) → 削除
+- `.claude/commands/tl-trim.md` (~40 行) → 削除
 - `src/baton.mjs` の `updateBatonMemo` 関数 (~10 行) → 削除
 - `handoff_batons.memo_text` 列 (schema migration、コードへの影響は consumeBaton 戻り値変更のみ)
 - `src/hook-entrypoints.test.mjs` 内 save-inflight test ケース (~30 行) → 削除

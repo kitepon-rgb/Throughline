@@ -206,7 +206,7 @@ Codex Stop hook でも、Claude hooks と同じく
 - [x] install tests で Caveat / Spotter hook preservation が壊れていないことを維持する。
 - [x] `README.md` に Claude/Codex monitor support を追記する。
 - [x] `CLAUDE.md` に Codex monitor adapter contract を追記する。
-- [x] 実装完了後、`docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md` に結果を記録する。
+- [x] 実装完了後、`docs/05_codex_first_roadmap.md` に結果を記録する。
 - [x] `CHANGELOG.md` を更新する。
 - [x] focused tests を実行する:
   `rtk node --test src/state-file.test.mjs src/token-monitor.test.mjs src/codex-usage.test.mjs src/cli/codex-hook.test.mjs`

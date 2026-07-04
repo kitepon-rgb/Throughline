@@ -20,9 +20,9 @@
  *     行を chain-reachable (= 直前の attachment uuid を parent に取る) で append する。
  *     SessionStart 経路の spike (chain (a) = orphan) ではモデルに届かなかったため、
  *     UserPromptSubmit 経路で chain (b) を成立させて再検証する。
- *     docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md Phase 0-5 参照。
+ *     docs/10_transcript_injection_plan.md Phase 0-5 参照。
  *
- * 設計背景: docs/INHERITANCE_ON_CLEAR_ONLY.md バトン方式
+ * 設計背景: docs/03_inheritance_on_clear_only.md バトン方式
  */
 
 import { getDb } from './db.mjs';

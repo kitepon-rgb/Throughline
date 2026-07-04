@@ -180,7 +180,7 @@ function initSchema(db) {
   // v5 → v6: handoff_batons テーブル追加（/tl スラッシュコマンドによる明示的引き継ぎ指名用）
   // - project_path ごとに最新 1 件のみ (PRIMARY KEY)
   // - SessionStart で読み出し、TTL 以内なら merge して DELETE
-  // - docs/INHERITANCE_ON_CLEAR_ONLY.md 参照: 案 D (時間差) 撤去、バトン方式へ移行
+  // - docs/03_inheritance_on_clear_only.md 参照: 案 D (時間差) 撤去、バトン方式へ移行
   if (version < 6) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS handoff_batons (
@@ -203,7 +203,7 @@ function initSchema(db) {
   }
 
   // v7 → v8: handoff_batons から memo_text 列を drop。
-  // 新仕様 (docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) で memo 廃止:
+  // 新仕様 (docs/02_clear_auto_handoff_plan.md) で memo 廃止:
   //   - /clear 自動引継ぎ (SessionStart source='clear') + /tl baton (memo なし) の 2 経路に
   //   - 注入は L1 + L2 + L3 refs のみ
   //   - save-inflight CLI / updateBatonMemo 関数も併せて削除

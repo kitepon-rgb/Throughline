@@ -64,9 +64,9 @@ are absent and have no effect on the shipped path.
 
 ### Added
 
-- `docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md`: full Phase 0 plan and
+- `docs/10_transcript_injection_plan.md`: full Phase 0 plan and
   result log for the D / `initialUserMessage` investigation.
-- `docs/RAG/`: third-party spec knowledge base (Claude Code hooks
+- `rag/`: third-party spec knowledge base (Claude Code hooks
   reference, Anthropic Messages API, sessions docs, openclaude
   `initialUserMessage` source extract) used as the grounding for the
   no-go calls above.

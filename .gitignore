@@ -1,8 +1,15 @@
 node_modules/
 .DS_Store
 *.log
+.env
+.env.*
+!.env.example
+.venv/
+coverage/
+dist/
 
-# Per-machine local Claude Code permissions
+# Per-machine Claude Code permissions
+.claude/settings.json
 .claude/settings.local.json
 
 # Claude Code scheduled tasks lockfile (runtime state)

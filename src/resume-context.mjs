@@ -4,7 +4,7 @@
  * 呼び出し元:
  *   - session-start.mjs (auto path / baton path どちらでも同じ注入)
  *
- * 設計 (docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md):
+ * 設計 (docs/02_clear_auto_handoff_plan.md):
  *   - 注入順: ヘッダ + 読み方 → 現在地アンカー → L1 要約 → L2 本文（一番下）
  *   - 「現在地」アンカーは直前の user / assistant turn をヘッダ直下に再掲して
  *     最初の注意を最新ターンに固定する。L2 末尾アンカーは補強として残す。

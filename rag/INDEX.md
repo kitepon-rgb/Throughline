@@ -7,17 +7,16 @@ This directory accumulates third-party specifications relevant to Throughline's 
 ## Folder layout
 
 ```text
-docs/RAG/
+rag/
 ├── INDEX.md (this file — synthesized findings, paths forward)
-└── _raw/                       (verbatim spec extracts, kept close to source wording)
-    ├── 01-hooks/
-    │   └── hooks-reference-extract.md      ← Claude Code hooks reference
-    ├── 02-messages-api/
-    │   └── messages-api-extract.md         ← Anthropic Messages API spec
-    ├── 03-settings/
-    │   └── sessions-extract.md             ← /clear, /compact, /resume behavior
-    └── 04-skills/
-        └── initialUserMessage-investigation.md ← deep-dive on the killer field
+├── 01-hooks/
+│   └── raw/hooks-reference-extract.md      ← Claude Code hooks reference
+├── 02-messages-api/
+│   └── raw/messages-api-extract.md         ← Anthropic Messages API spec
+├── 03-settings/
+│   └── raw/sessions-extract.md             ← /clear, /compact, /resume behavior
+└── 04-skills/
+    └── raw/initialUserMessage-investigation.md ← deep-dive on the killer field
 ```
 
 ---
@@ -33,7 +32,7 @@ docs/RAG/
 ### Finding 1: `additionalContext` is a system reminder, not a user message
 
 > "Claude Code wraps the string in a system reminder and inserts it into the conversation at the point where the hook fired. Claude reads the reminder on the next model request, but it **does not appear as a chat message** in the interface."
-> — [Hooks reference](_raw/01-hooks/hooks-reference-extract.md#what-additionalcontext-actually-does-critical)
+> — [Hooks reference](01-hooks/raw/hooks-reference-extract.md#what-additionalcontext-actually-does-critical)
 
 → システムリマインダ = ブリーフィング扱い。モデルが「他人事」と感じる構造的原因。
 
@@ -41,13 +40,13 @@ docs/RAG/
 
 > "any non-JSON text written to stdout is added as context"
 > "Claude Code wraps the string in a system reminder"
-> — [Hooks reference](_raw/01-hooks/hooks-reference-extract.md#stdout)
+> — [Hooks reference](01-hooks/raw/hooks-reference-extract.md#stdout)
 
 → 現行 Throughline v0.4.12 の stdout 注入はこの経路。`additionalContext` と同じカテゴリ = 同じ「他人事」問題。
 
 ### Finding 3: `initialUserMessage` exists in the schema, but is **HEADLESS-ONLY**
 
-Verified via [openclaude source](_raw/04-skills/initialUserMessage-investigation.md#the-critical-constraint-from-openclaude-source-comment):
+Verified via [openclaude source](04-skills/raw/initialUserMessage-investigation.md#the-critical-constraint-from-openclaude-source-comment):
 
 ```text
 // SessionStart hooks can emit initialUserMessage — the first user turn for
@@ -56,19 +55,19 @@ Verified via [openclaude source](_raw/04-skills/initialUserMessage-investigation
 
 → Interactive mode (`/clear` シナリオ) では発火しない。我々の問題には使えない。
 
-**2026-05-24 実機確認**: real Claude Code (v2.1.145) で `~/.throughline/initial-user-message-test.flag` を立てて SessionStart hook を JSON 出力モードに切り替え、`hookSpecificOutput.initialUserMessage` に 8 hex tracer 入りメッセージを乗せて `/clear` 後の cleared-me に「過去発話の tracer を message history だけ見て返して」と尋ねた。ラン (2) 13:33 tracer `9220a79c` (session `0979ad20-…`) → モデル応答 **「ない」**。openclaude のソースコメントが real CC でも妥当であることを実機で確認。詳細: [docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md §6 Phase 0-6](../THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md#phase-0-6--hookspecificoutputinitialusermessage-経路-spike)
+**2026-05-24 実機確認**: real Claude Code (v2.1.145) で `~/.throughline/initial-user-message-test.flag` を立てて SessionStart hook を JSON 出力モードに切り替え、`hookSpecificOutput.initialUserMessage` に 8 hex tracer 入りメッセージを乗せて `/clear` 後の cleared-me に「過去発話の tracer を message history だけ見て返して」と尋ねた。ラン (2) 13:33 tracer `9220a79c` (session `0979ad20-…`) → モデル応答 **「ない」**。openclaude のソースコメントが real CC でも妥当であることを実機で確認。詳細: [docs/10_transcript_injection_plan.md §6 Phase 0-6](../docs/10_transcript_injection_plan.md#phase-0-6--hookspecificoutputinitialusermessage-経路-spike)
 
 ### Finding 4: Messages API treats all messages[] entries equally
 
 > "When creating a new Message, you specify the prior conversational turns with the messages parameter, and the model then generates the next Message in the conversation."
-> — [Messages API](_raw/02-messages-api/messages-api-extract.md#no-differentiation-between-real--synthetic-messages-key)
+> — [Messages API](02-messages-api/raw/messages-api-extract.md#no-differentiation-between-real--synthetic-messages-key)
 
 → もし messages[] に synthetic な過去 turn を入れられれば、モデルは「本物」と区別できない。問題は CC が messages[] を hook から制御させていないこと。
 
 ### Finding 5: `/clear` preserves the JSONL but resets in-memory state
 
 > "/clear: start fresh with an empty context. The previous conversation is saved and resumable"
-> — [Sessions](_raw/03-settings/sessions-extract.md#clear-behavior-key)
+> — [Sessions](03-settings/raw/sessions-extract.md#clear-behavior-key)
 
 → CC は in-memory state を一次ソースに messages[] を構築。JSONL を外から書き換えても in-memory には反映されない (= Phase 0 / Phase 0-5 で実測確認済み)。
 

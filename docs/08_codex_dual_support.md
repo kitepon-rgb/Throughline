@@ -10,12 +10,12 @@
 
 | 文書 | 役割 |
 |---|---|
-| [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) | 2026-05-06 以降の次フェーズ計画。Codex primary 実用化を先行する |
-| [THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | 2026-05-06 incident 後の修正計画。2026-05-08 の controlled smoke 後、過剰な Codex trim blocker は解除し、restore-safety / host primitive audit は diagnostics として扱う |
-| [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | この文書と rollback trim の気づきを統合した旧計画と実装履歴。完了済み根拠として参照する |
-| [throughline-rollback-context-trim-insight.md](throughline-rollback-context-trim-insight.md) | conversation-only rollback を「model-visible context の delete primitive」と見る設計メモ |
+| [05_codex_first_roadmap.md](05_codex_first_roadmap.md) | 2026-05-06 以降の次フェーズ計画。Codex primary 実用化を先行する |
+| [06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) | 2026-05-06 incident 後の修正計画。2026-05-08 の controlled smoke 後、過剰な Codex trim blocker は解除し、restore-safety / host primitive audit は diagnostics として扱う |
+| [07_codex_trim_implementation_plan.md](07_codex_trim_implementation_plan.md) | この文書と rollback trim の気づきを統合した旧計画と実装履歴。完了済み根拠として参照する |
+| [09_rollback_context_trim_insight.md](09_rollback_context_trim_insight.md) | conversation-only rollback を「model-visible context の delete primitive」と見る設計メモ |
 
-この文書は Codex adapter / sidecar integration の方針を定義する。今後の実装順は [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) を優先する。
+この文書は Codex adapter / sidecar integration の方針を定義する。今後の実装順は [05_codex_first_roadmap.md](05_codex_first_roadmap.md) を優先する。
 
 ## 目標
 
@@ -55,7 +55,7 @@ Codex path が Claude internals を parse するのは、それが明示的に a
 
 ## Codex Sidecar Integration
 
-この節は `codex-sidecar` integration の設計です。Codex primary の capture / L2 -> L1 backend は [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) を優先します。
+この節は `codex-sidecar` integration の設計です。Codex primary の capture / L2 -> L1 backend は [05_codex_first_roadmap.md](05_codex_first_roadmap.md) を優先します。
 
 Sidecar 向けには、Throughline が `codex-sidecar` contract に合う plain JSON context block を生成します。
 
@@ -131,7 +131,7 @@ L2 → L1 要約だけです。具体的には [src/haiku-summarizer.mjs](../src
 
 - Claude primary では、`codex-sidecar diagnostics --project <repo> --preset summarize-l1` が成功する環境では、L2 → L1 要約に `codex-sidecar` を使う。
 - Claude primary では、`codex-sidecar` が disabled / unavailable / diagnostics failure / run failure の環境では、現行の Claude Haiku 要約を維持する。
-- Codex primary では、次フェーズ計画 [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) に従い、L2 → L1 要約 backend は Codex CLI を本線にする。Codex CLI が使えない場合は silent fallback せず明示 error とする。
+- Codex primary では、次フェーズ計画 [05_codex_first_roadmap.md](05_codex_first_roadmap.md) に従い、L2 → L1 要約 backend は Codex CLI を本線にする。Codex CLI が使えない場合は silent fallback せず明示 error とする。
 - `/tl` の in-flight memo は [.claude/commands/tl.md](../.claude/commands/tl.md) が現行メイン Claude に書かせる handoff memo であり、subagent ではない。これは Codex sidecar へ移さない。
 
 handoff review、continuity check、risk analysis などは現行 `src/` 実装には存在しません。
@@ -161,7 +161,7 @@ Codex-on-Codex が有効なのは、sidecar に別の境界がある場合だけ
 - independent second pass として明示的に要求されている。
 
 別の境界がないなら、Throughline は別の Codex に委譲せず、現在の Codex session に handoff を直接 consume させてください。
-Throughline 自体を Codex primary から使う場合は、まず [THROUGHLINE_CODEX_FIRST_ROADMAP.md](THROUGHLINE_CODEX_FIRST_ROADMAP.md) の Codex primary capture / Codex active-work resume renderer / Codex CLI L2→L1 backend を本線にします。`throughline codex-capture` と `throughline codex-resume` が Codex primary の入口であり、`throughline codex-sidecar-diagnostics`、`throughline codex-sidecar-dry-run` などは sidecar を使う review / risk-check / second opinion の診断 surface です。
+Throughline 自体を Codex primary から使う場合は、まず [05_codex_first_roadmap.md](05_codex_first_roadmap.md) の Codex primary capture / Codex active-work resume renderer / Codex CLI L2→L1 backend を本線にします。`throughline codex-capture` と `throughline codex-resume` が Codex primary の入口であり、`throughline codex-sidecar-diagnostics`、`throughline codex-sidecar-dry-run` などは sidecar を使う review / risk-check / second opinion の診断 surface です。
 
 Recommended policy:
 

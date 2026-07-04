@@ -1,7 +1,7 @@
 /**
  * baton.mjs — 引き継ぎバトン管理
  *
- * バトン方式の設計 (docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md):
+ * バトン方式の設計 (docs/02_clear_auto_handoff_plan.md):
  *   - 新仕様では `/clear` 自動引継ぎがデフォルト ON。バトンは「/clear 自動引継ぎを
  *     使わずに明示的に引き継ぎたい」ユーザーのための逃げ道。
  *   - ユーザーが旧セッションで `/tl` スラッシュコマンドを打つ → UserPromptSubmit hook が
@@ -14,7 +14,7 @@
  *       "startup" に潰される問題 (#49937) に対する明示意思マーカーとして導入。
  *       2026-05-08 時点で Claude Code 2.1.128 で source='clear' は reliable に
  *       なったため auto path 中心の設計に変わったが、明示意思の signal として
- *       baton 仕組み自体は残す。詳細は docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md。
+ *       baton 仕組み自体は残す。詳細は docs/02_clear_auto_handoff_plan.md。
  */
 
 /**

@@ -322,12 +322,12 @@ Throughline state をまだ書いていない現在セッションも表示で�
 
 ## 設計ドキュメント
 
-- [`docs/L1_L2_L3_REDESIGN.md`](docs/L1_L2_L3_REDESIGN.md) — L1/L2/L3 差分階層モデルの **設計仕様書** (schema v4 ベース + v5 L3 分類拡張)。記憶階層化ルールの正典
-- [`docs/INHERITANCE_ON_CLEAR_ONLY.md`](docs/INHERITANCE_ON_CLEAR_ONLY.md) — `/tl` バトン引き継ぎ方式の設計判断記録 (schema v6–v7)
-- [`docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md`](docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md) — Claude 主軸を維持したまま Codex 対応を足すための architecture brief
-- [`docs/throughline-rollback-context-trim-insight.md`](docs/throughline-rollback-context-trim-insight.md) — rollback / trim 設計 insight。復元 memory を current work として読ませる制約も記録
-- [`docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md`](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) — Claude/Codex 両対応と rollback trim の統合 TODO 計画
-- [`docs/PUBLIC_RELEASE_PLAN.md`](docs/PUBLIC_RELEASE_PLAN.md) — 公開配布化プラン、§ 0 フォールバック禁止ルール、バージョン別実装ステータス
+- [`docs/01_l1_l2_l3_redesign.md`](docs/01_l1_l2_l3_redesign.md) — L1/L2/L3 差分階層モデルの **設計仕様書** (schema v4 ベース + v5 L3 分類拡張)。記憶階層化ルールの正典
+- [`docs/03_inheritance_on_clear_only.md`](docs/03_inheritance_on_clear_only.md) — `/tl` バトン引き継ぎ方式の設計判断記録 (schema v6–v7)
+- [`docs/08_codex_dual_support.md`](docs/08_codex_dual_support.md) — Claude 主軸を維持したまま Codex 対応を足すための architecture brief
+- [`docs/09_rollback_context_trim_insight.md`](docs/09_rollback_context_trim_insight.md) — rollback / trim 設計 insight。復元 memory を current work として読ませる制約も記録
+- [`docs/07_codex_trim_implementation_plan.md`](docs/07_codex_trim_implementation_plan.md) — Claude/Codex 両対応と rollback trim の統合 TODO 計画
+- [`docs/04_public_release_plan.md`](docs/04_public_release_plan.md) — 公開配布化プラン、§ 0 フォールバック禁止ルール、バージョン別実装ステータス
 - [`CHANGELOG.md`](CHANGELOG.md) — リリース履歴
 - [`docs/archive/`](docs/archive/) — 破棄済み旧設計 (CONCEPT 初期案、session-linking 実験記録など)
 

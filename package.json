@@ -25,6 +25,7 @@
     ".claude/commands/",
     ".codex-sidecar.yml",
     "docs/",
+    "rag/",
     "CHANGELOG.md",
     "README.md",
     "LICENSE"

@@ -46,7 +46,7 @@ Anthropic Messages API 公式 docs ([Working with Messages](https://platform.cla
 
 これは v0.5 の本質が「**role の不在を解消する**」ことであって「**サイズ最適化**」や「**出力形式の刷新**」ではないため。
 
-**二重出力を許容する理由**: transcript JSONL append が何らかの理由で Claude に届かない環境 (Claude Code minor update での format 変更、Cursor 等の Claude Code 互換層、サードパーティ wrapper) でも、現行 v0.4.12 と同等以上の体験を保証する。`docs/PUBLIC_RELEASE_PLAN.md` §0 の「フォールバック禁止」は「エラー隠蔽 / silent fallback」を禁ずるもので、**情報を 2 経路で届ける純機能追加は対象外**。
+**二重出力を許容する理由**: transcript JSONL append が何らかの理由で Claude に届かない環境 (Claude Code minor update での format 変更、Cursor 等の Claude Code 互換層、サードパーティ wrapper) でも、現行 v0.4.12 と同等以上の体験を保証する。`docs/04_public_release_plan.md` §0 の「フォールバック禁止」は「エラー隠蔽 / silent fallback」を禁ずるもので、**情報を 2 経路で届ける純機能追加は対象外**。
 
 ### 1.3 追加の阻害要因
 
@@ -187,8 +187,8 @@ Phase 0 が go の場合のみ着手。
   - [ ] README の `npm install -g throughline` 後に `throughline install` の再実行が必要であることを upgrade 文脈で 1 度明示 (現行は初回 install のみの表現)
 - [ ] Phase 3-2: 依存 docs 同期
   - [ ] CLAUDE.md の「設計の核」を v0.5 仕様に書き直す
-  - [ ] `docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md` の現行仕様セクションに「v0.5 で transcript inject に移行」と追記
-  - [ ] `docs/L1_L2_L3_REDESIGN.md` の「SessionStart 注入内容」記述を v0.5 仕様に同期
+  - [ ] `docs/02_clear_auto_handoff_plan.md` の現行仕様セクションに「v0.5 で transcript inject に移行」と追記
+  - [ ] `docs/01_l1_l2_l3_redesign.md` の「SessionStart 注入内容」記述を v0.5 仕様に同期
 - [ ] Phase 3-3: bump & publish
   - [ ] `package.json` を `0.5.0` に bump
   - [ ] `npm test` 全 green
@@ -215,9 +215,9 @@ Phase 0 が go の場合のみ着手。
 
 ## 5. 関連 docs
 
-- [docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) — v0.4 系の baton/auto path 現行仕様 (本計画で部分上書きされる)
-- [docs/L1_L2_L3_REDESIGN.md](L1_L2_L3_REDESIGN.md) — L1/L2/L3 記憶レイヤー設計 (本計画で SessionStart 注入の分担が変わる)
-- [docs/PUBLIC_RELEASE_PLAN.md](PUBLIC_RELEASE_PLAN.md) — §0 フォールバック禁止ルール、CLI 設計
+- [docs/02_clear_auto_handoff_plan.md](02_clear_auto_handoff_plan.md) — v0.4 系の baton/auto path 現行仕様 (本計画で部分上書きされる)
+- [docs/01_l1_l2_l3_redesign.md](01_l1_l2_l3_redesign.md) — L1/L2/L3 記憶レイヤー設計 (本計画で SessionStart 注入の分担が変わる)
+- [docs/04_public_release_plan.md](04_public_release_plan.md) — §0 フォールバック禁止ルール、CLI 設計
 - [src/resume-context.mjs](../src/resume-context.mjs) — 現行の system 側注入 builder (**v0.5 で変更なし**)
 - [src/session-start.mjs](../src/session-start.mjs) — 注入の呼び出し元 (v0.5 で transcript writer 呼び出しを stdout 注入の直後に追加)
 - [src/handoff-record.mjs](../src/handoff-record.mjs) — 注入の中間表現 (v0.5 で L3 payload を opt-in 追加)

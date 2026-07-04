@@ -5,7 +5,7 @@
  * 書き手: turn-processor (Claude Stop), codex-hook (Codex Stop)
  * 読み手: token-monitor
  *
- * 設計判断 (docs/PUBLIC_RELEASE_PLAN.md §4.5/4.6):
+ * 設計判断 (docs/04_public_release_plan.md §4.5/4.6):
  *   - ファイル単位分割で last-writer-wins 問題を解消
  *   - updatedAt ベースで stale 判定（短命 hook process の PID には依存しない）
  *   - projectPath は path.resolve → / → 末尾 / 除去 → Windows lowercase で正規化

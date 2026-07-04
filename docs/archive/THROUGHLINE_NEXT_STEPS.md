@@ -47,7 +47,7 @@ README に `npm install -g throughline` と書いてあるが、現時点で npm
 
 - `package.json` の `version` が `0.1.0`。最初の publish はこれでOK。以降は semver 守って上げる
 - publish した瞬間に取り消せない (unpublish には制約あり)。dry-run は真剣にやる
-- docs/PUBLIC_RELEASE_PLAN.md §0 の「フォールバック禁止」原則に従い、install 失敗時は silent 処理しない
+- docs/04_public_release_plan.md §0 の「フォールバック禁止」原則に従い、install 失敗時は silent 処理しない
 
 ### 🟡 中優先 — awesome-claude-code に登録申請
 
@@ -104,8 +104,8 @@ codeburn / ccburn などの類似ツールがここに載ってる。Throughline
 ## 作業指針
 
 1. **手を動かす前に READ しろ**
-   - `docs/L1_L2_L3_REDESIGN.md` (認証の設計書)
-   - `docs/PUBLIC_RELEASE_PLAN.md` (§0 ルールと未完タスクの定義)
+   - `docs/01_l1_l2_l3_redesign.md` (認証の設計書)
+   - `docs/04_public_release_plan.md` (§0 ルールと未完タスクの定義)
    - `CLAUDE.md` (作業上の規律)
 2. **§0 ルールを厳守**
    - silent try/catch 禁止

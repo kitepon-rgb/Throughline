@@ -4,7 +4,7 @@
 
 対象インシデント:
 
-- [throughline-codex-trim-rollback-incident-report.md](throughline-codex-trim-rollback-incident-report.md)
+- [audit-2026-05/codex-trim-rollback-incident-report.md](audit-2026-05/codex-trim-rollback-incident-report.md)
 - Codex thread: `019dfd6f-640e-7dd3-b163-3f9add39fde7`
 - 報告元プロジェクト: `/home/kite/projects/Spotter`
 
@@ -76,11 +76,11 @@ controlled marker では VS Code restart 後の model-visible 復活も再現し
 実装修正後に追従更新が必要な docs:
 
 - `CLAUDE.md`
-- `docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md`
-- `docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md`
-- `docs/throughline-rollback-context-trim-insight.md`
-- `docs/PUBLIC_RELEASE_PLAN.md`
-- `docs/throughline-codex-trim-rollback-incident-report.md`
+- `docs/05_codex_first_roadmap.md`
+- `docs/07_codex_trim_implementation_plan.md`
+- `docs/09_rollback_context_trim_insight.md`
+- `docs/04_public_release_plan.md`
+- `docs/audit-2026-05/codex-trim-rollback-incident-report.md`
 
 ## フェーズ 0: 危険な変更処理を止める
 

@@ -10,14 +10,14 @@
 
 | 文書 | 扱い |
 |---|---|
-| [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | これまでの統合計画と実装履歴。完了済み成果と根拠は維持するが、今後の実装順はこの文書を優先する |
-| [THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | 2026-05-06 incident 後の修正計画。controlled smoke で rollback marker の model-visible 復活は未再現となり、overbroad blocker は解除済み |
-| [THROUGHLINE_CODEX_DUAL_SUPPORT.md](THROUGHLINE_CODEX_DUAL_SUPPORT.md) | Claude / Codex 両対応の architecture brief。adapter 境界の基本方針として維持する |
-| [throughline-rollback-context-trim-insight.md](throughline-rollback-context-trim-insight.md) | rollback / rewind を context delete primitive と見る設計メモ |
-| [PUBLIC_RELEASE_PLAN.md](PUBLIC_RELEASE_PLAN.md) | 公開配布の状態表。実装済み behavior だけを公開説明に出す |
+| [07_codex_trim_implementation_plan.md](07_codex_trim_implementation_plan.md) | これまでの統合計画と実装履歴。完了済み成果と根拠は維持するが、今後の実装順はこの文書を優先する |
+| [06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) | 2026-05-06 incident 後の修正計画。controlled smoke で rollback marker の model-visible 復活は未再現となり、overbroad blocker は解除済み |
+| [08_codex_dual_support.md](08_codex_dual_support.md) | Claude / Codex 両対応の architecture brief。adapter 境界の基本方針として維持する |
+| [09_rollback_context_trim_insight.md](09_rollback_context_trim_insight.md) | rollback / rewind を context delete primitive と見る設計メモ |
+| [04_public_release_plan.md](04_public_release_plan.md) | 公開配布の状態表。実装済み behavior だけを公開説明に出す |
 | [../CLAUDE.md](../CLAUDE.md) / [../AGENTS.md](../AGENTS.md) | 作業者向け入口。Claude 正本を守りつつ、この文書を次フェーズ計画として参照する |
 
-この文書は、以後の実装順について [THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) を上書きする。
+この文書は、以後の実装順について [07_codex_trim_implementation_plan.md](07_codex_trim_implementation_plan.md) を上書きする。
 ただし、Claude primary を壊さない、Claude hooks / `/tl` / baton / DB / resume context を Codex 用に置き換えない、という既存の絶対条件は維持する。
 
 ## 現状認識
@@ -32,7 +32,7 @@
 
 ## 新セッション引き継ぎ
 
-2026-05-08 時点では、Codex primary の capture / summarize / resume は実装・実測済み。Codex trim execute / auto-refresh は、controlled rollback model-visible smoke の clean result を受けて blocker を解除した。[THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) の Phase 0-3 は実装済み。Phase 4 では Codex app-server の protocol / local store 調査、read-only app-server process restart smoke、local restore source audit、manual VS Code restart smoke protocol、実 VS Code reload / reconnect 後の hidden developer memory marker proof、rollback 非復活 verifier、controlled rollback model-visible smoke surface まで進んだ。incident-shaped live rollback run では `compacted.replacement_history` retention を診断したが、後続の risky restore inspection では app-server response 上の retained text は `aggregatedOutput` など quoted/tool-output field に限定され、direct user message / `replacement_history` の復活とは分離された。2026-05-10 の live token_count 実験では同一 thread refresh が持続削減にならない可能性が濃くなったため、auto-refresh は disabled、通常 `$throughline` は新スレッド handoff とする。`throughline codex-host-primitive-audit` は diagnostic-only として残す。
+2026-05-08 時点では、Codex primary の capture / summarize / resume は実装・実測済み。Codex trim execute / auto-refresh は、controlled rollback model-visible smoke の clean result を受けて blocker を解除した。[06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) の Phase 0-3 は実装済み。Phase 4 では Codex app-server の protocol / local store 調査、read-only app-server process restart smoke、local restore source audit、manual VS Code restart smoke protocol、実 VS Code reload / reconnect 後の hidden developer memory marker proof、rollback 非復活 verifier、controlled rollback model-visible smoke surface まで進んだ。incident-shaped live rollback run では `compacted.replacement_history` retention を診断したが、後続の risky restore inspection では app-server response 上の retained text は `aggregatedOutput` など quoted/tool-output field に限定され、direct user message / `replacement_history` の復活とは分離された。2026-05-10 の live token_count 実験では同一 thread refresh が持続削減にならない可能性が濃くなったため、auto-refresh は disabled、通常 `$throughline` は新スレッド handoff とする。`throughline codex-host-primitive-audit` は diagnostic-only として残す。
 
 Codex 側で実装済み / 診断可能なもの:
 
@@ -71,7 +71,7 @@ Codex 側で再実装しないこと:
 1. この `新セッション引き継ぎ` を読む。
 2. Codex 側をやり直さず、Claude `/rewind conversation only` の手動 UX 確認へ進む。
 3. Claude 側に触る前に [../CLAUDE.md](../CLAUDE.md) を読む。
-4. Codex rollback incident の追加診断が必要な場合だけ、[THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) の Phase 4 を参照する。
+4. Codex rollback incident の追加診断が必要な場合だけ、[06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) の Phase 4 を参照する。
 5. `.claude/settings.json` はユーザー環境差分を含み得るため、明示依頼なしに整理・置換しない。
 
 ## 新しい実装順
@@ -515,7 +515,7 @@ TODO:
 
 ## 次の作業
 
-Codex primary の capture / summarize / resume は完了扱い。Codex trim execute は明示診断用 current-thread path として残すが、auto-refresh は 2026-05-10 の live token_count 実験後に無効化済み。[THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) の Phase 0-4、read-only app-server process restart smoke、local restore source audit、host primitive audit、manual VS Code restore smoke protocol、実 VS Code reload / reconnect marker proof、rollback 非復活 verifier、controlled rollback model-visible smoke surface は実装済み。incident-shaped live rollback run は `restoreSafety.status = risk` で、`compacted.replacement_history` retention と rollback 済み text match を診断上は観測した。後続の app-server response 分類では retained text が `aggregatedOutput` の引用に限定され、direct user message / model-visible reproduction とは分けて扱う。host primitive audit でも current-thread rollback non-resurrection primitive は見つかっていない。通常 `$throughline` は新スレッド handoff prompt とし、current-thread rollback / inject は自動化しない。
+Codex primary の capture / summarize / resume は完了扱い。Codex trim execute は明示診断用 current-thread path として残すが、auto-refresh は 2026-05-10 の live token_count 実験後に無効化済み。[06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) の Phase 0-4、read-only app-server process restart smoke、local restore source audit、host primitive audit、manual VS Code restore smoke protocol、実 VS Code reload / reconnect marker proof、rollback 非復活 verifier、controlled rollback model-visible smoke surface は実装済み。incident-shaped live rollback run は `restoreSafety.status = risk` で、`compacted.replacement_history` retention と rollback 済み text match を診断上は観測した。後続の app-server response 分類では retained text が `aggregatedOutput` の引用に限定され、direct user message / model-visible reproduction とは分けて扱う。host primitive audit でも current-thread rollback non-resurrection primitive は見つかっていない。通常 `$throughline` は新スレッド handoff prompt とし、current-thread rollback / inject は自動化しない。
 
 再開時は次を実施する:
 

@@ -1,6 +1,6 @@
 # 新 L1/L2/L3 設計（再定義）
 
-> **Status**: 実装完了（2026-04-16 時点）。この文書は **L1/L2/L3 再定義の設計記録**であり、schema v4-v5 相当の変更までを扱う。以後の `handoff_batons` (v6)・`memo_text` (v7)・state.usage スナップショット・VSCode 自動起動・monitor 診断機能は本仕様と独立で、[CLAUDE.md](../CLAUDE.md) と [PUBLIC_RELEASE_PLAN.md](PUBLIC_RELEASE_PLAN.md) に索引あり。
+> **Status**: 実装完了（2026-04-16 時点）。この文書は **L1/L2/L3 再定義の設計記録**であり、schema v4-v5 相当の変更までを扱う。以後の `handoff_batons` (v6)・`memo_text` (v7)・state.usage スナップショット・VSCode 自動起動・monitor 診断機能は本仕様と独立で、[CLAUDE.md](../CLAUDE.md) と [04_public_release_plan.md](04_public_release_plan.md) に索引あり。
 > 全ステップ (1〜8) 実装済み。L1/L2/L3 すべて書き込みパスが稼働。schema v5 で details に `kind` / `source_id` 列追加済み。
 > 進捗の詳細は「実装順序」セクション末尾の進捗表を参照。
 
@@ -240,7 +240,7 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
 - [src/session-merger.mjs](../src/session-merger.mjs) — **bodies テーブルも merge 追従対象に追加**、judgments 張り替えロジックは削除（skeletons/details/bodies の 3 テーブルで session_id 張り替え）
 - `src/detail-capture.mjs` — **削除**（Stop フックに統合）
 - `.claude-plugin/hooks.json` — detail-capture の PostToolUse 登録を削除
-- [.claude/settings.json](../.claude/settings.json) — classifier / detail-capture 関連 hook があれば削除
+- `.claude/settings.json` / `.claude/settings.local.json` — classifier / detail-capture 関連 hook がローカル設定にあれば削除
 - [docs/archive/CONCEPT.md](archive/CONCEPT.md) — 再定義の反映
 - **新規**: `commands/sc-detail.md` — L3 オンデマンド参照コマンド。bodies 設計と同時実装必須
 
@@ -279,7 +279,7 @@ N=20 は中央値の約 1.5 倍、p75 の少し下。典型的なセッション
    - ~~src/context-injector.mjs~~ から judgments 読み出しを削除（ファイル自体が廃止済み）
    - [src/session-merger.mjs](../src/session-merger.mjs) から judgments の UPDATE を削除
    - `src/classifier.mjs` 削除
-   - [.claude/settings.json](../.claude/settings.json) / `.claude-plugin/hooks.json` から classifier 関連 hook があれば削除
+   - `.claude/settings.json` / `.claude/settings.local.json` / `.claude-plugin/hooks.json` から classifier 関連 hook があれば削除
    - この段階では judgments テーブルは DB に残したまま。参照が消えただけ
 
 2. **schema v4 migration** — [src/db.mjs](../src/db.mjs)

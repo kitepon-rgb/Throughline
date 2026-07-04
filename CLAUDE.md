@@ -6,7 +6,7 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
-**設計の核** (v0.4.0 以降、docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md)
+**設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
 - **引き継ぎ発火条件は 2 経路 (baton path 優先)**:
@@ -17,7 +17,7 @@
 - **thinking の L3 保存**: assistant の extended thinking ブロックは `details` テーブルに `kind='thinking'` で全ターン保存される。`throughline detail <時刻>` で取り出せるが、SessionStart 注入には含めない
 - 各レコードは `origin_session_id` を保持するため、複数回の引き継ぎでも記憶がチェーン状に蓄積する（ホップ制限なし）
 - `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` は **使わない**（自動コンパクト依存の設計は放棄済み）
-- **フォールバック / 逃げ道のコードを書かない** — [docs/PUBLIC_RELEASE_PLAN.md §0](docs/PUBLIC_RELEASE_PLAN.md) 参照。silent try/catch、`exit(0)` でのエラー隠蔽は禁止
+- **フォールバック / 逃げ道のコードを書かない** — [docs/04_public_release_plan.md §0](docs/04_public_release_plan.md) 参照。silent try/catch、`exit(0)` でのエラー隠蔽は禁止
 
 ---
 
@@ -27,17 +27,18 @@
 
 | ドキュメント | 内容 |
 |---|---|
-| [docs/L1_L2_L3_REDESIGN.md](docs/L1_L2_L3_REDESIGN.md) | **L1/L2/L3 記憶レイヤーの設計仕様**。ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表。schema v4 基盤 + v5 L3 分類拡張まで。以後の v6/v7 追加は本文書とは独立 |
-| [docs/INHERITANCE_ON_CLEAR_ONLY.md](docs/INHERITANCE_ON_CLEAR_ONLY.md) | 2026-04 段階のバトン方式採用経緯（履歴扱い）。VSCode `source='clear'` バグの当時の検証記録。現行仕様は [docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) を参照 |
-| [docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md](docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md) | **v0.4.0 の現行設計仕様** + 実装 TODO。auto path (`source='clear'`) + baton path (`/tl`) の 2 経路、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` |
-| [docs/PUBLIC_RELEASE_PLAN.md](docs/PUBLIC_RELEASE_PLAN.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、バージョン別実装ステータス、E2E 検証手順、未完タスク） |
-| [docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md](docs/THROUGHLINE_CODEX_FIRST_ROADMAP.md) | **次フェーズの実装順 / TODO**。Codex primary 実用化、Codex Rewind 互換、Claude 側 finalization の順で進める |
-| [docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_ROLLBACK_FIX_PLAN.md) | Codex rollback / inject incident の調査・修正履歴。controlled user marker の rollback 後 model-visible reproduction は、fresh app-server verify と VS Code reload/reconnect 後 verify の両方で未再現。ただし live token_count 削減が同一 thread で持続しない実測を受け、Codex hooks からの automatic current-thread refresh は無効化し、`$throughline` は app-server 新スレッド handoff に戻す。明示 `trim --execute --host codex` は診断用 current-thread rollback / inject として残す |
-| [docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md](docs/THROUGHLINE_CODEX_TRIM_IMPLEMENTATION_PLAN.md) | Codex 両対応 + rollback trim の旧統合実装計画と実装履歴。完了済み成果と根拠として参照する |
-| [docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md](docs/THROUGHLINE_CODEX_DUAL_SUPPORT.md) | Claude / Codex 両対応の architecture brief。Claude path を置き換えず、Codex support を adapter / projection として追加する方針 |
-| [docs/throughline-rollback-context-trim-insight.md](docs/throughline-rollback-context-trim-insight.md) | rollback を model-visible context の delete primitive と見る設計メモ。次フェーズでは Codex Rewind 互換の根拠として扱う |
-| [docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md](docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md) | v0.5 系の transcript injection 検証計画と実機ラン結果。Phase 0-2 / 0-5 (D 経路) と Phase 0-6 (`hookSpecificOutput.initialUserMessage` 経路) を実機検証し、両 no-go 確定。plugin scope での完成形は 道 C (v2.1 header + 現在地 anchor) と判定し v0.5.0 として release |
-| [docs/RAG/INDEX.md](docs/RAG/INDEX.md) | Throughline 設計判断の根拠となる third-party spec 知識ベース。Claude Code hooks reference、Anthropic Messages API、`/clear`/`/compact` 挙動、openclaude の `initialUserMessage` source 抜粋を蓄積。各 finding は実機検証結果と対で更新 |
+| [docs/00_overview.md](docs/00_overview.md) | docs/ の全体地図。連番正典、ADR、監査、archive、RAG の入口 |
+| [docs/01_l1_l2_l3_redesign.md](docs/01_l1_l2_l3_redesign.md) | **L1/L2/L3 記憶レイヤーの設計仕様**。ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表。schema v4 基盤 + v5 L3 分類拡張まで。以後の v6/v7 追加は本文書とは独立 |
+| [docs/03_inheritance_on_clear_only.md](docs/03_inheritance_on_clear_only.md) | 2026-04 段階のバトン方式採用経緯（履歴扱い）。VSCode `source='clear'` バグの当時の検証記録。現行仕様は [docs/02_clear_auto_handoff_plan.md](docs/02_clear_auto_handoff_plan.md) を参照 |
+| [docs/02_clear_auto_handoff_plan.md](docs/02_clear_auto_handoff_plan.md) | **v0.4.0 の現行設計仕様** + 実装 TODO。auto path (`source='clear'`) + baton path (`/tl`) の 2 経路、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` |
+| [docs/04_public_release_plan.md](docs/04_public_release_plan.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、バージョン別実装ステータス、E2E 検証手順、未完タスク） |
+| [docs/05_codex_first_roadmap.md](docs/05_codex_first_roadmap.md) | **次フェーズの実装順 / TODO**。Codex primary 実用化、Codex Rewind 互換、Claude 側 finalization の順で進める |
+| [docs/06_codex_trim_rollback_fix_plan.md](docs/06_codex_trim_rollback_fix_plan.md) | Codex rollback / inject incident の調査・修正履歴。controlled user marker の rollback 後 model-visible reproduction は、fresh app-server verify と VS Code reload/reconnect 後 verify の両方で未再現。ただし live token_count 削減が同一 thread で持続しない実測を受け、Codex hooks からの automatic current-thread refresh は無効化し、`$throughline` は app-server 新スレッド handoff に戻す。明示 `trim --execute --host codex` は診断用 current-thread rollback / inject として残す |
+| [docs/07_codex_trim_implementation_plan.md](docs/07_codex_trim_implementation_plan.md) | Codex 両対応 + rollback trim の旧統合実装計画と実装履歴。完了済み成果と根拠として参照する |
+| [docs/08_codex_dual_support.md](docs/08_codex_dual_support.md) | Claude / Codex 両対応の architecture brief。Claude path を置き換えず、Codex support を adapter / projection として追加する方針 |
+| [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md) | rollback を model-visible context の delete primitive と見る設計メモ。次フェーズでは Codex Rewind 互換の根拠として扱う |
+| [docs/10_transcript_injection_plan.md](docs/10_transcript_injection_plan.md) | v0.5 系の transcript injection 検証計画と実機ラン結果。Phase 0-2 / 0-5 (D 経路) と Phase 0-6 (`hookSpecificOutput.initialUserMessage` 経路) を実機検証し、両 no-go 確定。plugin scope での完成形は 道 C (v2.1 header + 現在地 anchor) と判定し v0.5.0 として release |
+| [rag/INDEX.md](rag/INDEX.md) | Throughline 設計判断の根拠となる third-party spec 知識ベース。Claude Code hooks reference、Anthropic Messages API、`/clear`/`/compact` 挙動、openclaude の `initialUserMessage` source 抜粋を蓄積。各 finding は実機検証結果と対で更新 |
 | [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v7、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
 | [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録、npm publish 前のアクションメモ等）。歴史記述用 |
 
@@ -175,6 +176,8 @@ npm test
 ## Hooks 構成（現状）
 
 `throughline install` が `~/.claude/settings.json` に書く内容は [src/cli/install.mjs](src/cli/install.mjs) の `SC_HOOKS` が正。
+
+リポジトリ直下の `.claude/settings.json` は端末固有なので置かない。ローカル許可設定が必要な場合は Claude Code の permission prompt / fewer-permission-prompts で生成し、端末固有差分は `.claude/settings.local.json` に置く。
 
 ```json
 {

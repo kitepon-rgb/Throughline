@@ -4,7 +4,7 @@
  *
  * stdin: { session_id, source, cwd, transcript_path, hook_event_name }
  *
- * 【引き継ぎ条件 (2 経路)】 docs/THROUGHLINE_CLEAR_AUTO_HANDOFF_PLAN.md
+ * 【引き継ぎ条件 (2 経路)】 docs/02_clear_auto_handoff_plan.md
  *
  *   1. baton path: ユーザーが旧セッションで `/tl` を打つと UserPromptSubmit hook が
  *      handoff_batons に session_id を書く。本 hook が TTL 1 時間以内に消費して
@@ -37,7 +37,7 @@ import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 // SPIKE ONLY — Phase 0-2 / 0-4 検証用。marker file 削除で無効化される。
-// docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md §3 Phase 0-2 参照。
+// docs/10_transcript_injection_plan.md §3 Phase 0-2 参照。
 const SPIKE_MARKER_PATH = join(homedir(), '.throughline', 'spike-inject.flag');
 
 // Phase 0-6: initialUserMessage が interactive モードで効くか実機検証する experimental switch。
@@ -210,7 +210,7 @@ export async function run() {
 
   // 5. SPIKE: marker file あり + merge 成立 + transcript_path あり の 3 条件で
   //    L2 を user/assistant role 付きで transcript_path にも append する。
-  //    本実装ではない (docs/THROUGHLINE_TRANSCRIPT_INJECTION_PLAN.md Phase 0-2)。
+  //    本実装ではない (docs/10_transcript_injection_plan.md Phase 0-2)。
   //
   //    tracer: 末尾 assistant 行に stdout 注入には含まれない一意トークンを付与する。
   //    次の /clear 後に Claude が tracer を再現できれば JSONL 経路はモデル可視。
