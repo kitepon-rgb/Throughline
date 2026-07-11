@@ -54,20 +54,91 @@ export function readTranscript(transcriptPath) {
     // user / assistant エントリのみ対象
     if (entry.type !== 'user' && entry.type !== 'assistant') continue;
 
+    // subagent の sidechain エントリは主会話ではないので除外。現行 CC は主 transcript に
+    // 書かない（400 transcript 実測ゼロ件）が、将来変更への安価な防御 (docs/12 B-1)
+    if (entry.isSidechain === true) continue;
+
     const msg = entry.message;
     if (!msg || !msg.role || msg.content == null) continue;
 
     const text = extractText(msg.content);
     if (!text) continue;
 
+    const ts = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN;
     turns.push({
       role: msg.role,
       content: text,
       turn_number: turns.length,
+      timestamp: Number.isNaN(ts) ? null : ts,
     });
   }
 
   return turns;
+}
+
+/**
+ * assistant テキスト断片が API 通知（junk）かを判定する。
+ * junk が論理ターン群の最終断片になると、通知を本文として保存し実回答を捨てる
+ * ことになるため、代表選択から除外する (docs/12 B-1 refuter 修正3)。
+ * パターンは実測で bodies に混入した通知に限定し、prefix 固定で偽陽性を避ける。
+ * @param {string} text
+ */
+export function isJunkAssistantText(text) {
+  if (typeof text !== 'string') return false;
+  return (
+    text.startsWith("You've hit your session limit") ||
+    text.startsWith("You've reached your") ||
+    text.startsWith('API Error')
+  );
+}
+
+/**
+ * transcript を論理ターン群に分解する。
+ *
+ * 論理ターン群 = user テキストエントリ 1 件 + それに続く assistant テキスト断片群。
+ * 途中割り込み（plan 拒否・AskUserQuestion 応答等）は tool_result 内に埋まり
+ * readTranscript には不可視のため、1 群が複数 Stop・複数断片を含むのは日常パターン。
+ *
+ * representative = 群内最後の非 junk 断片。この index が bodies の turn_number になる
+ * （user 行・assistant 行とも同じ turn_number で保存する現行規約と同じ）。
+ * 全断片が junk の群、断片ゼロの群（assistant 本文が transcript に無い B-2 ケース）は
+ * 返さない。
+ *
+ * @param {string} transcriptPath
+ * @returns {Array<{
+ *   user: {content: string, timestamp: number|null, turn_number: number},
+ *   fragments: Array<{index: number, content: string, timestamp: number|null}>,
+ *   representative: {index: number, content: string, timestamp: number|null},
+ * }>}
+ */
+export function getLogicalTurnGroups(transcriptPath) {
+  const turns = readTranscript(transcriptPath);
+  const raw = [];
+  let current = null;
+  for (const t of turns) {
+    if (t.role === 'user') {
+      if (current) raw.push(current);
+      current = { user: t, fragments: [] };
+    } else if (t.role === 'assistant' && current) {
+      current.fragments.push({ index: t.turn_number, content: t.content, timestamp: t.timestamp });
+    }
+  }
+  if (current) raw.push(current);
+
+  const groups = [];
+  for (const g of raw) {
+    if (g.fragments.length === 0) continue;
+    let representative = null;
+    for (let i = g.fragments.length - 1; i >= 0; i--) {
+      if (!isJunkAssistantText(g.fragments[i].content)) {
+        representative = g.fragments[i];
+        break;
+      }
+    }
+    if (!representative) continue; // 全断片 junk
+    groups.push({ user: g.user, fragments: g.fragments, representative });
+  }
+  return groups;
 }
 
 /**

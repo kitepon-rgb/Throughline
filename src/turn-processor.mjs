@@ -8,8 +8,9 @@
  *      （Haiku 要約用の claude -p subprocess 内で自分自身の Stop hook として起動された場合）
  *   1. resolveMergeTarget で「実書き込み先 (target) / origin」を解決
  *      （input session が別セッションに合流済みなら合流先に書く）
- *   2. 最後の assistant ターン + 直前の user ターンのペアを取得
- *   3. L2 本文 (bodies) に user / assistant の 2 行を INSERT
+ *   2. transcript 全体を論理ターン群で走査し、未捕捉の完了ターンを bodies へ
+ *      一括回収する (turn-backfill.mjs、docs/12 B-1)。回収実績は backfill.log に記録
+ *   3. （旧: 最後の 1 ペアのみ保存 — Stop 空振りで永久穴が生じたため全走査化）
  *   4. 【遅延要約】target 配下の bodies ターン数 (distinct origin×turn) が
  *      WINDOW (=20) を超えていたら、最古の未要約ターンを 1 件だけ
  *      Haiku 4.5 で要約 → skeletons (L1) に INSERT。
@@ -31,11 +32,14 @@
 
 import { getDb } from './db.mjs';
 import {
-  getLastTurnPair,
   readRawEntries,
   sliceCurrentTurnEntries,
   extractDetailBlocks,
 } from './transcript-reader.mjs';
+import { backfillBodies } from './turn-backfill.mjs';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 import { resolveMergeTarget } from './session-merger.mjs';
 import { writeSessionState } from './state-file.mjs';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
@@ -45,6 +49,18 @@ import { pathToFileURL } from 'node:url';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
+
+/** バックフィル回収実績を ~/.throughline/logs/backfill.log に 1 行 JSON で記録する。 */
+function logBackfill(entry) {
+  const path = join(homedir(), '.throughline', 'logs', 'backfill.log');
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, JSON.stringify(entry) + '\n', 'utf8');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[turn-processor:backfill-log] ${msg}\n`);
+  }
+}
 
 /**
  * target 配下の distinct (origin_session_id, turn_number) ターン数を返す。
@@ -160,46 +176,33 @@ export async function run() {
     db.prepare('UPDATE sessions SET updated_at = ? WHERE session_id = ?').run(now, target);
   }
 
-  // 最後の assistant ターン + 直前の user ターンを取得
-  const { user: userTurn, assistant: assistantTurn } = getLastTurnPair(transcript_path);
-  if (!assistantTurn) {
-    // /clear 直後などでトランスクリプトが空の場合は何もしない
+  // L2 = transcript 全体を論理ターン群で走査し、未捕捉の完了ターンを一括回収する。
+  // 従来の「最後の 1 ペアのみ保存」は Stop の空振り・不発が永久穴になった (docs/12 B-1)。
+  // user / assistant は「1 往復 = 1 ターン」として同じ turn_number（= 代表 assistant
+  // 断片の index）でペアリングされ、bodies と skeletons が同じ turn_number で突合できる。
+  const backfill = backfillBodies(db, {
+    targetSessionId: target,
+    originSessionId: origin,
+    transcriptPath: transcript_path,
+    now,
+  });
+  logBackfill({
+    ts: new Date(now).toISOString(),
+    hook: 'stop',
+    session_id,
+    target,
+    origin,
+    transcript_path: transcript_path ?? null,
+    groups: backfill.groups,
+    inserted_turns: backfill.insertedTurns,
+    skipped_existing: backfill.skippedExisting,
+  });
+  if (backfill.lastTurnNumber === null) {
+    // /clear 直後などでトランスクリプトに完了ターンが無い場合は何もしない
     process.exit(0);
   }
 
-  const turnNumber = assistantTurn.turn_number;
-
-  // L2 = bodies に user / assistant を個別行で保存
-  const insertBody = db.prepare(
-    `INSERT OR IGNORE INTO bodies
-       (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-  // user / assistant を「1 往復 = 1 ターン」として扱うため、同じ turn_number
-  // （= assistant 側の turn_number）でペアリングして保存する。
-  // これにより bodies と skeletons が同じ turn_number で突合できる。
-  if (userTurn?.content) {
-    insertBody.run(
-      target,
-      origin,
-      turnNumber,
-      'user',
-      userTurn.content,
-      Math.round(userTurn.content.length / 4),
-      now,
-    );
-  }
-  if (assistantTurn?.content) {
-    insertBody.run(
-      target,
-      origin,
-      turnNumber,
-      'assistant',
-      assistantTurn.content,
-      Math.round(assistantTurn.content.length / 4),
-      now,
-    );
-  }
+  const turnNumber = backfill.lastTurnNumber;
 
   // L1 = 遅延要約。target 配下の bodies ターン数 (distinct origin×turn) が
   // WINDOW を超えていたら、最古の未要約ターンを 1 件だけ要約する。

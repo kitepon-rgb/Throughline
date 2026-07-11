@@ -93,9 +93,9 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 
 ## Workstream B-1 — 捕捉のバックフィル化（先行。A の E2E 品質の前提。挙動修正レーン＝挙動差を明文化して個別承認）
 
-- [ ] **B-1 設計の着手前 refuter**: バックフィル設計（全ターンスキャン・論理ターン境界・turn_number 互換・L1 遅延要約との整合）を refuter に殺させ、生き残りだけ実装へ 【F 前段・ガードレール常時ON】
-- [ ] **turn-processor 再設計**: getLastTurnPair 単発保存 → transcript 全論理ターンをスキャンし、bodies に無い (origin, turn_number, role) を全て INSERT OR IGNORE でバックフィル。readRawEntries で既に全読みしているためコスト増は軽微。論理ターン境界は「user テキスト→後続 assistant 断片群の最後」。turn_number は既存 readTranscript index 方式を維持（既存データと互換）【F: 統括直轄 — 捕捉契約の変更】
-- [ ] queued メッセージ（連続 user テキスト）の扱いを明文化: 最後の user を代表にする現行 getLastTurnPair 挙動と整合させる
+- [x] **B-1 設計の着手前 refuter**: 判定「目的は正当・原設計のままでは採用不可」。修正 7 件を採用: ①群レベル dedup 必須（部分捕捉済み群への再挿入は同一発話の重複ペアを 110 件量産——実在確認: d7650b10 turn14/15。割り込みは tool_result 内に埋まり user 境界として不可視のため 1 群複数 Stop が日常）②前任 transcript path は project_path から決定的導出（state は Stop 不発前任で存在しない）③junk 代表除外（session limit 通知等）④INSERT を 1 トランザクション ⑤created_at は transcript timestamp（now は一括回収で同一 ms に潰れ L2 窓・現在地アンカーの順序が tie で不定化）⑥readTranscript に isSidechain 防御 ⑦resume 直後 transcript の実測 1 回を検証項目に追加。棄却された懸念: 注入肥大化（20 ターンキャップで構造上起きない）・SessionStart レイテンシ（58MB transcript でも 155ms）
+- [x] **turn-processor 再設計**: [src/turn-backfill.mjs](../src/turn-backfill.mjs) 新設（全論理ターン群走査 + 群レベル dedup + junk 除外 + timestamp created_at + 単一トランザクション）、turn-processor は毎 Stop でこれを呼ぶ。回収実績は `~/.throughline/logs/backfill.log`。機能検証済み: 実 transcript × 隔離 DB で回収 12 群・冪等（2 回目 0 挿入）・部分捕捉群の重複ガード・junk 0 行・created_at 順 = 会話順 【F: 統括直轄】
+- [x] queued メッセージの扱いを明文化: 群 = 「user テキスト → 後続 assistant 断片群」なので、応答前に積まれた先行 queued user は断片 0 の群となり捕捉されない（現行 getLastTurnPair と同等の非対応。将来課題）
 - [ ] session-start のマージ直後にも同じバックフィルを前任 transcript に対して実行（前任の transcript path は state ファイルから取得）→ 「/clear 直前ターンの取りこぼし」を注入前に回収 【A: 実装物量 → 02_models.md:40（波割当は「統括の型」参照）】
 - [ ] 診断ログ: バックフィルで回収したターン数を stderr ではなくログファイルに記録（欠落の継続観測用）
 - [ ] テスト: 全ターンスキャンの単体（穴あき bodies の回収、冪等性、L2_WINDOW/L1 遅延要約との整合）、既存 turn-processor.test 更新 【A: 実装物量 → 02_models.md:40 → 統括 diff レビュー + ゲート再実行】
