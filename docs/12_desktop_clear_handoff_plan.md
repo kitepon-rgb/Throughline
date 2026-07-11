@@ -144,7 +144,7 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 - [x] 最小再現・条件特定（2026-07-12）: 短ターン（1 往復）は本文が必ず着地（オーナーのテストセッション 4 本 + 過去実績）。欠落は**長い tool 連発ターンの中間テキスト**で発生し、同一セッションで 2 回ライブ再現（12:44-13:15 は本文 8 個中 1 個のみ・16 分遅延着地／15:20-15:35 は ~8 個中 5 個）。厳密な断片選択規則は Desktop 内部実装依存で外部から特定不能と判断
 - [x] 保存構造の read-only 棚卸し（Claude レーン Explore agent。会話実データを外部枠に流さないプライバシー優先の逸脱）: **Desktop の App Support ストア（LevelDB / IndexedDB / SQLite / session JSON）は会話本文を一切保持しない**。3 エンコーディング全域走査で、JSONL に実在する対照プローブすら 0 件。session JSON はメタデータのみ。→ `~/.claude/projects/*.jsonl` が唯一のローカル本文ストアで、**書かれなかった本文はサーバ側のみ＝ローカル回収経路なし**（確度: 高）
 - [x] 結論を caveat（`claude-code-desktop-assistant-transcript-jsonl`、confidence: reproduced へ更新）と本文書に記録
-- [ ] **upstream 報告 #2**: ドラフト作成済み・オーナー承認待ち → 承認後に提出
+- [x] **upstream 報告 #2 提出済み**（2026-07-12・オーナー承認済み）: [anthropics/claude-code#76706](https://github.com/anthropics/claude-code/issues/76706)（長い tool 連発ターンで assistant text ブロックが transcript JSONL に永久欠落・ローカル回収経路なし・VS Code は正常）
 
 ## 実装しないこと
 
