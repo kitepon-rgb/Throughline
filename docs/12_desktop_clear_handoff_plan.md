@@ -135,7 +135,7 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 ### A Phase 3 — E2E・後始末
 
 - [x] spike hook 撤去（settings.json 復元確認）
-- [ ] E2E: Desktop 実機で `/tl` → `/clear` → 新セッションの注入本文が直前ターンを含むこと + `backfill.log` の session-start 行を確認
+- [x] E2E（2026-07-12 実機・緑）: Desktop `/tl`（前任 6c58be18）→ `/clear` → 後継 e8bb5bd3 が `triggered_path:"baton"`・merged:true。`backfill.log` に `hook:"session-start" origin:6c58be18`。後継 bodies に前任の全ターン（turn 1/3/5/8、`/tl` 直前の turn 5 含む）。後継モデルが「前のセッションから記憶を引き継いだ」と自覚。→ 0.6.0 リリースへ
 - [x] `npm test` 全緑、CLAUDE.md / README / docs 更新、caveat_update で `claude-code-desktop-clear-sessionstart-source-startup-throughline` の resolution 更新（2026-07-12 更新済み）
 
 ## Workstream B-2 — Desktop transcript 本文欠落の条件特定（調査のみ。実装なし）

@@ -871,7 +871,7 @@ See [`src/haiku-summarizer.mjs`](src/haiku-summarizer.mjs) for the implementatio
 
 ### Claude Code Desktop `/clear`
 
-Automatic inheritance (the auto path) does not fire for `/clear` in Claude Code Desktop: the client does not send `source="clear"` and also mislabels the SessionEnd `reason` as `"other"`. This is reported upstream in [anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704). On Desktop, run `/tl` before `/clear` (the baton lasts one hour). The v0.6 backfill work means this `/tl` handoff carries complete L2 through the immediately preceding turn. The VS Code extension's `/clear` auto-handoff works normally.
+Automatic inheritance (the auto path) does not fire for `/clear` in Claude Code Desktop: the client does not send `source="clear"` and also mislabels the SessionEnd `reason` as `"other"`. This is reported upstream in [anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704). On Desktop, run `/tl` before `/clear` (the baton lasts one hour). The 0.6.0 backfill work means this `/tl` handoff carries complete L2 through the immediately preceding turn. The VS Code extension's `/clear` auto-handoff works normally.
 
 **Monitor says `待機中 — アクティブなセッションがありません`**
 No session has touched its state file in the last 15 minutes. Send a message in

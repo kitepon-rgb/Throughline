@@ -10,6 +10,51 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-12
+
+L2 capture is rebuilt from "save only the last pair each Stop" to a
+full-transcript backfill, closing the permanent holes that left `/clear`
+handoffs with empty or partial memory. Also documents that Claude Code
+Desktop `/clear` cannot be auto-detected by hooks (upstream client bug).
+
+### Fixed
+
+- **L2 capture completeness (backfill).** The Stop hook previously stored
+  only the last user/assistant pair, so any Stop that fired before the
+  transcript flushed — or did not fire at all — became a permanent gap in
+  `bodies`. Measured omission of completed logical turns was 27% (Desktop) /
+  41% (VS Code). `turn-processor` now scans the whole transcript into logical
+  turn groups and backfills every uncaptured turn (`src/turn-backfill.mjs`
+  `backfillBodies`). On a `/clear` merge, `session-start` also backfills the
+  predecessor's transcript **before** rendering the resume context, so the
+  turn immediately preceding `/clear` is recovered. Verified end-to-end on a
+  real Desktop `/tl` → `/clear` handoff (successor inherits the full
+  predecessor conversation).
+  - Group-level dedup: a logical turn group whose fragments are already in
+    `bodies` is skipped whole, preventing duplicate pairs when a turn spans
+    multiple Stops (interrupts, plan rejections, AskUserQuestion replies).
+  - Representative fragment = the last non-junk assistant fragment; API
+    notices (e.g. session-limit messages) no longer overwrite the real reply.
+  - `created_at` uses the transcript entry timestamp so bulk-recovered rows
+    preserve conversation order for the L2 window / current anchor.
+  - Predecessor transcript path is derived deterministically from the project
+    path (`deriveTranscriptPath`); the state file is only a fallback, because
+    a predecessor whose Stop never fired has no state file.
+  - `readTranscript` now excludes `isSidechain` entries.
+
+### Known limitations
+
+- **Claude Code Desktop `/clear` is undetectable by hooks.** Desktop sends
+  SessionStart `source:"startup"` (not `"clear"`) and SessionEnd
+  `reason:"other"` (indistinguishable from session deletion), so the auto
+  handoff path never fires there. Reported upstream
+  ([anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704)).
+  Workaround: run `/tl` before `/clear` on Desktop.
+- **Desktop can drop assistant text from the transcript entirely.** In long
+  tool-heavy turns, intermediate assistant text blocks are sometimes never
+  written to the session JSONL (permanent, no local recovery path). Reported
+  upstream ([anthropics/claude-code#76706](https://github.com/anthropics/claude-code/issues/76706)).
+
 ## [0.5.0] — 2026-05-24
 
 This release closes out the v0.5 transcript-injection investigation and
