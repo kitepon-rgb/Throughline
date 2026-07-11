@@ -90,6 +90,7 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 - [x] 本プランを docs/12 として正本化（本文書）
 - [x] rag/01-hooks に SessionEnd reason enum を還流（[session-end-reasons.md](../rag/01-hooks/raw/session-end-reasons.md)）、rag/INDEX.md に Finding 8 追記
 - [x] 今日の調査を caveat に記録: public `claude-code-clear-userpromptsubmit-hook`（confirmed）/ private `claude-code-desktop-assistant-transcript-jsonl`（tentative・B-2 で更新）
+- [x] 実稼働デプロイ（2026-07-12）: `npm i -g /Users/kite/Developer/Throughline`（symlink 化＝リポ変更が即時反映。リリース時は registry 版へ戻す）
 
 ## Workstream B-1 — 捕捉のバックフィル化（先行。A の E2E 品質の前提。挙動修正レーン＝挙動差を明文化して個別承認）
 
@@ -122,7 +123,7 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 
 ### A Phase 2 — 本実装（GO の場合のみ。refuter で出た穴 4 件の対策込み）
 
-> **2026-07-12 NO-GO につき凍結**。Desktop が SessionEnd reason を正しくラベルする（または SessionStart source='clear' を送る）ようになった時点で解凍可。fallback は Phase 1 実測表とともにオーナー裁定: 案C（明文化 + /tl 運用）+ upstream 報告（証拠は二重: SessionStart source=startup 誤ラベル + SessionEnd reason=other 誤ラベル、VSCode 対照つき）。
+> **2026-07-12 NO-GO につき凍結**。Desktop が SessionEnd reason を正しくラベルする（または SessionStart source='clear' を送る）ようになった時点で解凍可。fallback は Phase 1 実測表とともにオーナー裁定: 案C（明文化 + /tl 運用）+ upstream 報告（証拠は二重: SessionStart source=startup 誤ラベル + SessionEnd reason=other 誤ラベル、VSCode 対照つき）。オーナー裁定 (2026-07-12): fallback 案C 採用・upstream 報告提出済み https://github.com/anthropics/claude-code/issues/76704 （修正が入れば auto path がそのまま Desktop で復活する）。
 
 - [ ] schema v9: `handoff_batons.origin` 列（`'tl' | 'clear-prompt' | 'clear-session-end'`）【F: 統括直轄】
 - [ ] バトン上書き規則: 明示 /tl は TTL 内なら自動バトンに上書きされない（明示意思 > 自動）。consumeBaton は origin を返し inheritance-decision.log に `baton_origin` 記録 【F: 統括直轄】
@@ -133,12 +134,13 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 
 ### A Phase 3 — E2E・後始末
 
-- [ ] spike hook 撤去（settings.json 復元確認）
-- [ ] E2E: Desktop 実機 /clear → `triggered_path:"baton"` + `baton_origin:"clear-session-end"` + merged:true + **注入本文が直前ターンを含む**（B-1 効果込み）を確認。VSCode /clear 回帰（baton 先発になり auto path と同一前任を選ぶこと）
-- [ ] `npm test` 全緑、CLAUDE.md / README / docs 更新、caveat_update で `claude-code-desktop-clear-sessionstart-source-startup-throughline` の resolution 更新
+- [x] spike hook 撤去（settings.json 復元確認）
+- [ ] E2E: Desktop 実機で `/tl` → `/clear` → 新セッションの注入本文が直前ターンを含むこと + `backfill.log` の session-start 行を確認
+- [x] `npm test` 全緑、CLAUDE.md / README / docs 更新、caveat_update で `claude-code-desktop-clear-sessionstart-source-startup-throughline` の resolution 更新（2026-07-12 更新済み）
 
 ## Workstream B-2 — Desktop transcript 本文欠落の条件特定（調査のみ。実装なし）
 
+- 2026-07-12 追試 — 本調査セッション自身で欠落が継続再現（15:20 以降の本文 ~8 個中 5 個のみ着地・中間分析テキストが欠落）。短ターン（オーナーのテストセッション 4 本）は全て着地 → 「長い tool 連発ターンで欠ける」仮説と整合。保存構造棚卸しは Claude レーンで実行中（会話実データを外部枠に流さないプライバシー優先の逸脱 — 02_models.md:36 の既定から明示逸脱）。
 - [ ] 最小再現: 新しい Desktop セッションで短い会話 → transcript の assistant text エントリ有無を即時/遅延で確認。plan モード・大量 tool use・長ターンの条件差を分ける 【H: オーナー操作 + 統括分析】
 - [ ] local-agent-mode の保存構造を read-only で棚卸し（正本がローカル JSONL 以外にあるか）【A: 監査・発見 → 02_models.md:36 = `grok-4.5` 並列 finder（grok_agent / `grok -p`）+ Codex 中位 `gpt-5.6-terra`×medium（codex_explore）の多角スイープ】
 - [ ] 結論を caveat / 本文書に記録。**upstream 報告はここで確証が取れた場合にドラフトを見せて承認後に提出**（バグと断定できなければ報告しない）

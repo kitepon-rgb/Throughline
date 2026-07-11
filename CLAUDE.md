@@ -11,7 +11,7 @@
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
 - **引き継ぎ発火条件は 2 経路 (baton path 優先)**:
   1. **baton path**: 旧セッションで `/tl` または `/clear` を打つと UserPromptSubmit hook が `handoff_batons` テーブルに**そのセッションの** session_id を書き込み、次の新規セッションが TTL 1 時間以内に消費して merge。`source` 値関係なく発火、最も確定的な指名方法。multi-window で「最新更新セッション = clear されたセッション」が成立しないシナリオ (例: ウィンドウ A で `/clear`、ウィンドウ B が直前まで活動中) でも誤った前任を選ばない
-  2. **auto path (フォールバック)**: baton が無く、`/clear` 後の SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ `findLatestClaudePredecessor` heuristic で前任を選び merge + 注入。Claude Code 2.1.128 で `source='clear'` が reliable になったため成立 ([GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937) は解決済み)。`/clear` が UserPromptSubmit hook に届かない経路 (VSCode 拡張のメニュー由来など) のためのフォールバック
+  2. **auto path (フォールバック)**: baton が無く、`/clear` 後の SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ `findLatestClaudePredecessor` heuristic で前任を選び merge + 注入。Claude Code 2.1.128 で `source='clear'` が reliable になったため成立 ([GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937) は解決済み)。`/clear` が UserPromptSubmit hook に届かない経路 (VSCode 拡張のメニュー由来など) のためのフォールバック。Desktop クライアントは `source="clear"` を送らないため auto path は VS Code 系のみで発火する（Desktop は `/tl` 運用。経緯と実測は [docs/12](docs/12_desktop_clear_handoff_plan.md)、upstream: [anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704)）。
   3. consumeBaton が先発なので両者は構造上同時成立しない
 - **注入内容**: L1 (古い turn の要約) + L2 (直近 20 turn の verbatim) + L3 references (`throughline detail <時刻>` の取り出しコマンド一覧)。memo / thinking は注入しない (= L2 全文に最後の assistant turn が含まれるので redundant)
 - **thinking の L3 保存**: assistant の extended thinking ブロックは `details` テーブルに `kind='thinking'` で全ターン保存される。`throughline detail <時刻>` で取り出せるが、SessionStart 注入には含めない
@@ -62,13 +62,14 @@
 | [src/codex-handoff.mjs](src/codex-handoff.mjs) | `HandoffRecord` から Codex-facing `throughline_handoff` v1 JSON block と Codex developer-message 用 active-work context を生成。`source='throughline'` / `trust='local'` / `kind='throughline_handoff'` を固定 |
 | [src/codex-sidecar.mjs](src/codex-sidecar.mjs) | `codex-sidecar diagnostics` / dry-run wrapper。`disabled` / `unavailable` / `configured` / `operational` / `work-capable` の status enum を持つ。diagnostics wrapper は exit 0 の時だけ `configured` とする |
 | [src/token-estimator.mjs](src/token-estimator.mjs) | 補助的なトークン数推定 (length/4) |
+| [src/turn-backfill.mjs](src/turn-backfill.mjs) | 共通バックフィルルーチン: 群レベル dedup・junk 代表除外・timestamp `created_at`・`deriveTranscriptPath` |
 
 ### Hook 実装（CLI 経由で呼ばれる）
 
 | ファイル | サブコマンド | Hook event |
 |---|---|---|
 | [src/session-start.mjs](src/session-start.mjs) | `throughline session-start` | SessionStart |
-| [src/turn-processor.mjs](src/turn-processor.mjs) | `throughline process-turn` | Stop |
+| [src/turn-processor.mjs](src/turn-processor.mjs)<br>全ターン走査バックフィル（`turn-backfill.mjs` 経由、Stop 空振りの永久穴を解消） | `throughline process-turn` | Stop |
 | [src/prompt-submit.mjs](src/prompt-submit.mjs) | `throughline prompt-submit` | UserPromptSubmit |
 
 上記 hook module は `run()` を export し、直接実行時または [bin/throughline.mjs](bin/throughline.mjs) から呼ばれた時だけ hook body を実行する。import だけでは stdin 待ち、DB 作成、state 書き込みをしない。
@@ -154,6 +155,7 @@
 | [src/session-merger.test.mjs](src/session-merger.test.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor` |
 | [src/state-file.test.mjs](src/state-file.test.mjs) | `writeSessionState` / `readAllSessionStates` / `snapshotStateMtimes` / stale 閾値 / `usage` スナップショット / 旧フォーマット互換 / Codex state filename encoding |
 | [src/turn-processor.test.mjs](src/turn-processor.test.mjs) | `countDistinctBodyTurns` / `pickOldestUnsummarizedTurn` / 20 ターン境界 |
+| [src/turn-backfill.test.mjs](src/turn-backfill.test.mjs) | `backfillBodies` の群 dedup / 冪等性 / junk / timestamp / sidechain / path munging |
 | [src/token-monitor.test.mjs](src/token-monitor.test.mjs) | CLI 引数、cell 幅、bar/色覚マーカー、`formatTimeAgo`、`shouldForceFullRedraw`、`formatLine` の ago 配置 / Codex estimated marker |
 | [src/transcript-reader.test.mjs](src/transcript-reader.test.mjs) | transcript JSONL パーサー、`extractDetailBlocks` の全 kind 分類 |
 | [src/transcript-usage.test.mjs](src/transcript-usage.test.mjs) | `readLatestUsage` / `inferContextWindowSize` / 1M sticky / size+mtime キャッシュ |
