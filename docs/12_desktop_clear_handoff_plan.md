@@ -105,8 +105,8 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 
 ### A Phase 1 — spike 実測（Desktop の SessionEnd 白黒判定）
 
-- [ ] spike ロガー hook（`spike/session-end-logger.mjs`）: stdin 全 payload + `CLAUDE_CODE_ENTRYPOINT` + 受信時刻を記録 【A: 実装物量 → 02_models.md:40】
-- [ ] `~/.claude/settings.json` に SessionEnd を一時登録 【F: 統括直轄 — 環境設定変更。事前 tar バックアップ・撤去手順明記】
+- [x] spike ロガー hook（`spike/session-end-logger.mjs`）: stdin 全 payload + `CLAUDE_CODE_ENTRYPOINT` + 受信時刻を記録 【A → codex_work `gpt-5.6-terra`×medium で実装、統括が検証 3 本再実行済み。sidecar 側 PROTOCOL_ERROR（報告 envelope の schema 不一致）が出たが成果物は worktree から採用】
+- [x] `~/.claude/settings.json` に SessionEnd を一時登録（絶対パス node + 絶対パス spike・timeout 10 明示。バックアップ: `~/.claude-settings-backup-20260711-235419.tar.gz`。撤去 = SessionEnd ブロック削除 + spike ファイル削除）【F: 統括直轄】
 - [ ] 実測プロトコル 【H: オーナー操作】: Desktop で ①会話→/clear→即プロンプト ②新規チャット（/clear なし） ③ウィンドウ/アプリ終了、対照で ④VSCode /clear。発火有無・reason 実値・発火タイミング vs 後継 SessionStart を測る
 - [ ] 判定: **GO** = /clear で reason='clear' が発火し新規チャット/終了と区別可能。**NO-GO** = 進まず報告・裁定（fallback 案C: 明文化 + upstream）。reason 不問でバトンを書く退行案は不採用
 

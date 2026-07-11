@@ -19,6 +19,7 @@ allowed_paths:
   - bin/
   - docs/
   - package.json
+  - spike/
   - src/
 
 deny_paths:
@@ -35,6 +36,10 @@ deny_paths:
   - .codex-sidecar/logs/
 
 presets:
+  work:
+    workflow: work
+    readonly: false
+    prompt: "Implement the requested scoped change in the isolated worktree, run the listed verification commands, and report results."
   review:
     workflow: review
     readonly: true
