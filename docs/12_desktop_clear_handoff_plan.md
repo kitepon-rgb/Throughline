@@ -141,9 +141,10 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 ## Workstream B-2 — Desktop transcript 本文欠落の条件特定（調査のみ。実装なし）
 
 - 2026-07-12 追試 — 本調査セッション自身で欠落が継続再現（15:20 以降の本文 ~8 個中 5 個のみ着地・中間分析テキストが欠落）。短ターン（オーナーのテストセッション 4 本）は全て着地 → 「長い tool 連発ターンで欠ける」仮説と整合。保存構造棚卸しは Claude レーンで実行中（会話実データを外部枠に流さないプライバシー優先の逸脱 — 02_models.md:36 の既定から明示逸脱）。
-- [ ] 最小再現: 新しい Desktop セッションで短い会話 → transcript の assistant text エントリ有無を即時/遅延で確認。plan モード・大量 tool use・長ターンの条件差を分ける 【H: オーナー操作 + 統括分析】
-- [ ] local-agent-mode の保存構造を read-only で棚卸し（正本がローカル JSONL 以外にあるか）【A: 監査・発見 → 02_models.md:36 = `grok-4.5` 並列 finder（grok_agent / `grok -p`）+ Codex 中位 `gpt-5.6-terra`×medium（codex_explore）の多角スイープ】
-- [ ] 結論を caveat / 本文書に記録。**upstream 報告はここで確証が取れた場合にドラフトを見せて承認後に提出**（バグと断定できなければ報告しない）
+- [x] 最小再現・条件特定（2026-07-12）: 短ターン（1 往復）は本文が必ず着地（オーナーのテストセッション 4 本 + 過去実績）。欠落は**長い tool 連発ターンの中間テキスト**で発生し、同一セッションで 2 回ライブ再現（12:44-13:15 は本文 8 個中 1 個のみ・16 分遅延着地／15:20-15:35 は ~8 個中 5 個）。厳密な断片選択規則は Desktop 内部実装依存で外部から特定不能と判断
+- [x] 保存構造の read-only 棚卸し（Claude レーン Explore agent。会話実データを外部枠に流さないプライバシー優先の逸脱）: **Desktop の App Support ストア（LevelDB / IndexedDB / SQLite / session JSON）は会話本文を一切保持しない**。3 エンコーディング全域走査で、JSONL に実在する対照プローブすら 0 件。session JSON はメタデータのみ。→ `~/.claude/projects/*.jsonl` が唯一のローカル本文ストアで、**書かれなかった本文はサーバ側のみ＝ローカル回収経路なし**（確度: 高）
+- [x] 結論を caveat（`claude-code-desktop-assistant-transcript-jsonl`、confidence: reproduced へ更新）と本文書に記録
+- [ ] **upstream 報告 #2**: ドラフト作成済み・オーナー承認待ち → 承認後に提出
 
 ## 実装しないこと
 
