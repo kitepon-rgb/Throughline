@@ -10,7 +10,8 @@ This directory accumulates third-party specifications relevant to Throughline's 
 rag/
 ├── INDEX.md (this file — synthesized findings, paths forward)
 ├── 01-hooks/
-│   └── raw/hooks-reference-extract.md      ← Claude Code hooks reference
+│   ├── raw/hooks-reference-extract.md      ← Claude Code hooks reference
+│   └── raw/session-end-reasons.md          ← SessionEnd reason enum + timeout 1.5s (2026-07-11 fetch)
 ├── 02-messages-api/
 │   └── raw/messages-api-extract.md         ← Anthropic Messages API spec
 ├── 03-settings/
@@ -80,6 +81,10 @@ Verified via [openclaude source](04-skills/raw/initialUserMessage-investigation.
 ### Finding 7: First-party hook-dev SKILL omits `initialUserMessage`
 
 [anthropics/claude-code/plugins/plugin-dev/skills/hook-development/SKILL.md](https://github.com/anthropics/claude-code/blob/main/plugins/plugin-dev/skills/hook-development/SKILL.md) は SessionStart hook の `hookSpecificOutput` の `additionalContext` も `initialUserMessage` も触れていない。Plugin 開発者向けの公式チュートリアルですら触れない = どちらも primary 経路として推奨されていない可能性。
+
+### Finding 8: SessionEnd has a `clear` reason; built-in `/clear` never reaches UserPromptSubmit (2026-07-11)
+
+SessionEnd reason enum: `clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other`、default timeout 1.5s（/clear にも適用）— [session-end-reasons.md](01-hooks/raw/session-end-reasons.md)。実測: ビルトイン /clear はどのクライアントでも UserPromptSubmit に届かない（同一セッション /tl 対照実験 ×2 + VSCode 2.1.207）。VSCode は `source:"clear"` を送るが Desktop 2.1.205 は `source:"startup"`（クライアント実装差・バージョン交絡棄却済み）。→ Desktop の /clear 検知は SessionEnd(reason='clear') が唯一の hook 経路候補（実機検証は [docs/12](../docs/12_desktop_clear_handoff_plan.md) A Phase 1）。
 
 ---
 
