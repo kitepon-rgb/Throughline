@@ -17,7 +17,38 @@
  *   - INSERT は 1 トランザクション（fsync 1 回、turn-processor の details と同型）。
  */
 
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { getLogicalTurnGroups } from './transcript-reader.mjs';
+
+/**
+ * バックフィル回収実績を ~/.throughline/logs/backfill.log に 1 行 JSON で記録する。
+ * @param {object} entry
+ */
+export function logBackfill(entry) {
+  const path = join(homedir(), '.throughline', 'logs', 'backfill.log');
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, JSON.stringify(entry) + '\n', 'utf8');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    process.stderr.write(`[backfill-log] ${msg}\n`);
+  }
+}
+
+/**
+ * Claude Code の project-dir munging から session transcript path を決定的に導出する。
+ * macOS/Linux の Claude Code 規約を mirror する。Windows では呼び出し側が state file の
+ * transcriptPath に fallback する。
+ * @param {string} projectPath
+ * @param {string} sessionId
+ * @returns {string}
+ */
+export function deriveTranscriptPath(projectPath, sessionId) {
+  const mungedProjectPath = `-${String(projectPath).replace(/[/.]/g, '-').replace(/^-+/, '')}`;
+  return join(homedir(), '.claude', 'projects', mungedProjectPath, `${sessionId}.jsonl`);
+}
 
 /**
  * transcript の未捕捉完了ターンを bodies へ回収する。

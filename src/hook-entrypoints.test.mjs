@@ -370,6 +370,108 @@ test('process-turn subprocess stores L2 bodies and L3 details in an isolated DB'
   }
 });
 
+test('process-turn subprocess backfills all completed logical turns from a multi-turn JSONL', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  const transcriptPath = join(project, 'transcript.jsonl');
+  try {
+    writeFileSync(
+      transcriptPath,
+      [
+        { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'first request' }] } },
+        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'first answer' }] } },
+        { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'second request' }] } },
+        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'second answer' }] } },
+      ].map((entry) => JSON.stringify(entry)).join('\n'),
+      'utf8',
+    );
+    const result = runNode([join(REPO_ROOT, 'src/turn-processor.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'multi-turn-session', cwd: project, transcript_path: transcriptPath }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const db = openDb(home);
+    assert.deepEqual(
+      db.prepare('SELECT role, text FROM bodies ORDER BY turn_number, role').all().map((row) => ({ ...row })),
+      [
+        { role: 'assistant', text: 'first answer' },
+        { role: 'user', text: 'first request' },
+        { role: 'assistant', text: 'second answer' },
+        { role: 'user', text: 'second request' },
+      ],
+    );
+    db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('session-start backfills a derived predecessor transcript without a state file', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  const predecessorId = 'missing-stop-predecessor';
+  const derivedPath = join(
+    home,
+    '.claude',
+    'projects',
+    `-${project.replace(/[/.]/g, '-').replace(/^-+/, '')}`,
+    `${predecessorId}.jsonl`,
+  );
+  try {
+    mkdirSync(dirname(derivedPath), { recursive: true });
+    writeFileSync(
+      derivedPath,
+      [
+        { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'predecessor question' }] } },
+        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'predecessor answer' }] } },
+      ].map((entry) => JSON.stringify(entry)).join('\n'),
+      'utf8',
+    );
+    const baton = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: predecessorId, cwd: project, prompt: '/clear' }),
+    });
+    assert.equal(baton.status, 0, baton.stderr);
+    const db = openDb(home);
+    db.prepare(
+      `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+       VALUES (?, ?, 'active', 1, 1)`,
+    ).run(predecessorId, project);
+    db.close();
+
+    const started = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'new-session', cwd: project, source: 'startup' }),
+    });
+    assert.equal(started.status, 0, started.stderr);
+    const after = openDb(home);
+    assert.deepEqual(
+      after
+        .prepare('SELECT session_id, origin_session_id, role, text FROM bodies ORDER BY turn_number, role')
+        .all()
+        .map((row) => ({ ...row })),
+      [
+        { session_id: 'new-session', origin_session_id: predecessorId, role: 'assistant', text: 'predecessor answer' },
+        { session_id: 'new-session', origin_session_id: predecessorId, role: 'user', text: 'predecessor question' },
+      ],
+    );
+    after.close();
+    const backfillLog = readFileSync(join(home, '.throughline', 'logs', 'backfill.log'), 'utf8')
+      .split('\n')
+      .filter((line) => line)
+      .map((line) => JSON.parse(line));
+    assert.ok(backfillLog.some((entry) => entry.hook === 'session-start'));
+    assert.equal(existsSync(join(home, '.throughline', 'state', `${predecessorId}.json`)), false);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 // ---- Phase 0-5 spike (UserPromptSubmit) ----
 
 function seedMergedSession(home, sessionId, originId = 'orig-sess') {

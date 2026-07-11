@@ -36,10 +36,7 @@ import {
   sliceCurrentTurnEntries,
   extractDetailBlocks,
 } from './transcript-reader.mjs';
-import { backfillBodies } from './turn-backfill.mjs';
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
+import { backfillBodies, logBackfill } from './turn-backfill.mjs';
 import { resolveMergeTarget } from './session-merger.mjs';
 import { writeSessionState } from './state-file.mjs';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
@@ -49,18 +46,6 @@ import { pathToFileURL } from 'node:url';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
-
-/** バックフィル回収実績を ~/.throughline/logs/backfill.log に 1 行 JSON で記録する。 */
-function logBackfill(entry) {
-  const path = join(homedir(), '.throughline', 'logs', 'backfill.log');
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, JSON.stringify(entry) + '\n', 'utf8');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'unknown';
-    process.stderr.write(`[turn-processor:backfill-log] ${msg}\n`);
-  }
-}
 
 /**
  * target 配下の distinct (origin_session_id, turn_number) ターン数を返す。

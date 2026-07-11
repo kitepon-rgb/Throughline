@@ -28,7 +28,9 @@
 import { getDb } from './db.mjs';
 import { consumeBaton } from './baton.mjs';
 import { mergeSpecificPredecessor, resolveMergeTarget } from './session-merger.mjs';
+import { backfillBodies, deriveTranscriptPath, logBackfill } from './turn-backfill.mjs';
 import { buildResumeContext } from './resume-context.mjs';
+import { readAllSessionStates } from './state-file.mjs';
 import { ensureMonitorTaskFile } from './vscode-task.mjs';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -175,6 +177,63 @@ export async function run() {
   //    Phase 0-6: initialUserMessage test flag 存在時は JSON 出力に切り替え、
   //    initialUserMessage が interactive モードで messages[] に乗るか実機検証する。
   if (mergeResult.merged) {
+    const predecessorId = mergeResult.predecessorId;
+    // /clear 直前ターンの取りこぼしを注入前に回収する。前任の transcript path は project path
+    // から決定的に導出する — state ファイルは Stop 不発の前任（まさに回収したい事例）では存在しないため補助。
+    const derivedTranscriptPath = deriveTranscriptPath(projectPath, predecessorId);
+    const stateTranscriptPath = readAllSessionStates().find(
+      (state) => state.sessionId === predecessorId,
+    )?.transcriptPath;
+    const predecessorTranscriptPath = existsSync(derivedTranscriptPath)
+      ? derivedTranscriptPath
+      : stateTranscriptPath && existsSync(stateTranscriptPath)
+        ? stateTranscriptPath
+        : null;
+
+    if (predecessorTranscriptPath) {
+      try {
+        const backfill = backfillBodies(db, {
+          targetSessionId: session_id,
+          originSessionId: predecessorId,
+          transcriptPath: predecessorTranscriptPath,
+          now,
+        });
+        logBackfill({
+          ts: new Date(now).toISOString(),
+          hook: 'session-start',
+          session_id,
+          target: session_id,
+          origin: predecessorId,
+          transcript_path: predecessorTranscriptPath,
+          groups: backfill.groups,
+          inserted_turns: backfill.insertedTurns,
+          skipped_existing: backfill.skippedExisting,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[session-start:backfill] ${message}\n`);
+        logBackfill({
+          ts: new Date(now).toISOString(),
+          hook: 'session-start',
+          session_id,
+          target: session_id,
+          origin: predecessorId,
+          transcript_path: predecessorTranscriptPath,
+          error: message,
+        });
+      }
+    } else {
+      logBackfill({
+        ts: new Date(now).toISOString(),
+        hook: 'session-start',
+        session_id,
+        target: session_id,
+        origin: predecessorId,
+        transcript_path: null,
+        skip_reason: 'no_transcript_path',
+      });
+    }
+
     const text = buildResumeContext(db, {
       sessionId: session_id,
       isInheritance: true,

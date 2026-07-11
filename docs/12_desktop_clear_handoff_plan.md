@@ -96,9 +96,9 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 - [x] **B-1 設計の着手前 refuter**: 判定「目的は正当・原設計のままでは採用不可」。修正 7 件を採用: ①群レベル dedup 必須（部分捕捉済み群への再挿入は同一発話の重複ペアを 110 件量産——実在確認: d7650b10 turn14/15。割り込みは tool_result 内に埋まり user 境界として不可視のため 1 群複数 Stop が日常）②前任 transcript path は project_path から決定的導出（state は Stop 不発前任で存在しない）③junk 代表除外（session limit 通知等）④INSERT を 1 トランザクション ⑤created_at は transcript timestamp（now は一括回収で同一 ms に潰れ L2 窓・現在地アンカーの順序が tie で不定化）⑥readTranscript に isSidechain 防御 ⑦resume 直後 transcript の実測 1 回を検証項目に追加。棄却された懸念: 注入肥大化（20 ターンキャップで構造上起きない）・SessionStart レイテンシ（58MB transcript でも 155ms）
 - [x] **turn-processor 再設計**: [src/turn-backfill.mjs](../src/turn-backfill.mjs) 新設（全論理ターン群走査 + 群レベル dedup + junk 除外 + timestamp created_at + 単一トランザクション）、turn-processor は毎 Stop でこれを呼ぶ。回収実績は `~/.throughline/logs/backfill.log`。機能検証済み: 実 transcript × 隔離 DB で回収 12 群・冪等（2 回目 0 挿入）・部分捕捉群の重複ガード・junk 0 行・created_at 順 = 会話順 【F: 統括直轄】
 - [x] queued メッセージの扱いを明文化: 群 = 「user テキスト → 後続 assistant 断片群」なので、応答前に積まれた先行 queued user は断片 0 の群となり捕捉されない（現行 getLastTurnPair と同等の非対応。将来課題）
-- [ ] session-start のマージ直後にも同じバックフィルを前任 transcript に対して実行（前任の transcript path は state ファイルから取得）→ 「/clear 直前ターンの取りこぼし」を注入前に回収 【A: 実装物量 → 02_models.md:40（波割当は「統括の型」参照）】
-- [ ] 診断ログ: バックフィルで回収したターン数を stderr ではなくログファイルに記録（欠落の継続観測用）
-- [ ] テスト: 全ターンスキャンの単体（穴あき bodies の回収、冪等性、L2_WINDOW/L1 遅延要約との整合）、既存 turn-processor.test 更新 【A: 実装物量 → 02_models.md:40 → 統括 diff レビュー + ゲート再実行】
+- [x] session-start のマージ直後にも同じバックフィルを前任 transcript に対して実行（project path からの決定的導出を優先し、state file は Stop 不発前任のため補助）→ 「/clear 直前ターンの取りこぼし」を注入前に回収。失敗は stderr + `backfill.log` に明示し、注入は継続
+- [x] 診断ログ: バックフィルで回収したターン数を stderr ではなく `~/.throughline/logs/backfill.log` に記録（Stop / session-start 共通）
+- [x] テスト: 全ターンスキャンの単体（群レベル dedup、冪等性、junk、timestamp、sidechain、path munging）と hook subprocess（multi-turn / state 無し前任）の特性化を追加。`npm test`: 559 pass / 0 fail（2026-07-12）
 - [ ] 検証: 欠落率調査スクリプト（付録）を再実行し、新規セッションで欠落 0% を確認
 
 ## Workstream A — Desktop /clear 引き継ぎ発火（SessionEnd バトン方式）
