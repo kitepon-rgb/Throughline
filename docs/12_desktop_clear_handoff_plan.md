@@ -107,10 +107,22 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 
 - [x] spike ロガー hook（`spike/session-end-logger.mjs`）: stdin 全 payload + `CLAUDE_CODE_ENTRYPOINT` + 受信時刻を記録 【A → codex_work `gpt-5.6-terra`×medium で実装、統括が検証 3 本再実行済み。sidecar 側 PROTOCOL_ERROR（報告 envelope の schema 不一致）が出たが成果物は worktree から採用】
 - [x] `~/.claude/settings.json` に SessionEnd を一時登録（絶対パス node + 絶対パス spike・timeout 10 明示。バックアップ: `~/.claude-settings-backup-20260711-235419.tar.gz`。撤去 = SessionEnd ブロック削除 + spike ファイル削除）【F: 統括直轄】
-- [ ] 実測プロトコル 【H: オーナー操作】: Desktop で ①会話→/clear→即プロンプト ②新規チャット（/clear なし） ③ウィンドウ/アプリ終了、対照で ④VSCode /clear。発火有無・reason 実値・発火タイミング vs 後継 SessionStart を測る
-- [ ] 判定: **GO** = /clear で reason='clear' が発火し新規チャット/終了と区別可能。**NO-GO** = 進まず報告・裁定（fallback 案C: 明文化 + upstream）。reason 不問でバトンを書く退行案は不採用
+- [x] 実測プロトコル 【H: オーナー操作 2026-07-12 15:00-15:10 UTC】: ①Desktop /clear（③はアプリ終了の代わりにセッション削除で実施）②放置 ③削除 ④VSCode /clear。結果:
+
+  | 操作 | SessionEnd 発火 | reason | 備考 |
+  |---|---|---|---|
+  | Desktop `/clear`（d93b0d5f） | **即時**（返答 15:05:52 → 15:05:59） | **`other`** | payload は session_id/prompt_id/reason/cwd/transcript_path のみ・判別子なし |
+  | Desktop 放置（a8ece26f） | 発火せず | — | |
+  | Desktop セッション削除（675493fb） | 発火（12 秒後） | **`other`** | payload 構造は /clear と完全同一 |
+  | VSCode `/clear`（fa43271f） | 即時 | **`clear`** | 42ms 後に後継 SessionStart(source=clear)→auto merge。仕組み自体は健全 |
+
+  副次発見: Desktop の幽霊セッション（/Users/kite）も SessionEnd(other) を高頻度で発火する。
+- [x] 判定: **NO-GO**。Desktop は /clear で SessionEnd を即時発火するが reason を `other` にラベルし、**セッション削除（明示的破棄）と区別不能**。reason=other でバトンを書くと削除セッションの記憶が次セッションに蘇る誤注入 + 幽霊バトン汚染。reason 不問の退行案は不採用（計画どおり）。→ A Phase 2 は実装せず停止、fallback 裁定へ
+- [x] spike 撤去: settings.json から SessionEnd 登録を削除（JSON 検証済み）、spike ファイル削除（git 履歴に残存）。実測ログ `~/.throughline/logs/session-end-spike.log` は証拠として保全
 
 ### A Phase 2 — 本実装（GO の場合のみ。refuter で出た穴 4 件の対策込み）
+
+> **2026-07-12 NO-GO につき凍結**。Desktop が SessionEnd reason を正しくラベルする（または SessionStart source='clear' を送る）ようになった時点で解凍可。fallback は Phase 1 実測表とともにオーナー裁定: 案C（明文化 + /tl 運用）+ upstream 報告（証拠は二重: SessionStart source=startup 誤ラベル + SessionEnd reason=other 誤ラベル、VSCode 対照つき）。
 
 - [ ] schema v9: `handoff_batons.origin` 列（`'tl' | 'clear-prompt' | 'clear-session-end'`）【F: 統括直轄】
 - [ ] バトン上書き規則: 明示 /tl は TTL 内なら自動バトンに上書きされない（明示意思 > 自動）。consumeBaton は origin を返し inheritance-decision.log に `baton_origin` 記録 【F: 統括直轄】
