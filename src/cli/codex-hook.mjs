@@ -88,6 +88,21 @@ async function captureCodexHookSession({
   buildMonitorUsage = null,
   summarize = true,
 } = {}) {
+  if (isSpotterChildEnvironment(env)) {
+    return {
+      status: 'skipped',
+      reason: 'spotter_child_backend',
+      db,
+      identity: null,
+      projectPath: null,
+      codexHome: null,
+      captured: null,
+      summarized: null,
+      monitorState: null,
+      usage: null,
+    };
+  }
+
   const [
     { getDb },
     { captureCodexRolloutToDb },
@@ -200,6 +215,11 @@ async function captureCodexHookSession({
     monitorState,
     usage,
   };
+}
+
+function isSpotterChildEnvironment(env = {}) {
+  return ['SPOTTER_PARENT_PID', 'SPOTTER_BACKEND', 'SPOTTER_CHILD_BACKEND']
+    .some((name) => typeof env?.[name] === 'string' && env[name].length > 0);
 }
 
 export async function runCodexStopHook({

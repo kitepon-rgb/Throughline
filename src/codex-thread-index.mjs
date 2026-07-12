@@ -28,7 +28,7 @@ export function listCodexThreadCandidates({
       const meta = readSessionMeta(rollout.path);
       const indexed = index.get(rollout.threadId) ?? {};
       const cwd = meta?.cwd ?? null;
-      const matchesProject = cwd ? normalizePath(cwd) === normalizedProject : false;
+      const matchesProject = cwd ? isSameProjectOrDescendant(normalizePath(cwd), normalizedProject) : false;
       return {
         id: rollout.threadId,
         threadName: indexed.thread_name ?? null,
@@ -69,7 +69,7 @@ export function findCodexThreadCandidate({
       const meta = readSessionMeta(rollout.path);
       const indexed = index.get(rollout.threadId) ?? {};
       const cwd = meta?.cwd ?? null;
-      const matchesProject = cwd ? normalizePath(cwd) === normalizedProject : false;
+      const matchesProject = cwd ? isSameProjectOrDescendant(normalizePath(cwd), normalizedProject) : false;
       return {
         id: rollout.threadId,
         threadName: indexed.thread_name ?? null,
@@ -169,6 +169,10 @@ function compareCandidates(a, b) {
 }
 
 function normalizePath(value) {
+  const raw = String(value);
+  if (/^[A-Za-z]:[\\/]/.test(raw)) {
+    return raw.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  }
   let resolved = resolve(value);
   try {
     if (existsSync(resolved)) resolved = realpathSync.native(resolved);
@@ -176,4 +180,9 @@ function normalizePath(value) {
     // Keep the lexical path when it cannot be resolved.
   }
   return resolved.split(sep).join('/').replace(/\/+$/, '').toLowerCase();
+}
+
+function isSameProjectOrDescendant(candidate, root) {
+  if (!candidate || !root) return false;
+  return candidate === root || candidate.startsWith(`${root}/`);
 }

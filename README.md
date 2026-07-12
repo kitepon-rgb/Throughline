@@ -109,7 +109,7 @@ Anthropic API usage from the transcript JSONL (no `length / 4` heuristics).
 
 ---
 
-## Three-layer memory model (schema v7)
+## Three-layer memory model (schema v8)
 
 ```mermaid
 flowchart LR
@@ -789,6 +789,35 @@ project history.
 
 ---
 
+## Spotter auditor context (read-only)
+
+`throughline auditor-context` is a **Spotter-only, opt-in read-only
+projection** for an auditor. It does not create, migrate, or write the
+Throughline database. The caller must name an exact `--session` and `--project`;
+the stored session must belong to that project root (or one of its descendants).
+
+It returns only completed L2 user/assistant pairs—never L1 summaries, L3 tool
+details, developer messages, or an in-flight Codex turn. Freshness is checked
+against the latest completed pair by origin session, turn number, and normalized
+SHA-256 hashes. Supply that expectation either explicitly, or derive it from a
+Claude JSONL / Codex rollout with `--host claude|codex --transcript`; the two
+sources are mutually exclusive. Returned context is bounded by `--recent-turns`
+(default 2), `--max-body-chars` (1,200), and `--max-total-chars` (4,000).
+
+The command is JSON-only. `fresh` is the only status that contains pair bodies;
+`empty`, `stale`, `session_mismatch`, `unavailable`, and `schema_mismatch`
+return no bodies and still exit successfully. Argument and internal errors are
+fixed JSON errors on stderr with a non-zero exit. Spotter owns the
+decision to opt in and any onward transmission of this local projection;
+Throughline only reads and projects it.
+
+```bash
+throughline auditor-context --session claude-session-id --project "$PWD" \
+  --host claude --transcript "$HOME/.claude/projects/.../session.jsonl" --json
+```
+
+---
+
 ## Requirements
 
 - **Node.js >= 22.5** (for the built-in `node:sqlite` module — no native build
@@ -812,7 +841,7 @@ plain `.mjs` files.
     └── <session_id>.json     Per-session activity state for the monitor
 ```
 
-Schema v7:
+Schema v8:
 
 - `sessions` — one row per `session_id`, with `project_path` and `merged_into`
 - `skeletons` — L1 one-liners, keyed by `(session_id, origin_session_id, turn, role)`
@@ -970,7 +999,7 @@ unchanged here.
 
 **Database got corrupted / want a clean slate**
 Delete `~/.throughline/throughline.db` (and the `-shm` / `-wal` companion files)
-and `~/.throughline/state/*.json`. A fresh database with schema v7 is created on
+and `~/.throughline/state/*.json`. A fresh database with schema v8 is created on
 the next hook fire.
 
 **New session didn't inherit memory from the previous one**

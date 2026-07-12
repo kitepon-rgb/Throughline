@@ -10,6 +10,7 @@
  *   throughline session-start # SessionStart hook (Claude Code から呼ばれる)
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
+ *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline codex-capture # Capture active Codex rollout turns into Throughline DB
  *   throughline codex-hook user-prompt-submit # Codex current-session auto-refresh prompt hook
  *   throughline codex-hook post-tool-use # Codex current-session auto-refresh tool-loop hook
@@ -65,6 +66,11 @@ switch (cmd) {
   case 'handoff-preview':
     await (await import('../src/cli/handoff-preview.mjs')).run(rest);
     break;
+  case 'auditor-context': {
+    const exitCode = (await import('../src/cli/auditor-context.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
   case 'codex-capture':
     await (await import('../src/cli/codex-capture.mjs')).run(rest);
     break;
@@ -149,6 +155,10 @@ Usage:
   throughline monitor           Multi-session token monitor (use --all, --session <id>)
   throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
   throughline handoff-preview   Print Codex-facing throughline_handoff JSON
+  throughline auditor-context --session <id> --project <root>
+                              Read only bounded completed user/assistant context
+                              for an auditor; requires either --host plus --transcript,
+                              or explicit pair identity/hashes; always requires --json
   throughline codex-capture     Capture active Codex rollout turns into DB
                               (requires --codex-thread-id or env thread id)
   throughline codex-hook user-prompt-submit

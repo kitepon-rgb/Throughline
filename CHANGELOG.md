@@ -10,6 +10,19 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-07-13
+
+### Added
+
+- **Spotter auditor context v1.** `throughline auditor-context` adds an
+  opt-in, JSON-only, read-only projection for Spotter. It verifies the exact
+  session/project and the latest completed L2 user/assistant pair against an
+  origin/turn/SHA-256 freshness expectation, supplied explicitly or derived
+  from a Claude JSONL or Codex rollout. Only `fresh` returns bounded pair
+  bodies; all other states return no bodies. The command never creates,
+  migrates, or writes the Throughline DB. Opt-in and any onward transmission
+  remain Spotter responsibilities.
+
 ## [0.6.0] — 2026-07-12
 
 L2 capture is rebuilt from "save only the last pair each Stop" to a

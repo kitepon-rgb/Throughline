@@ -39,7 +39,7 @@
 | [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md) | rollback を model-visible context の delete primitive と見る設計メモ。次フェーズでは Codex Rewind 互換の根拠として扱う |
 | [docs/10_transcript_injection_plan.md](docs/10_transcript_injection_plan.md) | v0.5 系の transcript injection 検証計画と実機ラン結果。Phase 0-2 / 0-5 (D 経路) と Phase 0-6 (`hookSpecificOutput.initialUserMessage` 経路) を実機検証し、両 no-go 確定。plugin scope での完成形は 道 C (v2.1 header + 現在地 anchor) と判定し v0.5.0 として release |
 | [rag/INDEX.md](rag/INDEX.md) | Throughline 設計判断の根拠となる third-party spec 知識ベース。Claude Code hooks reference、Anthropic Messages API、`/clear`/`/compact` 挙動、openclaude の `initialUserMessage` source 抜粋を蓄積。各 finding は実機検証結果と対で更新 |
-| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v7、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
+| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v8、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
 | [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録、npm publish 前のアクションメモ等）。歴史記述用 |
 
 ---
@@ -52,7 +52,8 @@
 
 | ファイル | 役割 |
 |---|---|
-| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v7 migration。`node:sqlite` 組み込み、依存ゼロ |
+| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v8 migration。`node:sqlite` 組み込み、依存ゼロ |
+| [src/auditor-context.mjs](src/auditor-context.mjs) | Spotter 専用の read-only auditor projection。指定 session / project の completed L2 user/assistant pair だけを、最新 pair の origin / turn / SHA-256 freshness と schema v8 で検査し、bounded JSON context を返す。DB 作成・migration・書き込みはしない。Spotter 側の opt-in と送信判断は Throughline の責務外 |
 | [src/transcript-reader.mjs](src/transcript-reader.mjs) | transcript JSONL パーサー |
 | [src/transcript-usage.mjs](src/transcript-usage.mjs) | 最新 assistant の `message.usage` から実測トークン数を抽出、1M context 検出 |
 | [src/codex-capture.mjs](src/codex-capture.mjs) | Codex rollout JSONL の active turns を Throughline DB の `bodies` に保存する capture adapter。`thread_rolled_back` 適用後の active thread だけを `codex:<thread_id>` session として再構成する |
@@ -79,7 +80,7 @@
 | ファイル | 役割 |
 |---|---|
 | [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` または `/clear` で書き、SessionStart で消費。schema v8 で memo_text 列廃止により `updateBatonMemo` も削除） |
-| [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と Codex projection が共有する安定した中間表現。DB 永続化はせず、schema v7 の既存テーブルから組み立てる。`codex:<thread_id>` session は `source.adapter = codex` として扱う |
+| [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と Codex projection が共有する安定した中間表現。DB 永続化はせず、schema v8 の既存テーブルから組み立てる。`codex:<thread_id>` session は `source.adapter = codex` として扱う |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
 | [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画。**v0.4.12 以降**: ヘッダーは「現在地参照案内」「直前の対話の自然な続きとして応答」「`Bash` ツールで `throughline detail HH:MM:SS` を実行」の 3 行。本文は **現在地アンカー (最新 user + 最新 assistant turn を再掲、各 600 字で truncate)** → L1 → L2 (末尾 anchor) の順。L2 が長くなると末尾 anchor だけでは注意が前半固着し話の流れを取り違える事例があった (`/clear` 直後に L2 先頭の古いターンを「現在の作業」と誤認するケース) ため、最新ターンをヘッダ直下にも再掲して二重に固定する。L3 は独立セクションを持たず、各 L1/L2 行末尾に `(詳細：…)` inline suffix として集約する。L1 行頭は `bodies.created_at` MIN 時刻 (元 body 時刻) で表示し detail 解決可能にする |
 | [src/l3-summary.mjs](src/l3-summary.mjs) | resume-context / codex-handoff 共通の L3 inline suffix ヘルパー。`shortenMcpToolName` / `localizeL3Part` / `groupL3ByTurn` / `buildPartsSummary`。MCP ツール名は末尾関数名に短縮、`tool_output` / hook 出力 (`system`) は noise として suffix から除外、`tool_input` 名 (例: Bash) で turn 内 1 件に集約する |
@@ -98,6 +99,7 @@
 | [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断。`doctor --trim --host claude|codex|unknown` で trim host boundary を診断し、Codex では host primitive audit status も表示する。`doctor --codex` で Codex primary の thread env / rollout candidates / captured DB sessions / context refresh memory source と `/tl` memory contract、new-thread handoff / safe continuation status、host primitive audit、VSCode monitor task の登録状態 / Reload Window note を診断 |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
+| [src/cli/auditor-context.mjs](src/cli/auditor-context.mjs) | `auditor-context` — Spotter 専用・JSON-only の read-only projection。`--session` / `--project` と、explicit pair identity/hash または `--host claude\|codex --transcript` を受ける（排他）。`fresh` だけに L2 body を含め、`empty` / `stale` / `session_mismatch` / `unavailable` / `schema_mismatch` は空 turns を返す。DB は create/migrate/write しない |
 | [src/cli/codex-capture.mjs](src/cli/codex-capture.mjs) | `codex-capture` — 明示 Codex thread id の rollout active turns を `codex:<thread_id>` session として DB に保存する。thread id が無い場合は自動推測しない |
 | [src/cli/codex-summarize.mjs](src/cli/codex-summarize.mjs) | `codex-summarize` — captured `codex:<thread_id>` session の古い L2 を Codex CLI backend で L1 skeleton に要約する。Claude Haiku へ fallback しない |
 | [src/cli/codex-resume.mjs](src/cli/codex-resume.mjs) | `codex-resume` — Codex primary 用 active-work context を DB から描画する。`--format handoff` で current thread を mutate しない新規 Codex thread 用 handoff prompt を出す。handoff は L2 件数 / 本文長 / detail refs を cap し、full context は通常 text renderer に残す。`--format item-json` で developer message item JSON を出す。`--memo-stdin` で Codex-primary in-flight memo を先頭に足す |
@@ -143,7 +145,9 @@
 | [src/codex-vscode-rollback-smoke.test.mjs](src/codex-vscode-rollback-smoke.test.mjs) | `throughline codex-vscode-rollback-smoke` の restart acknowledgement 必須化、restore-safety risk refusal、CLI JSON 出力 |
 | [src/codex-sidecar.test.mjs](src/codex-sidecar.test.mjs) | `diagnoseCodexSidecar` の disabled / unavailable / configured status と sidecar dry-run request shape |
 | [src/codex-sidecar-cli.test.mjs](src/codex-sidecar-cli.test.mjs) | `throughline codex-sidecar-diagnostics` / `throughline codex-sidecar-dry-run` CLI 出力 |
-| [src/db-schema.test.mjs](src/db-schema.test.mjs) | schema v7 の Claude-facing table / field / index 名固定 |
+| [src/db-schema.test.mjs](src/db-schema.test.mjs) | schema v8 の Claude-facing table / field / index 名固定 |
+| [src/auditor-context.test.mjs](src/auditor-context.test.mjs) | Spotter auditor projection の freshness、role 除外、bound、schema / DB 状態、Claude / Codex transcript freshness、read-only WAL 契約 |
+| [src/cli/auditor-context.test.mjs](src/cli/auditor-context.test.mjs) | `auditor-context` JSON-only CLI、freshness source 排他、固定秘匿 error、bin help / dispatch |
 | [src/handoff-record.test.mjs](src/handoff-record.test.mjs) | `buildHandoffRecord` の stable projection、origin 除外、空 projection |
 | [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の host mode 分岐、`codex-sidecar` 使用、disabled 時の Haiku 互換経路、Codex CLI backend、Codex CLI failure 非 fallback、再帰ガード |
 | [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |

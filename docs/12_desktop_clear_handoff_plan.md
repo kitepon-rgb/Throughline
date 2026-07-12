@@ -50,7 +50,7 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 
 ### 3. 案A（startup 時間窓フォールバック）不採用の根拠
 
-- 幽霊セッション: 2026-07-11 だけで project_path=/Users/kite の startup が **182 件**（03:02〜12:56、最短間隔 0.001 秒、全て bodies=0）。haiku-workdir に 207 件＝headless `claude -p` も SessionStart hook を発火する。
+- 幽霊セッション: 2026-07-11 だけで user home直下のproject_pathのstartupが **182 件**（03:02〜12:56、最短間隔 0.001 秒、全て bodies=0）。haiku-workdir に 207 件＝headless `claude -p` も SessionStart hook を発火する。
 - 幽霊がチェーンに入ると MAX_CHAIN_DEPTH=10（[src/session-merger.mjs](../src/session-merger.mjs):14）へ数時間で到達し resolveMergeTarget throw → ターン捕捉が恒久停止＝ここで記憶が本当に失われる。
 - source='startup' は「/clear の後継」と「並行して開いた別窓」を原理的に区別できず、稼働中セッションのレコードを relabel して記憶を split する。「bodies>0 の前任だけ選ぶ」は前任側フィルタなので無効（refuter 検証済み）。
 
@@ -90,7 +90,7 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
 - [x] 本プランを docs/12 として正本化（本文書）
 - [x] rag/01-hooks に SessionEnd reason enum を還流（[session-end-reasons.md](../rag/01-hooks/raw/session-end-reasons.md)）、rag/INDEX.md に Finding 8 追記
 - [x] 今日の調査を caveat に記録: public `claude-code-clear-userpromptsubmit-hook`（confirmed）/ private `claude-code-desktop-assistant-transcript-jsonl`（tentative・B-2 で更新）
-- [x] 実稼働デプロイ（2026-07-12）: `npm i -g /Users/kite/Developer/Throughline`（symlink 化＝リポ変更が即時反映。リリース時は registry 版へ戻す）
+- [x] 実稼働デプロイ（2026-07-12）: ローカルcheckoutをglobal install（symlink化＝リポ変更が即時反映。リリース時はregistry版へ戻す）
 
 ## Workstream B-1 — 捕捉のバックフィル化（先行。A の E2E 品質の前提。挙動修正レーン＝挙動差を明文化して個別承認）
 
@@ -117,7 +117,7 @@ docs 整合: ビルトインコマンドは UserPromptSubmit（prompt 送信時�
   | Desktop セッション削除（675493fb） | 発火（12 秒後） | **`other`** | payload 構造は /clear と完全同一 |
   | VSCode `/clear`（fa43271f） | 即時 | **`clear`** | 42ms 後に後継 SessionStart(source=clear)→auto merge。仕組み自体は健全 |
 
-  副次発見: Desktop の幽霊セッション（/Users/kite）も SessionEnd(other) を高頻度で発火する。
+  副次発見: Desktop のuser home直下の幽霊セッションも SessionEnd(other) を高頻度で発火する。
 - [x] 判定: **NO-GO**。Desktop は /clear で SessionEnd を即時発火するが reason を `other` にラベルし、**セッション削除（明示的破棄）と区別不能**。reason=other でバトンを書くと削除セッションの記憶が次セッションに蘇る誤注入 + 幽霊バトン汚染。reason 不問の退行案は不採用（計画どおり）。→ A Phase 2 は実装せず停止、fallback 裁定へ
 - [x] spike 撤去: settings.json から SessionEnd 登録を削除（JSON 検証済み）、spike ファイル削除（git 履歴に残存）。実測ログ `~/.throughline/logs/session-end-spike.log` は証拠として保全
 

@@ -207,7 +207,7 @@ test('backfillBodies: sidechain entries and missing or empty paths produce no gr
 
 test('deriveTranscriptPath munges slash and dot characters with one leading dash', () => {
   assert.equal(
-    deriveTranscriptPath('/Users/kite/Developer/Through.line', 'session-id'),
-    join(homedir(), '.claude', 'projects', '-Users-kite-Developer-Through-line', 'session-id.jsonl'),
+    deriveTranscriptPath('/Users/example/Developer/Through.line', 'session-id'),
+    join(homedir(), '.claude', 'projects', '-Users-example-Developer-Through-line', 'session-id.jsonl'),
   );
 });
