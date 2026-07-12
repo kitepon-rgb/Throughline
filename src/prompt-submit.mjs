@@ -32,6 +32,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
 
 // Phase 0-5 spike marker (SessionStart の spike-inject.flag とは別)
 const PROMPT_SPIKE_MARKER_PATH = join(homedir(), '.throughline', 'spike-prompt.flag');
@@ -243,6 +244,7 @@ async function maybeRunPromptSpike({ payload, sessionId, projectPath }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   run().catch((err) => {
+    recordRuntimeErrorBestEffort('HOOK_PROMPT_SUBMIT_FAILED');
     const msg = err instanceof Error ? err.message : 'unknown';
     process.stderr.write(`[prompt-submit] error: ${msg}\n`);
     process.exit(1);

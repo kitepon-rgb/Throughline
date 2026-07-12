@@ -43,6 +43,7 @@ import { summarizeToL1 } from './haiku-summarizer.mjs';
 import { ensureMonitorTaskFile } from './vscode-task.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
 import { pathToFileURL } from 'node:url';
+import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
@@ -291,6 +292,7 @@ export async function run() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   run().catch((err) => {
+    recordRuntimeErrorBestEffort('HOOK_PROCESS_TURN_FAILED');
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[turn-processor] error: ${msg}\n`);
     process.exit(1);

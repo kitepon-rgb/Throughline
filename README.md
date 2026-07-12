@@ -58,7 +58,7 @@ guarded `trim --execute --host codex` surface.
 | **Tool I/O handling** | retired to L3, retrievable by `/sc-detail HH:MM:SS` | gone | folded into summary, unreadable | folded into summary |
 | **Coding-assistant fit** | high — tool I/O is the heavy 80% | low — you lose the thread | medium — but irreversible | medium |
 | **Auto-inheritance risk** | low (typed `/clear` / `/tl` names the predecessor) | n/a | n/a | high |
-| **Runtime deps** | **zero** (Node 22.5+ built-in `node:sqlite`) | n/a | n/a | many |
+| **Runtime deps** | **zero** (Node 22.13+ built-in `node:sqlite`) | n/a | n/a | many |
 | **Multi-session token monitor** | ✅ real `message.usage` / Codex rollout `token_count` | — | — | — |
 
 **Short version**: `/clear` throws everything away, `/compact` blurs everything together, Throughline keeps the *text* you wrote verbatim and only retires the *tool output* — which is where 80% of the bloat lives.
@@ -729,6 +729,12 @@ entry to the `tasks` array yourself:
 | `throughline doctor --trim --host claude\|codex` | Diagnose trim host boundaries, manual procedure, and Codex host primitive blockage |
 | `throughline doctor --codex`                   | Diagnose Codex primary entry state, captured DB sessions, context-refresh memory contract, new-thread handoff readiness, safe continuation status, and host primitive audit |
 | `throughline factory-diagnostics --json`       | Versioned read-only native factory readiness JSON for database schema/migration, connector hooks, and representative capture/restore/handoff; does not emit bodies, secrets, absolute paths, or raw state |
+| `throughline runtime-errors snapshot --json`   | Read the bounded product-owned runtime error aggregate. Collection occurs only when canonical dotagents config explicitly sets `collection.enabled: true`; this command performs no network I/O |
+| `throughline runtime-errors diagnostics --json` | Read bounded collection/store status without exposing the state path or raw errors |
+| `throughline runtime-errors ack <cursor> --json` | Explicitly acknowledge records through a monotonic cursor; unacknowledged records are never compacted |
+| `throughline runtime-errors resolve <fingerprint> --json` | Explicitly resolve an aggregate; observing the same fingerprint again reopens it |
+| `throughline runtime-errors reopen <fingerprint> --json` | Explicitly reopen a resolved aggregate without fabricating a new occurrence |
+| `throughline runtime-errors compact --json`    | Remove only acknowledged, resolved aggregates after retention; open or unacknowledged records remain |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
 | `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
 | `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |
@@ -821,7 +827,7 @@ throughline auditor-context --session claude-session-id --project "$PWD" \
 
 ## Requirements
 
-- **Node.js >= 22.5** (for the built-in `node:sqlite` module — no native build
+- **Node.js >= 22.13** (for the stable, flag-free built-in `node:sqlite` module — no native build
   required, no `npm install` of SQLite bindings)
 - **Claude Code** with hooks support (`SessionStart`, `Stop`)
 - **Claude Max subscription** (for Haiku-based L1 summarization via `claude -p`)

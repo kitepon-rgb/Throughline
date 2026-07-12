@@ -17,6 +17,8 @@
 | [09_rollback_context_trim_insight.md](09_rollback_context_trim_insight.md) | rollback を context delete primitive と見る設計メモ |
 | [10_transcript_injection_plan.md](10_transcript_injection_plan.md) | transcript injection 検証計画と v0.5 実機結果 |
 | [11_codex_monitor_implementation_plan.md](11_codex_monitor_implementation_plan.md) | Codex monitor 対応の実装記録 |
+| [13_native_factory_diagnostics_plan.md](13_native_factory_diagnostics_plan.md) | native factory read-only readiness 診断の実装記録 |
+| [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) | local runtime error aggregate store の契約と実装 TODO |
 
 ## Supporting Records
 

@@ -12,6 +12,7 @@
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
+ *   throughline runtime-errors snapshot --json # Product-owned runtime error aggregates
  *   throughline codex-capture # Capture active Codex rollout turns into Throughline DB
  *   throughline codex-hook user-prompt-submit # Codex current-session auto-refresh prompt hook
  *   throughline codex-hook post-tool-use # Codex current-session auto-refresh tool-loop hook
@@ -42,6 +43,7 @@
 
 const [, , cmd, ...rest] = process.argv;
 
+try {
 switch (cmd) {
   case 'install':
     await (await import('../src/cli/install.mjs')).run(rest);
@@ -74,6 +76,11 @@ switch (cmd) {
   }
   case 'factory-diagnostics': {
     const exitCode = (await import('../src/cli/factory-diagnostics.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
+  case 'runtime-errors': {
+    const exitCode = (await import('../src/cli/runtime-errors.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
     break;
   }
@@ -148,6 +155,18 @@ switch (cmd) {
   default:
     await showHelp();
 }
+} catch (error) {
+  const code = {
+    'session-start': 'HOOK_SESSION_START_FAILED',
+    'prompt-submit': 'HOOK_PROMPT_SUBMIT_FAILED',
+    'process-turn': 'HOOK_PROCESS_TURN_FAILED',
+  }[cmd];
+  if (code) {
+    const { recordRuntimeErrorBestEffort } = await import('../src/runtime-error-store.mjs');
+    recordRuntimeErrorBestEffort(code);
+  }
+  throw error;
+}
 
 async function showHelp() {
   const { createRequire } = await import('node:module');
@@ -168,6 +187,9 @@ Usage:
   throughline factory-diagnostics --json
                               Read-only native factory readiness JSON. Never emits
                               session/prompt bodies, secrets, absolute paths, or raw state
+  throughline runtime-errors snapshot --json
+                              Read bounded local runtime error aggregates. Also supports
+                              diagnostics, ack <cursor>, resolve <fingerprint>, and compact
   throughline codex-capture     Capture active Codex rollout turns into DB
                               (requires --codex-thread-id or env thread id)
   throughline codex-hook user-prompt-submit

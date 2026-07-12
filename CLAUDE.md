@@ -90,6 +90,7 @@ installを0.6.1へ同期した。Spotter側の送信はproject opt-inであり�
 | [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画。**v0.4.12 以降**: ヘッダーは「現在地参照案内」「直前の対話の自然な続きとして応答」「`Bash` ツールで `throughline detail HH:MM:SS` を実行」の 3 行。本文は **現在地アンカー (最新 user + 最新 assistant turn を再掲、各 600 字で truncate)** → L1 → L2 (末尾 anchor) の順。L2 が長くなると末尾 anchor だけでは注意が前半固着し話の流れを取り違える事例があった (`/clear` 直後に L2 先頭の古いターンを「現在の作業」と誤認するケース) ため、最新ターンをヘッダ直下にも再掲して二重に固定する。L3 は独立セクションを持たず、各 L1/L2 行末尾に `(詳細：…)` inline suffix として集約する。L1 行頭は `bodies.created_at` MIN 時刻 (元 body 時刻) で表示し detail 解決可能にする |
 | [src/l3-summary.mjs](src/l3-summary.mjs) | resume-context / codex-handoff 共通の L3 inline suffix ヘルパー。`shortenMcpToolName` / `localizeL3Part` / `groupL3ByTurn` / `buildPartsSummary`。MCP ツール名は末尾関数名に短縮、`tool_output` / hook 出力 (`system`) は noise として suffix から除外、`tool_input` 名 (例: Bash) で turn 内 1 件に集約する |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`)。`host` 無しは旧 Claude state として normalize し、Codex state は `host: "codex"` / `sessionId: "codex:<thread_id>"` / `rolloutPath` を持つ。ファイル名は URL encode し、Windows でも `codex:` session id を保存できる。`usage` フィールド (tokens/model/contextWindowSize) は Stop 完了時の fallback snapshot。monitor はライブ transcript / rollout を優先し、取れない時だけ snapshot を使う。旧フォーマット (usage 無し) も読める |
+| [src/runtime-error-store.mjs](src/runtime-error-store.mjs) | Throughline 所有の local runtime error aggregate。canonical dotagents config の `collection.enabled === true` 時だけ固定 code/template を SHA-256 fingerprint で集約し、private atomic store、monotonic cursor/ack、resolve/reopen、unacked 保護 retention、bounded snapshot/diagnostics を提供する。network I/O、raw exception/stderr/stack/prompt/session/path/context の入力・保存は行わない |
 | [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | L2 → L1 要約。`hostMode: 'claude-primary'` では `codex-sidecar` configured なら `summarize-l1` preset を使い、disabled / unavailable / run failure なら現行 `claude -p --model claude-haiku-4-5-*` 経路を維持する。`hostMode: 'codex-primary'` では Codex CLI backend を使い、失敗時は fallback せず explicit error |
 | [src/trim-model.mjs](src/trim-model.mjs) | `throughline trim --dry-run` の plan builder。captured turns / keep-recent / rollback candidate / host boundary / curated memory preview / context reduction estimate を計算する。`--memo-stdin` の current-work memo を先頭に含められる。Codex guarded execute は live app-server guard までの実装であり、restart-safe 成功とは扱わない |
 | [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を自動プロビジョニング（token-monitor の folderOpen 自動起動）。`ensureMonitorTaskFile` は `throughline install` と **SessionStart / Stop / UserPromptSubmit の 3 hook すべて**から呼ばれる。冪等性ガード付きなので重複呼び出し安全。install または 1 つの hook が発火すれば tasks.json が生える。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内。**v0.3.23 以降**: `findMonitorTaskIndex` + `isMonitorTaskBroken` で「既存タスクの絶対パスが現環境に存在しない」を検知して `command` / `args` だけを差し替え修復する (`action: 'repaired'`)。クロス環境 (Windows ↔ WSL2 / Linux ↔ macOS) で commit された tasks.json が壊れる問題を解消。`label` / `presentation` 等のユーザーカスタマイズは保持する。**v0.3.24 以降**: `shouldRecommendGitignore` で「git リポジトリ内かつ `.gitignore` に `.vscode/tasks.json` 系エントリが無い」を判定し、created/merged/repaired 時に 1 度だけ stdout に `<system-reminder>` で除外推奨を出す（`.throughline-gitignore-noted` marker で再発抑止）|
@@ -105,6 +106,7 @@ installを0.6.1へ同期した。Spotter側の送信はproject opt-inであり�
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
 | [src/cli/auditor-context.mjs](src/cli/auditor-context.mjs) | `auditor-context` — Spotter 専用・JSON-only の read-only projection。`--session` / `--project` と、explicit pair identity/hash または `--host claude\|codex --transcript` を受ける（排他）。`fresh` だけに L2 body を含め、`empty` / `stale` / `session_mismatch` / `unavailable` / `schema_mismatch` は空 turns を返す。DB は create/migrate/write しない |
+| [src/cli/runtime-errors.mjs](src/cli/runtime-errors.mjs) | `runtime-errors snapshot\|diagnostics\|ack\|resolve\|reopen\|compact --json` — product-owned store の bounded JSON API。snapshot/diagnostics は state path を出さず、mutation API は cursor または fingerprint だけを受け付ける |
 | [src/cli/codex-capture.mjs](src/cli/codex-capture.mjs) | `codex-capture` — 明示 Codex thread id の rollout active turns を `codex:<thread_id>` session として DB に保存する。thread id が無い場合は自動推測しない |
 | [src/cli/codex-summarize.mjs](src/cli/codex-summarize.mjs) | `codex-summarize` — captured `codex:<thread_id>` session の古い L2 を Codex CLI backend で L1 skeleton に要約する。Claude Haiku へ fallback しない |
 | [src/cli/codex-resume.mjs](src/cli/codex-resume.mjs) | `codex-resume` — Codex primary 用 active-work context を DB から描画する。`--format handoff` で current thread を mutate しない新規 Codex thread 用 handoff prompt を出す。handoff は L2 件数 / 本文長 / detail refs を cap し、full context は通常 text renderer に残す。`--format item-json` で developer message item JSON を出す。`--memo-stdin` で Codex-primary in-flight memo を先頭に足す |
@@ -153,6 +155,9 @@ installを0.6.1へ同期した。Spotter側の送信はproject opt-inであり�
 | [src/db-schema.test.mjs](src/db-schema.test.mjs) | schema v8 の Claude-facing table / field / index 名固定 |
 | [src/auditor-context.test.mjs](src/auditor-context.test.mjs) | Spotter auditor projection の freshness、role 除外、bound、schema / DB 状態、Claude / Codex transcript freshness、read-only WAL 契約 |
 | [src/cli/auditor-context.test.mjs](src/cli/auditor-context.test.mjs) | `auditor-context` JSON-only CLI、freshness source 排他、固定秘匿 error、bin help / dispatch |
+| [src/runtime-error-store.test.mjs](src/runtime-error-store.test.mjs) | collection fail-closed、privacy reject、固定 fingerprint 集約、cursor/ack、resolve/reopen、retention、private mode、atomic write、bounded diagnostics |
+| [src/runtime-error-hook.test.mjs](src/runtime-error-hook.test.mjs) | Claude/Codex top-level hook failure の単一 owner 観測、重複排除、store failure 時の固定 stderr と本体 failure 維持 |
+| [src/cli/runtime-errors.test.mjs](src/cli/runtime-errors.test.mjs) | runtime error CLI の厳格な引数面、JSON-only snapshot/diagnostics、固定秘匿 failure |
 | [src/handoff-record.test.mjs](src/handoff-record.test.mjs) | `buildHandoffRecord` の stable projection、origin 除外、空 projection |
 | [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の host mode 分岐、`codex-sidecar` 使用、disabled 時の Haiku 互換経路、Codex CLI backend、Codex CLI failure 非 fallback、再帰ガード |
 | [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |
@@ -321,7 +326,7 @@ EOF
 
 ## 技術スタック
 
-- **ランタイム**: Node.js v22.5+、ESM（`.mjs` 統一）
+- **ランタイム**: Node.js v22.13+、ESM（`.mjs` 統一。`node:sqlite` の flag 不要化以降）
 - **データベース**: `node:sqlite`（Node.js 組み込み、同期 API）
 - **外部依存**: なし
 - **対応プラットフォーム**: Windows、Linux、macOS

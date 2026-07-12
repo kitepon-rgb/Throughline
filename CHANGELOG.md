@@ -10,6 +10,19 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Added
+
+- Added an opt-in, local-only runtime error aggregate for BugHub factory
+  reporting. Collection requires the canonical dotagents config boolean
+  `collection.enabled: true`; it never performs network I/O or accepts raw
+  exceptions, stderr, stacks, prompts, sessions, paths, or arbitrary context.
+  Fixed hook error codes/templates are aggregated by SHA-256 fingerprint in an
+  owner-private atomic store with count, first/last seen, resolve/reopen,
+  monotonic cursor/ack, retention that preserves unacknowledged records, and
+  bounded `throughline runtime-errors ... --json` snapshot/diagnostics APIs.
+- Raised the Node.js floor to 22.13, where `node:sqlite` is available without
+  an experimental command-line flag; CI now exercises that exact minimum.
+
 ## [0.6.1] — 2026-07-13
 
 ### Added

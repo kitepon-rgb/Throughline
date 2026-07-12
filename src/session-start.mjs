@@ -37,6 +37,7 @@ import { randomBytes } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
 
 // SPIKE ONLY — Phase 0-2 / 0-4 検証用。marker file 削除で無効化される。
 // docs/10_transcript_injection_plan.md §3 Phase 0-2 参照。
@@ -318,6 +319,7 @@ export async function run() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   run().catch((err) => {
+    recordRuntimeErrorBestEffort('HOOK_SESSION_START_FAILED');
     process.stderr.write(`[session-start] error: ${err.message}\n`);
     process.exit(1);
   });

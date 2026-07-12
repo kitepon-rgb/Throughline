@@ -34,6 +34,6 @@
     "test": "node --import ./src/test-env.mjs --test src/*.test.mjs src/cli/*.test.mjs"
   },
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.13"
   }
 }

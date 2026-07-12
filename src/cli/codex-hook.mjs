@@ -1,3 +1,5 @@
+import { recordRuntimeErrorBestEffort } from '../runtime-error-store.mjs';
+
 function parseArgs(argv) {
   const out = {
     event: null,
@@ -366,6 +368,7 @@ export async function run(argv = []) {
     parsed = parseArgs(argv);
     payload = parsePayload(await readStdin());
   } catch (err) {
+    recordRuntimeErrorBestEffort('HOOK_CODEX_FAILED', { env: process.env });
     const msg = err instanceof Error ? err.message : 'unknown';
     process.stderr.write(`[codex-hook] ${msg}\n`);
     process.exit(1);
@@ -399,6 +402,7 @@ export async function run(argv = []) {
     }
     process.exit(result.status === 'ok' || result.status === 'skipped' ? 0 : 1);
   } catch (err) {
+    recordRuntimeErrorBestEffort('HOOK_CODEX_FAILED', { env: process.env });
     const msg = err instanceof Error ? err.message : 'unknown';
     if (parsed.json) {
       process.stdout.write(
