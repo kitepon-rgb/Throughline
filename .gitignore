@@ -29,3 +29,6 @@ dist/
 
 # claude-spotter runtime state (per-machine, large)
 .spotter/
+
+# Project-local Codex skill/runtime surface (per-machine)
+/.agents/
