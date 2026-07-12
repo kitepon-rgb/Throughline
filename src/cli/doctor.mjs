@@ -493,6 +493,9 @@ function readCodexHookDiagnosis(codexHome) {
     expectedPromptCommand,
     expectedPostToolUseCommand,
     hooksReadable: false,
+    hooksExists: existsSync(hooksPath),
+    configExists: existsSync(configPath),
+    configReadable: false,
     featureEnabled: false,
     codexHooksFeatureEnabled: false,
     hooksFeatureEnabled: false,
@@ -513,6 +516,7 @@ function readCodexHookDiagnosis(codexHome) {
   if (existsSync(configPath)) {
     try {
       const config = readFileSync(configPath, 'utf8');
+      out.configReadable = true;
       out.codexHooksFeatureEnabled = /^\s*codex_hooks\s*=\s*true\s*$/m.test(config);
       out.hooksFeatureEnabled = /^\s*hooks\s*=\s*true\s*$/m.test(config);
       out.featureEnabled = out.codexHooksFeatureEnabled || out.hooksFeatureEnabled;
@@ -522,7 +526,7 @@ function readCodexHookDiagnosis(codexHome) {
     }
   }
 
-  if (!existsSync(hooksPath)) return out;
+  if (!out.hooksExists) return out;
   let parsed;
   try {
     parsed = JSON.parse(readFileSync(hooksPath, 'utf8'));

@@ -9,7 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-const CURRENT_VERSION = 8;
+export const CURRENT_VERSION = 8;
 
 let _db = null;
 

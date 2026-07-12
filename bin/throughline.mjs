@@ -11,6 +11,7 @@
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
+ *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
  *   throughline codex-capture # Capture active Codex rollout turns into Throughline DB
  *   throughline codex-hook user-prompt-submit # Codex current-session auto-refresh prompt hook
  *   throughline codex-hook post-tool-use # Codex current-session auto-refresh tool-loop hook
@@ -68,6 +69,11 @@ switch (cmd) {
     break;
   case 'auditor-context': {
     const exitCode = (await import('../src/cli/auditor-context.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
+  case 'factory-diagnostics': {
+    const exitCode = (await import('../src/cli/factory-diagnostics.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
     break;
   }
@@ -159,6 +165,9 @@ Usage:
                               Read only bounded completed user/assistant context
                               for an auditor; requires either --host plus --transcript,
                               or explicit pair identity/hashes; always requires --json
+  throughline factory-diagnostics --json
+                              Read-only native factory readiness JSON. Never emits
+                              session/prompt bodies, secrets, absolute paths, or raw state
   throughline codex-capture     Capture active Codex rollout turns into DB
                               (requires --codex-thread-id or env thread id)
   throughline codex-hook user-prompt-submit

@@ -728,6 +728,7 @@ entry to the `tasks` array yourself:
 | `throughline doctor --session <id-prefix>`     | Diagnose a specific session — detect state/transcript drift, idle vs. stuck |
 | `throughline doctor --trim --host claude\|codex` | Diagnose trim host boundaries, manual procedure, and Codex host primitive blockage |
 | `throughline doctor --codex`                   | Diagnose Codex primary entry state, captured DB sessions, context-refresh memory contract, new-thread handoff readiness, safe continuation status, and host primitive audit |
+| `throughline factory-diagnostics --json`       | Versioned read-only native factory readiness JSON for database schema/migration, connector hooks, and representative capture/restore/handoff; does not emit bodies, secrets, absolute paths, or raw state |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
 | `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
 | `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |
