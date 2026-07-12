@@ -6,6 +6,11 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
+**v0.6.1 (published 2026-07-13)**: Spotter向けのversioned read-only `auditor-context` projectionを追加。
+exact session/projectとfreshな完了L2 pairだけをbounded JSONで返し、DB作成・migration・書き込みはしない。
+公開commit `089235f`のCIは6/6 green、npm `latest`、tag / GitHub Release、このMacのregistry由来global
+installを0.6.1へ同期した。Spotter側の送信はproject opt-inであり、Throughline単独では外部送信しない。
+
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
