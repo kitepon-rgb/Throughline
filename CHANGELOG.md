@@ -10,6 +10,8 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-07-14
+
 ### Fixed
 
 - `throughline factory-diagnostics --json` now reports the Codex hook summary

@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: v0.6.2 complete; v0.6.3 Windows bounded-observer hardening in progress
+Status: v0.6.3 published 2026-07-14
 
 This plan is the implementation TODO for Throughline's product-owned, local
 runtime error projection. It implements the cross-repository contract in
@@ -61,8 +61,11 @@ existing transcript, handoff, or SQLite memory contracts.
 - [x] Keep the production 3-second ACL and 5-second observer bounds unchanged,
       but serialize Windows CI test files so parallel PowerShell fixture load
       cannot consume those bounds before the contract under test runs.
-- [ ] Run focused Windows matrix tests, the complete suite, pack inspection,
-      registry-derived smoke, and the public Node 22/24 CI matrix before publish.
+- [x] Require the public Node 22/24 CI matrix before publish: CI
+      `29284655280` completed 9/9 green.
+- [ ] Record focused Windows tests, complete-suite, pack-inspection, and
+      registry-derived smoke evidence in this plan. Those individual records
+      are not part of the published-release facts currently recorded here.
 
 ## Release wave
 
@@ -71,3 +74,6 @@ existing transcript, handoff, or SQLite memory contracts.
 - [x] Push the release commit and require the public CI gate to pass (`e6ce6e3`, CI `29238704750`).
 - [x] After the owner H gate, publish `throughline@0.6.2`, create tag/release, and verify npm `latest` plus a registry-derived isolated install. Global installation is deferred to the dotagents Mac rollout wave.
 - [x] Confirm `throughline factory-diagnostics --json` and the runtime-error snapshot from the published package, then record the public SHA and results in the changelog and canonical docs.
+- [x] Publish `throughline@0.6.3` after the owner H gate; create tag / GitHub
+      Release and record public CI `29284655280` (9/9 green) plus npm shasum
+      `4f3fcd2598a75f026358dae7f3eb3165242b580b` (2026-07-14).
