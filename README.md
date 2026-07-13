@@ -716,10 +716,13 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**v0.6.2 は2026-07-13に公開済みです。** factory diagnostics と local runtime error
+**v0.6.3 はリリース準備中です。** factory diagnostics は Codex の managed
+`UserPromptSubmit` / `PostToolUse` / `Stop` hooks がすべて canonical `ready` の場合に
+Codex readiness を `ready` と返す。Claude connector は未検査のまま明示的に
+`unverified` とし、Codex-only overall を妨げない。local runtime error
 aggregate は collection が既定OFFで、canonical dotagents config の
 `collection.enabled: true` を明示した場合だけ収集します。いずれも network I/O は
-行いません。npm `latest`、tag / GitHub Release、公開CI、registry由来installを確認済みです。
+行いません。v0.6.3 の npm publish、tag、GitHub Release は未実施です。
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |

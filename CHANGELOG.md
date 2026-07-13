@@ -10,6 +10,15 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Fixed
+
+- `throughline factory-diagnostics --json` now reports the Codex hook summary
+  as `ready` when all three canonical managed hooks are ready. The Codex-only
+  overall aggregate no longer treats the separately exposed, uninspected
+  Claude connector as a blocking `unverified` state. The Claude connector
+  remains explicitly `unverified`; diagnostic output remains read-only and
+  privacy-safe.
+
 ## [0.6.2] — 2026-07-13
 
 ### Added

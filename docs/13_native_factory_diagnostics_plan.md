@@ -23,8 +23,10 @@ session の本文、秘密、絶対パス、例外詳細を出力しない。
   検証する。handoff memoryは一致確認済みproject/threadだけを数える。
 - restore capabilityとlive smoke evidenceを分離する。未実行smokeは`unverified`だが、
   capability readinessを恒常的に失敗扱いにはしない。
-- Codex hookはcanonical shapeを検査するが、trust実火は機械検証不能なので`unverified`に
-  留める。Claude connectorはこの単位では未検査として明示`unverified`にする。
+- Codex hook は canonical shape を検査し、3 managed event がすべて `ready` なら hook
+  summary も `ready` とする。trust 実火はこの read-only projection の判定対象外であり、
+  Claude connector はこの単位では未検査として明示 `unverified` にする。ただし後者は
+  Codex-only overall を阻害しない。
 
 ## 実施 TODO
 

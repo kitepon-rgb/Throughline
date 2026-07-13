@@ -17,6 +17,12 @@ error store を追加した。collection は canonical dotagents config の
 公開commit `e6ce6e3`、CI `29238704750`、npm `latest`、tag / GitHub Release、registry由来の
 隔離installから `--version`・factory diagnostics・runtime snapshotまで確認済み。
 
+**v0.6.3（リリース準備中）**: `factory-diagnostics` の Codex hook 集約を修正する。
+`UserPromptSubmit` / `PostToolUse` / `Stop` がいずれも canonical shape で `ready` の時は
+hooks と Codex connector を `ready` とし、Codex-only snapshot の overall 判定から未検査の
+Claude connector を除外する。Claude connector 自体は従来どおり `unverified` と明示し、
+read-only・privacy・exit 契約は変更しない。
+
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）

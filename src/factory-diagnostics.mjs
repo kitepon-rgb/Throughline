@@ -77,7 +77,6 @@ export function buildFactoryDiagnostics({ version, database = {}, hooks = {}, th
       status: aggregate([
         stateSchemaStatus,
         hooksStatus,
-        claudeConnectorStatus,
         captureStatus,
         restoreStatus,
         handoffStatus,

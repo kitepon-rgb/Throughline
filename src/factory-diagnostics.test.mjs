@@ -45,6 +45,24 @@ test('factory diagnostics: restore は実行していない smoke を ready に�
   assert.equal(result.overall.status, 'ready');
 });
 
+test('factory diagnostics: Claude connector 未検査は Codex-only ready snapshot を unverified にしない', () => {
+  const result = buildFactoryDiagnostics({
+    version: '0.6.2',
+    database: { status: 'ready', schemaVersion: 8, supportedSchemaVersion: 8, handoffMemory: true },
+    hooks: {
+      status: 'ready',
+      events: { userPromptSubmit: 'ready', postToolUse: 'ready', stop: 'ready' },
+    },
+    thread: { status: 'ready', rolloutAvailable: true },
+  });
+
+  assert.equal(result.hooks.status, 'ready');
+  assert.equal(result.connectors.codex.status, 'ready');
+  assert.equal(result.connectors.claude.status, 'unverified');
+  assert.equal(result.connectors.claude.reason, 'diagnostic_unverified');
+  assert.equal(result.overall.status, 'ready');
+});
+
 test('factory diagnostics: JSON に本文、秘密、絶対 path、生 state を含めない', () => {
   const secret = 'sk-test-very-secret';
   const body = 'ユーザーの prompt 本文';

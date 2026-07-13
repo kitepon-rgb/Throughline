@@ -163,9 +163,11 @@ export function inspectFactoryHooks({ codexHome = defaultCodexHome(), readHooks 
     return {
       status: values.includes('not_ready')
         ? 'not_ready'
-        : values.includes('ready')
+        : values.includes('unverified')
           ? 'unverified'
-          : 'not_applicable',
+          : values.includes('ready')
+            ? 'ready'
+            : 'not_applicable',
       reason: 'hooks_inspected',
       events,
     };

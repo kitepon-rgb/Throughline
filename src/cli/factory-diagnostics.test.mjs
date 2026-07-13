@@ -168,6 +168,31 @@ test('factory-diagnostics hook inspection rejects corrupt and false-ready shapes
   assert.equal(malformed.status, 'not_ready');
 });
 
+test('factory-diagnostics hook inspection summarizes every canonical ready event as ready', () => {
+  const result = inspectFactoryHooks({
+    readHooks: () => ({
+      configExists: true,
+      configReadable: true,
+      hooksExists: true,
+      hooksReadable: true,
+      featureEnabled: true,
+      expectedPromptCommand: 'prompt',
+      expectedPostToolUseCommand: 'post',
+      expectedStopCommand: 'stop',
+      managedPromptHooks: [{ type: 'command', command: 'prompt', timeoutSec: 30, async: false }],
+      legacyManagedPromptHooks: [],
+      managedPostToolUseHooks: [{ type: 'command', command: 'post', timeoutSec: 30, async: false }],
+      legacyManagedPostToolUseHooks: [],
+      managedStopHooks: [{ type: 'command', command: 'stop', timeoutSec: 300, async: false }],
+      legacyManagedStopHooks: [],
+    }),
+  });
+
+  assert.deepEqual(result.events, { userPromptSubmit: 'ready', postToolUse: 'ready', stop: 'ready' });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.reason, 'hooks_inspected');
+});
+
 function createFactorySchema(db) {
   db.exec(`
     PRAGMA user_version = 8;
