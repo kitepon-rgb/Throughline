@@ -17,6 +17,7 @@ function makeExecutable(dir, name, body) {
   if (process.platform === 'win32') {
     const path = join(dir, `${name}.cmd`);
     writeFileSync(path, `@echo off\r\n${JSON.stringify(process.execPath)} ${JSON.stringify(script)} %*\r\n`);
+    writeFileSync(join(dir, `${name}.ps1`), `& ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} @args\nexit $LASTEXITCODE\n`);
     return path;
   }
   const path = join(dir, name);

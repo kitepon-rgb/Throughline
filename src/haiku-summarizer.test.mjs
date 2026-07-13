@@ -12,6 +12,7 @@ function makeBin(dir, name, body) {
   if (process.platform === 'win32') {
     const command = join(dir, `${name}.cmd`);
     writeFileSync(command, `@echo off\r\nbash ${JSON.stringify(path)} %*\r\n`);
+    writeFileSync(join(dir, `${name}.ps1`), `& bash ${JSON.stringify(path)} @args\nexit $LASTEXITCODE\n`);
     return command;
   }
   return path;

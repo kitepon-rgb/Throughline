@@ -12,6 +12,7 @@ test('spawnPortableSync: Windows cmd shim preserves argv boundaries and stdin', 
   try {
     const child = join(dir, 'child.mjs');
     const command = join(dir, 'child.cmd');
+    const powerShellShim = join(dir, 'child.ps1');
     writeFileSync(child, `
 process.stdin.setEncoding('utf8');
 let input = '';
@@ -21,6 +22,7 @@ process.stdin.on('end', () => {
 });
 `);
     writeFileSync(command, `@echo off\r\n${JSON.stringify(process.execPath)} ${JSON.stringify(child)} %*\r\n`);
+    writeFileSync(powerShellShim, `& ${JSON.stringify(process.execPath)} ${JSON.stringify(child)} @args\nexit $LASTEXITCODE\n`);
 
     const result = spawnPortableSync(command, ['review prompt', 'a&b', '100%'], {
       encoding: 'utf8',
