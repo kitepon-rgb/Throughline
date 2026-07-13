@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { arch as hostArch, homedir, platform as hostPlatform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const require = createRequire(import.meta.url);
@@ -23,6 +24,7 @@ export const RUNTIME_ERROR_STATE_SCHEMA_VERSION = '1.0';
 export const RUNTIME_ERROR_DIAGNOSTIC = '[throughline:runtime-errors] store_unavailable\n';
 const DEFAULT_SNAPSHOT_LIMIT = 256;
 const BEST_EFFORT_TIMEOUT_MS = 750;
+const WINDOWS_BEST_EFFORT_TIMEOUT_MS = 5_000;
 const RESOLUTION_REASONS = new Set(['manual', 'recovered']);
 
 const DEFINITIONS = Object.freeze({
@@ -253,11 +255,11 @@ export function getRuntimeErrorDiagnostics(options = {}) {
 export function recordRuntimeErrorBestEffort(code, options = {}) {
   const { stderr = process.stderr, ...storeOptions } = options;
   try {
-    const child = spawnSync(process.execPath, [new URL('./runtime-error-observer.mjs', import.meta.url).pathname, code], {
+    const child = spawnSync(process.execPath, [fileURLToPath(new URL('./runtime-error-observer.mjs', import.meta.url)), code], {
       env: storeOptions.env ?? process.env,
       encoding: 'utf8',
       stdio: 'ignore',
-      timeout: BEST_EFFORT_TIMEOUT_MS,
+      timeout: isWindows(storeOptions.env) ? WINDOWS_BEST_EFFORT_TIMEOUT_MS : BEST_EFFORT_TIMEOUT_MS,
       windowsHide: true,
     });
     if (child.status === 0) return { status: 'recorded' };
@@ -325,14 +327,24 @@ function withStoreLock(options, operation) {
   const directory = dirname(storePath);
   ensurePrivateStoreDirectory(directory, options.env);
   const lockPath = `${storePath}.lock.sqlite`;
-  if (existsSync(lockPath)) assertPrivateStoreFile(lstatSync(lockPath), options.env, lockPath);
+  let created = false;
+  try {
+    writeFileSync(lockPath, '', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    created = true;
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+  }
+  if (created) {
+    if (isWindows(options.env)) applyAndVerifyWindowsAcl(lockPath, false);
+    else chmodSync(lockPath, 0o600);
+  }
+  assertPrivateStoreFile(lstatSync(lockPath), options.env, lockPath);
   const database = new DatabaseSync(lockPath);
   let active = false;
   try {
-    if (isWindows(options.env)) applyAndVerifyWindowsAcl(lockPath, false);
-    else chmodSync(lockPath, 0o600);
     assertPrivateStoreFile(lstatSync(lockPath), options.env, lockPath);
-    database.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; BEGIN IMMEDIATE');
+    database.exec('PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL');
+    database.exec('BEGIN IMMEDIATE');
     active = true;
     const result = operation();
     database.exec('COMMIT');

@@ -12,8 +12,15 @@ import {
 } from './codex-sidecar.mjs';
 
 function makeExecutable(dir, name, body) {
+  const script = join(dir, `${name}.mjs`);
+  writeFileSync(script, body);
+  if (process.platform === 'win32') {
+    const path = join(dir, `${name}.cmd`);
+    writeFileSync(path, `@echo off\r\n${JSON.stringify(process.execPath)} ${JSON.stringify(script)} %*\r\n`);
+    return path;
+  }
   const path = join(dir, name);
-  writeFileSync(path, body);
+  writeFileSync(path, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"\n`);
   chmodSync(path, 0o755);
   return path;
 }
@@ -44,7 +51,7 @@ test('diagnoseCodexSidecar: non-zero diagnostics is unavailable', () => {
     const bin = makeExecutable(
       dir,
       'fake-sidecar',
-      '#!/usr/bin/env bash\nprintf "bad config" >&2\nexit 7\n',
+      "process.stderr.write('bad config'); process.exit(7);\n",
     );
     const result = diagnoseCodexSidecar({
       projectPath: '/repo',
@@ -66,7 +73,7 @@ test('diagnoseCodexSidecar: zero diagnostics is configured', () => {
     const bin = makeExecutable(
       dir,
       'fake-sidecar',
-      '#!/usr/bin/env bash\nprintf "ok diagnostics for $*\\n"\nexit 0\n',
+      "process.stdout.write(`ok diagnostics for ${process.argv.slice(2).join(' ')}\\n`);\n",
     );
     const result = diagnoseCodexSidecar({
       projectPath: '/repo',
@@ -102,9 +109,9 @@ test('runCodexSidecarDryRun: emits a dry-run request for review preset', () => {
     const bin = makeExecutable(
       dir,
       'fake-sidecar',
-      `#!/usr/bin/env bash
-printf '%s\\n' "$@" > "${argsFile}"
-printf '{"status":"dry-run","workflow":"review","normalizedRequest":{"dryRun":true}}\\n'
+      `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(argsFile)}, process.argv.slice(2).join('\\n') + '\\n');
+process.stdout.write('{"status":"dry-run","workflow":"review","normalizedRequest":{"dryRun":true}}\\n');
 `,
     );
     const result = runCodexSidecarDryRun({
@@ -141,9 +148,9 @@ test('runCodexSidecarDryRun: infers risk-check workflow from preset', () => {
     const bin = makeExecutable(
       dir,
       'fake-sidecar',
-      `#!/usr/bin/env bash
-printf '%s\\n' "$@" > "${argsFile}"
-printf '{"status":"dry-run","workflow":"risk-check","normalizedRequest":{"dryRun":true}}\\n'
+      `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(argsFile)}, process.argv.slice(2).join('\\n') + '\\n');
+process.stdout.write('{"status":"dry-run","workflow":"risk-check","normalizedRequest":{"dryRun":true}}\\n');
 `,
     );
     const result = runCodexSidecarDryRun({

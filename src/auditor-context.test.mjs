@@ -283,7 +283,14 @@ function snapshotSqliteFiles(path) {
   return [path, `${path}-wal`, `${path}-shm`].map((file) => {
     if (!existsSync(file)) return { file, exists: false };
     const stat = lstatSync(file);
-    return { file, exists: true, size: stat.size, mtimeMs: stat.mtimeMs, bytes: readFileSync(file).toString('hex') };
+    try {
+      return { file, exists: true, size: stat.size, mtimeMs: stat.mtimeMs, bytes: readFileSync(file).toString('hex') };
+    } catch (error) {
+      // Windows denies byte reads for a live WAL handle.  Metadata still
+      // proves the read-only auditor did not create or mutate a sidecar.
+      if (error?.code === 'EBUSY') return { file, exists: true, size: stat.size, mtimeMs: stat.mtimeMs, readError: 'EBUSY' };
+      throw error;
+    }
   });
 }
 

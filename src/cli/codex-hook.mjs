@@ -59,10 +59,9 @@ function parsePayload(raw) {
 
 function codexHomeFromTranscriptPath(transcriptPath) {
   if (typeof transcriptPath !== 'string') return null;
-  const marker = `${process.platform === 'win32' ? '\\' : '/'}sessions${process.platform === 'win32' ? '\\' : '/'}`;
-  const idx = transcriptPath.indexOf(marker);
-  if (idx <= 0) return null;
-  return transcriptPath.slice(0, idx);
+  const match = /[\\/]sessions[\\/]/.exec(transcriptPath);
+  if (!match || match.index <= 0) return null;
+  return transcriptPath.slice(0, match.index);
 }
 
 function suppressExperimentalWarnings() {

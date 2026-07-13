@@ -8,12 +8,24 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
+function makeSidecarFixture(dir, body) {
+  const script = join(dir, 'fake-sidecar.mjs');
+  writeFileSync(script, body);
+  if (process.platform === 'win32') {
+    const bin = join(dir, 'fake-sidecar.cmd');
+    writeFileSync(bin, `@echo off\r\n${JSON.stringify(process.execPath)} ${JSON.stringify(script)} %*\r\n`);
+    return bin;
+  }
+  const bin = join(dir, 'fake-sidecar');
+  writeFileSync(bin, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"\n`);
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
 test('codex-sidecar-diagnostics CLI exits 0 only for configured diagnostics', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tl-sidecar-cli-'));
   try {
-    const bin = join(dir, 'fake-sidecar');
-    writeFileSync(bin, '#!/usr/bin/env bash\nprintf "ok\\n"\nexit 0\n');
-    chmodSync(bin, 0o755);
+    const bin = makeSidecarFixture(dir, "process.stdout.write('ok\\n');\n");
 
     const result = spawnSync(
       process.execPath,
@@ -38,12 +50,10 @@ test('codex-sidecar-diagnostics CLI exits 0 only for configured diagnostics', ()
 test('codex-sidecar-dry-run CLI exits 0 for normalized dry-run request', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tl-sidecar-dry-run-cli-'));
   try {
-    const bin = join(dir, 'fake-sidecar');
-    writeFileSync(
-      bin,
-      '#!/usr/bin/env bash\nprintf \'{"status":"dry-run","workflow":"risk-check","normalizedRequest":{"dryRun":true}}\\n\'\n',
+    const bin = makeSidecarFixture(
+      dir,
+      "process.stdout.write('{\"status\":\"dry-run\",\"workflow\":\"risk-check\",\"normalizedRequest\":{\"dryRun\":true}}\\n');\n",
     );
-    chmodSync(bin, 0o755);
 
     const result = spawnSync(
       process.execPath,

@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { parseArgs, run } from './runtime-errors.mjs';
+import { defaultFactoryReporterConfigPath } from '../runtime-error-store.mjs';
 
 test('runtime-errors CLI: strict command surface accepts no raw payload options', () => {
   assert.deepEqual(parseArgs(['snapshot', '--after-cursor', '2', '--limit', '3', '--json']), {
@@ -44,13 +46,16 @@ test('runtime-errors CLI: snapshot and diagnostics are JSON-only and contain no 
   const env = {
     ...process.env,
     HOME: root,
+    USERPROFILE: root,
+    LOCALAPPDATA: root,
     XDG_CONFIG_HOME: join(root, 'config'),
     XDG_STATE_HOME: join(root, 'state'),
   };
-  mkdirSync(join(env.XDG_CONFIG_HOME, 'dotagents'), { recursive: true });
-  writeFileSync(join(env.XDG_CONFIG_HOME, 'dotagents', 'factory-reporter.json'), JSON.stringify({
+  const configPath = defaultFactoryReporterConfigPath(env);
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify({
     schema_version: '1.0',
-    host: { id: 'test-host', profile: 'mac' },
+    host: { id: 'test-host', profile: process.platform === 'win32' ? 'windows-native' : 'mac' },
     collection: { enabled: true },
     reporting: { enabled: false },
   }));
@@ -59,7 +64,7 @@ test('runtime-errors CLI: snapshot and diagnostics are JSON-only and contain no 
     ['runtime-errors', 'snapshot', '--json'],
     ['runtime-errors', 'diagnostics', '--json'],
   ]) {
-    const result = spawnSync(process.execPath, [bin.pathname, ...args], { env, encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [fileURLToPath(bin), ...args], { env, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     const json = JSON.parse(result.stdout);
     assert.equal(typeof json.schema, 'string');

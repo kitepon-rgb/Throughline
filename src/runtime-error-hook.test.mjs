@@ -3,22 +3,27 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defaultFactoryReporterConfigPath, defaultRuntimeErrorStorePath } from './runtime-error-store.mjs';
 
-const BIN = new URL('../bin/throughline.mjs', import.meta.url).pathname;
+const BIN = fileURLToPath(new URL('../bin/throughline.mjs', import.meta.url));
 
 function createEnabledEnvironment(prefix) {
   const root = mkdtempSync(join(tmpdir(), prefix));
   const env = {
     ...process.env,
     HOME: root,
+    USERPROFILE: root,
+    LOCALAPPDATA: root,
     XDG_CONFIG_HOME: join(root, 'config'),
     XDG_STATE_HOME: join(root, 'state'),
   };
-  mkdirSync(join(env.XDG_CONFIG_HOME, 'dotagents'), { recursive: true });
-  writeFileSync(join(env.XDG_CONFIG_HOME, 'dotagents', 'factory-reporter.json'), JSON.stringify({
+  const configPath = defaultFactoryReporterConfigPath(env);
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify({
     schema_version: '1.0',
-    host: { id: 'test-host', profile: 'mac' },
+    host: { id: 'test-host', profile: process.platform === 'win32' ? 'windows-native' : 'mac' },
     collection: { enabled: true },
     reporting: { enabled: false },
   }));
@@ -44,7 +49,7 @@ test('top-level hook owners record one fixed aggregate per failure without repla
     assert.doesNotMatch(result.stderr, /store_unavailable/);
   }
 
-  const storePath = join(env.XDG_STATE_HOME, 'throughline', 'runtime-errors.json');
+  const storePath = defaultRuntimeErrorStorePath(env);
   let store = JSON.parse(readFileSync(storePath, 'utf8'));
   assert.equal(store.records.length, 4);
   assert.deepEqual(store.records.map((record) => record.error_code).sort(), [
@@ -66,8 +71,9 @@ test('top-level hook owners record one fixed aggregate per failure without repla
 
 test('store failure preserves product failure and emits only fixed storage diagnostic', () => {
   const { env } = createEnabledEnvironment('throughline-runtime-hook-store-fail-');
-  mkdirSync(join(env.XDG_STATE_HOME, 'throughline'), { recursive: true });
-  writeFileSync(join(env.XDG_STATE_HOME, 'throughline', 'runtime-errors.json'), '{broken');
+  const storePath = defaultRuntimeErrorStorePath(env);
+  mkdirSync(dirname(storePath), { recursive: true });
+  writeFileSync(storePath, '{broken');
 
   const result = spawnSync(process.execPath, [BIN, 'prompt-submit'], {
     env,
@@ -82,7 +88,7 @@ test('store failure preserves product failure and emits only fixed storage diagn
 
 test('FIFO config cannot block the original hook failure', { skip: process.platform === 'win32' }, () => {
   const { env } = createEnabledEnvironment('throughline-runtime-hook-fifo-');
-  const config = join(env.XDG_CONFIG_HOME, 'dotagents', 'factory-reporter.json');
+  const config = defaultFactoryReporterConfigPath(env);
   execFileSync('rm', ['-f', config]);
   execFileSync('mkfifo', [config]);
   const started = Date.now();

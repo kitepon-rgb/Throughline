@@ -500,6 +500,10 @@ test('codex-hook stop skips cleanly when Codex thread id is unavailable', async 
 test('codexHomeFromTranscriptPath infers CODEX_HOME from rollout path', () => {
   const path = '/tmp/codex-home/sessions/2026/05/06/rollout-2026-05-06T09-40-50-id.jsonl';
   assert.equal(_internal.codexHomeFromTranscriptPath(path), '/tmp/codex-home');
+  assert.equal(
+    _internal.codexHomeFromTranscriptPath('C:\\codex-home\\sessions\\2026\\05\\06\\rollout-2026-05-06T09-40-50-id.jsonl'),
+    'C:\\codex-home',
+  );
 });
 
 test('parseArgs: accepts user-prompt-submit Codex hook event', () => {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   acknowledgeRuntimeErrors,
@@ -21,6 +21,8 @@ function sandbox() {
   const root = mkdtempSync(join(tmpdir(), 'throughline-runtime-errors-'));
   const env = {
     HOME: root,
+    USERPROFILE: root,
+    LOCALAPPDATA: root,
     XDG_CONFIG_HOME: join(root, 'config'),
     XDG_STATE_HOME: join(root, 'state'),
   };
@@ -30,10 +32,10 @@ function sandbox() {
 }
 
 function enableCollection(box, reporting = { enabled: false }) {
-  mkdirSync(join(box.env.XDG_CONFIG_HOME, 'dotagents'), { recursive: true });
+  mkdirSync(dirname(box.configPath), { recursive: true });
   writeFileSync(box.configPath, JSON.stringify({
     schema_version: '1.0',
-    host: { id: 'test-host', profile: 'mac' },
+    host: { id: 'test-host', profile: process.platform === 'win32' ? 'windows-native' : 'mac' },
     collection: { enabled: true },
     reporting,
   }));
@@ -276,18 +278,23 @@ test('runtime error store: mode drift is unavailable and a crashed SQLite lock o
   assert.equal(observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, { env: box.env }).status, 'recorded');
 });
 
-test('runtime error store: atomic lock publication preserves all concurrent process observations', async () => {
+test('runtime error store: atomic lock publication preserves all concurrent process observations', {
+  skip: process.platform === 'win32' ? 'SQLite排他はPOSIX matrix、Windowsはnative ACL/store試験で固定' : undefined,
+}, async () => {
   const box = sandbox();
   enableCollection(box);
   const modulePath = new URL('./runtime-error-store.mjs', import.meta.url).href;
   const script = `import {observeRuntimeError} from ${JSON.stringify(modulePath)}; observeRuntimeError({code:'HOOK_CODEX_FAILED'});`;
   const results = await Promise.all(Array.from({ length: 20 }, () => new Promise((resolve) => {
     const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
-      env: { ...process.env, ...box.env }, stdio: 'ignore',
+      env: { ...process.env, ...box.env }, stdio: ['ignore', 'ignore', 'pipe'],
     });
-    child.once('exit', (code) => resolve(code));
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.once('exit', (code) => resolve({ code, stderr }));
   })));
-  assert.deepEqual(results, Array(20).fill(0));
+  assert.deepEqual(results, Array.from({ length: 20 }, () => ({ code: 0, stderr: '' })));
   const snapshot = readRuntimeErrorSnapshot({ env: box.env });
   assert.equal(snapshot.runtime_errors[0].occurrence_count, 20);
 });
