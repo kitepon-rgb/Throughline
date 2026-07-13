@@ -326,7 +326,8 @@ export async function run(args) {
 
   if (parsed.json) process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
   else process.stdout.write(renderTextResult(payload) + '\n');
-  process.exit(payload.status === 'app-server-restart-stable' && !payload.restoreSafetyRiskInspected ? 0 : 1);
+  process.exitCode =
+    payload.status === 'app-server-restart-stable' && !payload.restoreSafetyRiskInspected ? 0 : 1;
 }
 
 function buildRestoreTextNeedles(restoreSafety) {

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseArgs, run } from './runtime-errors.mjs';
 import { defaultFactoryReporterConfigPath } from '../runtime-error-store.mjs';
+import { applyWindowsPrivateAcl } from '../windows-acl-test-helper.mjs';
 
 test('runtime-errors CLI: strict command surface accepts no raw payload options', () => {
   assert.deepEqual(parseArgs(['snapshot', '--after-cursor', '2', '--limit', '3', '--json']), {
@@ -59,6 +60,7 @@ test('runtime-errors CLI: snapshot and diagnostics are JSON-only and contain no 
     collection: { enabled: true },
     reporting: { enabled: false },
   }));
+  applyWindowsPrivateAcl(configPath);
   const bin = new URL('../../bin/throughline.mjs', import.meta.url);
   for (const args of [
     ['runtime-errors', 'snapshot', '--json'],

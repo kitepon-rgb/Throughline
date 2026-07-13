@@ -296,7 +296,7 @@ export async function run(args) {
 
   if (parsed.json) process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   else process.stdout.write(renderTextResult(result) + '\n');
-  process.exit(result.status === 'restore-source-audit-complete' ? 0 : 1);
+  process.exitCode = result.status === 'restore-source-audit-complete' ? 0 : 1;
 }
 
 export const _internal = {

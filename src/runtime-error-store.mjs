@@ -25,6 +25,7 @@ export const RUNTIME_ERROR_DIAGNOSTIC = '[throughline:runtime-errors] store_unav
 const DEFAULT_SNAPSHOT_LIMIT = 256;
 const BEST_EFFORT_TIMEOUT_MS = 750;
 const WINDOWS_BEST_EFFORT_TIMEOUT_MS = 5_000;
+const WINDOWS_ACL_TIMEOUT_MS = 3_000;
 const RESOLUTION_REASONS = new Set(['manual', 'recovered']);
 
 const DEFINITIONS = Object.freeze({
@@ -522,24 +523,25 @@ function verifyWindowsAcl(path, directory) {
 function runWindowsAclScript(path, directory, script) {
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     env: { ...process.env, FACTORY_ACL_PATH: path, FACTORY_ACL_DIRECTORY: directory ? '1' : '0' },
-    stdio: 'ignore', timeout: BEST_EFFORT_TIMEOUT_MS, windowsHide: true,
+    stdio: 'ignore', timeout: WINDOWS_ACL_TIMEOUT_MS, windowsHide: true,
   });
   if (result.status !== 0) throw new Error('Windows owner-only ACL verification failed');
 }
 
 const WINDOWS_ACL_VERIFY_SCRIPT = String.raw`
-$p=$env:FACTORY_ACL_PATH; $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $acl=Get-Acl -LiteralPath $p
-$owner=(New-Object System.Security.Principal.NTAccount($acl.Owner)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+$p=$env:FACTORY_ACL_PATH; $isDir=$env:FACTORY_ACL_DIRECTORY -eq '1'; $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$acl=if($isDir){[System.IO.Directory]::GetAccessControl($p)}else{[System.IO.File]::GetAccessControl($p)}
+$owner=$acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
 if($owner -ne $sid){exit 41}; $rules=@($acl.Access); if($rules.Count -ne 1){exit 42}
 $r=$rules[0]; if($r.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -ne $sid -or $r.AccessControlType -ne 'Allow' -or ($r.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl){exit 43}
 `;
 
 const WINDOWS_ACL_APPLY_SCRIPT = String.raw`
 $p=$env:FACTORY_ACL_PATH; $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$acl=Get-Acl -LiteralPath $p; $acl.SetAccessRuleProtection($true,$false); foreach($r in @($acl.Access)){$acl.RemoveAccessRuleAll($r)}
-$flags=if($env:FACTORY_ACL_DIRECTORY -eq '1'){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None}
+$isDir=$env:FACTORY_ACL_DIRECTORY -eq '1'; $acl=if($isDir){New-Object System.Security.AccessControl.DirectorySecurity}else{New-Object System.Security.AccessControl.FileSecurity}; $acl.SetAccessRuleProtection($true,$false)
+$flags=if($isDir){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None}
 $rule=New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl',$flags,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow)
-$acl.SetOwner($sid); $acl.AddAccessRule($rule); Set-Acl -LiteralPath $p -AclObject $acl
+$acl.SetOwner($sid); $acl.AddAccessRule($rule); if($isDir){[System.IO.Directory]::SetAccessControl($p,$acl)}else{[System.IO.File]::SetAccessControl($p,$acl)}
 ` + WINDOWS_ACL_VERIFY_SCRIPT;
 
 function assertExactInput(input, allowed) {

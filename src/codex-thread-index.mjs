@@ -171,7 +171,13 @@ function compareCandidates(a, b) {
 function normalizePath(value) {
   const raw = String(value);
   if (/^[A-Za-z]:[\\/]/.test(raw)) {
-    return raw.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    let resolved = raw;
+    try {
+      if (existsSync(raw)) resolved = realpathSync.native(raw);
+    } catch {
+      // Keep the lexical Windows path when it cannot be resolved.
+    }
+    return resolved.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
   }
   let resolved = resolve(value);
   try {

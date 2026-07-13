@@ -16,6 +16,9 @@ import {
   reopenRuntimeError,
   resolveRuntimeError,
 } from './runtime-error-store.mjs';
+import { applyWindowsPrivateAcl } from './windows-acl-test-helper.mjs';
+
+const TEST_PLATFORM = process.platform === 'win32' ? 'win32' : 'darwin';
 
 function sandbox() {
   const root = mkdtempSync(join(tmpdir(), 'throughline-runtime-errors-'));
@@ -39,6 +42,7 @@ function enableCollection(box, reporting = { enabled: false }) {
     collection: { enabled: true },
     reporting,
   }));
+  applyWindowsPrivateAcl(box.configPath);
 }
 
 test('runtime error store: missing/false/malformed config is fail-closed and creates no state', () => {
@@ -51,8 +55,9 @@ test('runtime error store: missing/false/malformed config is fail-closed and cre
   ]) {
     const box = sandbox();
     if (config !== null) {
-      mkdirSync(join(box.env.XDG_CONFIG_HOME, 'dotagents'), { recursive: true });
+      mkdirSync(dirname(box.configPath), { recursive: true });
       writeFileSync(box.configPath, typeof config === 'string' ? config : JSON.stringify(config));
+      applyWindowsPrivateAcl(box.configPath);
     }
     assert.deepEqual(observeRuntimeError({ code: 'HOOK_PROCESS_TURN_FAILED' }, { env: box.env }), {
       status: 'disabled',
@@ -83,11 +88,11 @@ test('runtime error store: reporting config and credentials are ignored and no n
   enableCollection(box, {
     enabled: true,
     endpoint: 'https://should-never-be-read.invalid/private',
-    credential_file: '/private/token',
+    credential_file: process.platform === 'win32' ? 'C:\\private\\token' : '/private/token',
   });
   const result = observeRuntimeError(
     { code: 'HOOK_PROCESS_TURN_FAILED', now: '2026-07-13T00:00:00.000Z' },
-    { env: box.env, version: '0.6.1', platform: 'darwin', arch: 'arm64' },
+    { env: box.env, version: '0.6.1', platform: TEST_PLATFORM, arch: 'arm64' },
   );
   assert.equal(result.status, 'recorded');
   const bytes = readFileSync(box.storePath, 'utf8');
@@ -128,7 +133,7 @@ test('runtime error store: observation API rejects raw or arbitrary fields', () 
 test('runtime error store: fixed template SHA-256 fingerprint aggregates and reopens', () => {
   const box = sandbox();
   enableCollection(box);
-  const options = { env: box.env, version: '0.6.1', platform: 'darwin', arch: 'arm64' };
+  const options = { env: box.env, version: '0.6.1', platform: TEST_PLATFORM, arch: 'arm64' };
   const first = observeRuntimeError(
     { code: 'HOOK_PROCESS_TURN_FAILED', now: '2026-07-13T00:00:00.000Z' }, options,
   );
@@ -227,8 +232,10 @@ test('runtime error store: atomic private store has owner-only modes and bounded
   const box = sandbox();
   enableCollection(box);
   observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, { env: box.env, version: '0.6.1' });
-  assert.equal(statSync(join(box.env.XDG_STATE_HOME, 'throughline')).mode & 0o777, 0o700);
-  assert.equal(statSync(box.storePath).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(dirname(box.storePath)).mode & 0o777, 0o700);
+    assert.equal(statSync(box.storePath).mode & 0o777, 0o600);
+  }
   assert.doesNotThrow(() => JSON.parse(readFileSync(box.storePath, 'utf8')));
 
   const diagnostics = getRuntimeErrorDiagnostics({ env: box.env });

@@ -408,7 +408,9 @@ test('process-turn subprocess backfills all completed logical turns from a multi
   }
 });
 
-test('session-start backfills a derived predecessor transcript without a state file', () => {
+test('session-start backfills a derived predecessor transcript without a state file', {
+  skip: process.platform === 'win32' ? 'Windowsはstate file transcriptPath fallback契約' : undefined,
+}, () => {
   const home = makeTempHome();
   const project = makeTempProject();
   const predecessorId = 'missing-stop-predecessor';

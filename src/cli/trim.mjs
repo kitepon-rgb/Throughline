@@ -164,11 +164,11 @@ export async function run(args) {
     } else {
       process.stdout.write(renderTrimActionReport(result) + '\n');
     }
-    process.exit(
+    process.exitCode =
       result.status === 'preflight-ready' || result.status === 'execute-durable-verified'
         ? 0
-        : 1,
-    );
+        : 1;
+    return;
   }
 
   if (parsed.json) {
@@ -177,7 +177,7 @@ export async function run(args) {
     process.stdout.write(renderTrimDryRunReport(plan) + '\n');
   }
 
-  process.exit(plan.status === 'unavailable' ? 1 : 0);
+  process.exitCode = plan.status === 'unavailable' ? 1 : 0;
 }
 
 async function runExecute(parsed, plan) {

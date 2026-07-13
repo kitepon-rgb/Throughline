@@ -269,12 +269,11 @@ function snapshotSqliteFiles(path) {
   return [path, `${path}-wal`, `${path}-shm`].map((file) => {
     if (!existsSync(file)) return { file, exists: false };
     const stat = lstatSync(file);
-    return {
-      file,
-      exists: true,
-      size: stat.size,
-      mtimeMs: stat.mtimeMs,
-      bytes: readFileSync(file).toString('hex'),
-    };
+    try {
+      return { file, exists: true, size: stat.size, mtimeMs: stat.mtimeMs, bytes: readFileSync(file).toString('hex') };
+    } catch (error) {
+      if (error?.code === 'EBUSY') return { file, exists: true, size: stat.size, mtimeMs: stat.mtimeMs, readError: 'EBUSY' };
+      throw error;
+    }
   });
 }
