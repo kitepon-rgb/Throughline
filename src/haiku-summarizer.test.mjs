@@ -2,20 +2,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { summarizeToL1 } from './haiku-summarizer.mjs';
 
 function makeBin(dir, name, body) {
-  const path = join(dir, name);
-  writeFileSync(path, body);
-  chmodSync(path, 0o755);
+  const script = join(dir, `${name}.mjs`);
+  writeFileSync(script, body);
   if (process.platform === 'win32') {
     const command = join(dir, `${name}.cmd`);
-    writeFileSync(command, `@echo off\r\nbash ${JSON.stringify(path)} %*\r\n`);
-    writeFileSync(join(dir, `${name}.ps1`), `& bash ${JSON.stringify(path)} @args\nexit $LASTEXITCODE\n`);
+    writeFileSync(command, `@echo off\r\n${JSON.stringify(process.execPath)} ${JSON.stringify(script)} %*\r\n`);
+    writeFileSync(join(dir, `${name}.ps1`), `& ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} @args\nexit $LASTEXITCODE\n`);
     return command;
   }
-  return path;
+  const command = join(dir, name);
+  writeFileSync(command, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"\n`);
+  chmodSync(command, 0o755);
+  return command;
 }
 
 test('summarizeToL1: returns empty fallback for blank input', () => {
@@ -50,13 +52,11 @@ test('summarizeToL1: uses codex-sidecar when diagnostics and run both succeed', 
     const sidecar = makeBin(
       dir,
       'codex-sidecar',
-      `#!/usr/bin/env bash
-if [ "$1" = "diagnostics" ]; then
-  printf '{"status":"ok"}\\n'
-  exit 0
-fi
-printf '{"status":"ok","summary":"sidecar summary"}\\n'
-exit 0
+      `if (process.argv[2] === 'diagnostics') {
+  process.stdout.write('{"status":"ok"}\\n');
+} else {
+  process.stdout.write('{"status":"ok","summary":"sidecar summary"}\\n');
+}
 `,
     );
 
@@ -84,13 +84,11 @@ test('summarizeToL1: accepts stable SidecarResult summary without status field',
     const sidecar = makeBin(
       dir,
       'codex-sidecar',
-      `#!/usr/bin/env bash
-if [ "$1" = "diagnostics" ]; then
-  printf '{"status":"ok"}\\n'
-  exit 0
-fi
-printf '{"summary":"stable sidecar summary","confidence":{"level":"high"},"recommendedNextAction":"continue"}\\n'
-exit 0
+      `if (process.argv[2] === 'diagnostics') {
+  process.stdout.write('{"status":"ok"}\\n');
+} else {
+  process.stdout.write('{"summary":"stable sidecar summary","confidence":{"level":"high"},"recommendedNextAction":"continue"}\\n');
+}
 `,
     );
 
@@ -118,9 +116,8 @@ test('summarizeToL1: when sidecar is disabled, keeps current Haiku-compatible pa
     makeBin(
       dir,
       'claude',
-      `#!/usr/bin/env bash
-cat >/dev/null
-printf 'haiku summary\\n'
+      `for await (const _chunk of process.stdin) {}
+process.stdout.write('haiku summary\\n');
 `,
     );
 
@@ -129,7 +126,7 @@ printf 'haiku summary\\n'
       projectPath: '/repo',
       env: {
         ...process.env,
-        PATH: `${dir}:${process.env.PATH ?? ''}`,
+        PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
         THROUGHLINE_CODEX_SIDECAR_DISABLED: '1',
       },
     });
@@ -149,21 +146,19 @@ test('summarizeToL1: sidecar run failure keeps current Haiku-compatible path', (
     const sidecar = makeBin(
       dir,
       'codex-sidecar',
-      `#!/usr/bin/env bash
-if [ "$1" = "diagnostics" ]; then
-  printf '{"status":"ok"}\\n'
-  exit 0
-fi
-printf 'sidecar failed\\n' >&2
-exit 42
+      `if (process.argv[2] === 'diagnostics') {
+  process.stdout.write('{"status":"ok"}\\n');
+} else {
+  process.stderr.write('sidecar failed\\n');
+  process.exit(42);
+}
 `,
     );
     makeBin(
       dir,
       'claude',
-      `#!/usr/bin/env bash
-cat >/dev/null
-printf 'haiku after sidecar failure\\n'
+      `for await (const _chunk of process.stdin) {}
+process.stdout.write('haiku after sidecar failure\\n');
 `,
     );
 
@@ -172,7 +167,7 @@ printf 'haiku after sidecar failure\\n'
       projectPath: '/repo',
       env: {
         ...process.env,
-        PATH: `${dir}:${process.env.PATH ?? ''}`,
+        PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
         THROUGHLINE_CODEX_SIDECAR_BIN: sidecar,
       },
     });
@@ -205,10 +200,12 @@ test('summarizeToL1: codex-primary uses Codex CLI backend', () => {
     const codex = makeBin(
       dir,
       'codex',
-      `#!/usr/bin/env bash
-printf '%s\\n' "$@" > "${argsFile}"
-cat > "${stdinFile}"
-printf 'codex summary\\n'
+      `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(argsFile)}, process.argv.slice(2).join('\\n') + '\\n');
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+writeFileSync(${JSON.stringify(stdinFile)}, input);
+process.stdout.write('codex summary\\n');
 `,
     );
 
@@ -250,16 +247,14 @@ test('summarizeToL1: codex-primary failure is not hidden by fallback', () => {
     const codex = makeBin(
       dir,
       'codex',
-      `#!/usr/bin/env bash
-printf 'codex failed\\n' >&2
-exit 42
+      `process.stderr.write('codex failed\\n');
+process.exit(42);
 `,
     );
     makeBin(
       dir,
       'claude',
-      `#!/usr/bin/env bash
-printf 'should not run\\n'
+      `process.stdout.write('should not run\\n');
 `,
     );
 
@@ -270,7 +265,7 @@ printf 'should not run\\n'
           projectPath: dir,
           env: {
             ...process.env,
-            PATH: `${dir}:${process.env.PATH ?? ''}`,
+            PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
             THROUGHLINE_CODEX_CLI_BIN: codex,
           },
         }),

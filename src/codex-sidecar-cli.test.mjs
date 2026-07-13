@@ -14,6 +14,7 @@ function makeSidecarFixture(dir, body) {
   if (process.platform === 'win32') {
     const bin = join(dir, 'fake-sidecar.cmd');
     writeFileSync(bin, `@echo off\r\n${JSON.stringify(process.execPath)} ${JSON.stringify(script)} %*\r\n`);
+    writeFileSync(join(dir, 'fake-sidecar.ps1'), `& ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} @args\nexit $LASTEXITCODE\n`);
     return bin;
   }
   const bin = join(dir, 'fake-sidecar');
