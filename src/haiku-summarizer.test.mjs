@@ -20,6 +20,13 @@ function makeBin(dir, name, body) {
   return command;
 }
 
+function envWithPrependedPath(dir) {
+  const env = { ...process.env };
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
+  env[pathKey] = `${dir}${delimiter}${env[pathKey] ?? ''}`;
+  return env;
+}
+
 test('summarizeToL1: returns empty fallback for blank input', () => {
   const result = summarizeToL1('', {
     projectPath: '/repo',
@@ -125,8 +132,7 @@ process.stdout.write('haiku summary\\n');
       hostMode: 'claude-primary',
       projectPath: '/repo',
       env: {
-        ...process.env,
-        PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
+        ...envWithPrependedPath(dir),
         THROUGHLINE_CODEX_SIDECAR_DISABLED: '1',
       },
     });
@@ -166,8 +172,7 @@ process.stdout.write('haiku after sidecar failure\\n');
       hostMode: 'claude-primary',
       projectPath: '/repo',
       env: {
-        ...process.env,
-        PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
+        ...envWithPrependedPath(dir),
         THROUGHLINE_CODEX_SIDECAR_BIN: sidecar,
       },
     });
@@ -264,8 +269,7 @@ process.exit(42);
           hostMode: 'codex-primary',
           projectPath: dir,
           env: {
-            ...process.env,
-            PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
+            ...envWithPrependedPath(dir),
             THROUGHLINE_CODEX_CLI_BIN: codex,
           },
         }),
