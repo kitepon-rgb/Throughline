@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: implementation complete; v0.6.2 release pending
+Status: complete; v0.6.2 published 2026-07-13
 
 This plan is the implementation TODO for Throughline's product-owned, local
 runtime error projection. It implements the cross-repository contract in
@@ -47,6 +47,6 @@ existing transcript, handoff, or SQLite memory contracts.
 
 - [x] Bump the package and release-facing documentation to `0.6.2` without moving an existing tag.
 - [x] Run the full test suite, pack inspection, secret/path scan, and temporary-prefix install smoke.
-- [ ] Push the release commit and require the public CI gate to pass.
-- [ ] After the owner H gate, publish `throughline@0.6.2`, create tag/release, and verify npm `latest` plus a registry-derived global install.
-- [ ] Confirm `throughline factory-diagnostics --json` and the runtime-error snapshot/ack commands from the published package, then record the public SHA and results in the changelog and canonical docs.
+- [x] Push the release commit and require the public CI gate to pass (`e6ce6e3`, CI `29238704750`).
+- [x] After the owner H gate, publish `throughline@0.6.2`, create tag/release, and verify npm `latest` plus a registry-derived isolated install. Global installation is deferred to the dotagents Mac rollout wave.
+- [x] Confirm `throughline factory-diagnostics --json` and the runtime-error snapshot from the published package, then record the public SHA and results in the changelog and canonical docs.

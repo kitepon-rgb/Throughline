@@ -716,10 +716,10 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**v0.6.2 は release candidate（公開待ち）です。** factory diagnostics と local
-runtime error aggregate は collection が既定OFFで、canonical dotagents config の
+**v0.6.2 は2026-07-13に公開済みです。** factory diagnostics と local runtime error
+aggregate は collection が既定OFFで、canonical dotagents config の
 `collection.enabled: true` を明示した場合だけ収集します。いずれも network I/O は
-行いません。npm公開、tag、CI、registry由来installの確認は未完了です。
+行いません。npm `latest`、tag / GitHub Release、公開CI、registry由来installを確認済みです。
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |

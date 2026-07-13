@@ -10,7 +10,7 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
-## [0.6.2] — release candidate (pending)
+## [0.6.2] — 2026-07-13
 
 ### Added
 
@@ -22,9 +22,9 @@ shipped to npm but were not individually tagged on GitHub.
   owner-private atomic store with count, first/last seen, resolve/reopen,
   monotonic cursor/ack, retention that preserves unacknowledged records, and
   bounded `throughline runtime-errors ... --json` snapshot/diagnostics APIs.
-- Release candidate only: collection remains disabled by default and the local
-  store sends no network traffic. Publication, tag, CI, and registry-install
-  verification are pending.
+- Collection remains disabled by default and the local store sends no network
+  traffic. Public commit `e6ce6e3`, CI `29238704750`, npm `latest`, tag / GitHub
+  Release, and a registry-derived isolated install were verified.
 - Raised the Node.js floor to 22.13, where `node:sqlite` is available without
   an experimental command-line flag; CI now exercises that exact minimum.
 

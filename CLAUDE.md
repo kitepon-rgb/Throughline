@@ -11,10 +11,11 @@ exact session/projectとfreshな完了L2 pairだけをbounded JSONで返し、DB
 公開commit `089235f`のCIは6/6 green、npm `latest`、tag / GitHub Release、このMacのregistry由来global
 installを0.6.1へ同期した。Spotter側の送信はproject opt-inであり、Throughline単独では外部送信しない。
 
-**v0.6.2 release candidate（公開待ち）**: factory diagnostics と opt-in の
-local runtime error store を公開候補として準備した。collection は canonical
-dotagents config の `collection.enabled: true` が明示された場合だけ有効で、既定OFF、
-network I/O は行わない。npm公開、tag、CI、registry由来installの確認は未実施である。
+**v0.6.2（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
+error store を追加した。collection は canonical dotagents config の
+`collection.enabled: true` が明示された場合だけ有効で、既定OFF、network I/O は行わない。
+公開commit `e6ce6e3`、CI `29238704750`、npm `latest`、tag / GitHub Release、registry由来の
+隔離installから `--version`・factory diagnostics・runtime snapshotまで確認済み。
 
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 
