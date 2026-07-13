@@ -716,6 +716,11 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
+**v0.6.2 は release candidate（公開待ち）です。** factory diagnostics と local
+runtime error aggregate は collection が既定OFFで、canonical dotagents config の
+`collection.enabled: true` を明示した場合だけ収集します。いずれも network I/O は
+行いません。npm公開、tag、CI、registry由来installの確認は未完了です。
+
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
 | `throughline install`                          | Register Claude user hooks/slash commands, the global Codex UserPromptSubmit/PostToolUse/Stop hooks, the global `$throughline` Codex skill, and the current VS Code monitor task when applicable |

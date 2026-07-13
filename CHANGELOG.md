@@ -10,6 +10,8 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.6.2] — release candidate (pending)
+
 ### Added
 
 - Added an opt-in, local-only runtime error aggregate for BugHub factory
@@ -20,6 +22,9 @@ shipped to npm but were not individually tagged on GitHub.
   owner-private atomic store with count, first/last seen, resolve/reopen,
   monotonic cursor/ack, retention that preserves unacknowledged records, and
   bounded `throughline runtime-errors ... --json` snapshot/diagnostics APIs.
+- Release candidate only: collection remains disabled by default and the local
+  store sends no network traffic. Publication, tag, CI, and registry-install
+  verification are pending.
 - Raised the Node.js floor to 22.13, where `node:sqlite` is available without
   an experimental command-line flag; CI now exercises that exact minimum.
 
@@ -983,6 +988,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.1...v0.6.2
 [0.3.22]: https://github.com/kitepon-rgb/Throughline/releases/tag/v0.3.22
 [0.3.21]: https://github.com/kitepon-rgb/Throughline/compare/v0.3.19...v0.3.21
 [0.3.20]: https://github.com/kitepon-rgb/Throughline/compare/v0.3.19...v0.3.20

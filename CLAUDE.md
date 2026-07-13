@@ -11,6 +11,11 @@ exact session/projectとfreshな完了L2 pairだけをbounded JSONで返し、DB
 公開commit `089235f`のCIは6/6 green、npm `latest`、tag / GitHub Release、このMacのregistry由来global
 installを0.6.1へ同期した。Spotter側の送信はproject opt-inであり、Throughline単独では外部送信しない。
 
+**v0.6.2 release candidate（公開待ち）**: factory diagnostics と opt-in の
+local runtime error store を公開候補として準備した。collection は canonical
+dotagents config の `collection.enabled: true` が明示された場合だけ有効で、既定OFF、
+network I/O は行わない。npm公開、tag、CI、registry由来installの確認は未実施である。
+
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）

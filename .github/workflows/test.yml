@@ -31,23 +31,8 @@ jobs:
           node --version
           npm --version
 
-      # turn-processor.test.mjs is intentionally excluded — it has a known
-      # 10-second hang because main() blocks on stdin (the production hook
-      # entry point). Individual cases inside it pass; running the file
-      # itself would only stall CI without adding signal. See CLAUDE.md.
       - name: Run unit tests
-        run: |
-          node --test \
-            src/baton.test.mjs \
-            src/session-merger.test.mjs \
-            src/state-file.test.mjs \
-            src/token-monitor.test.mjs \
-            src/transcript-reader.test.mjs \
-            src/transcript-usage.test.mjs \
-            src/vscode-task.test.mjs \
-            src/terminal-size.test.mjs \
-            src/cli/doctor.test.mjs \
-            src/cli/install.test.mjs
+        run: npm test
         shell: bash
 
       - name: Verify CLI smoke (--version)
