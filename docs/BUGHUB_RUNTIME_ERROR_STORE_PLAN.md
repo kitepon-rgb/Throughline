@@ -1,6 +1,6 @@
 # BugHub runtime error store plan
 
-Status: complete; v0.6.2 published 2026-07-13
+Status: v0.6.2 complete; v0.6.3 Windows bounded-observer hardening in progress
 
 This plan is the implementation TODO for Throughline's product-owned, local
 runtime error projection. It implements the cross-repository contract in
@@ -42,6 +42,24 @@ existing transcript, handoff, or SQLite memory contracts.
       codes/templates and no duplicate lower-layer observation.
 - [x] Run the complete test suite and update product documentation.
 - [x] Commit and push this repository independently.
+
+### v0.6.3 Windows bounded-observer hardening
+
+- [x] Reproduce the public-CI failure where a cold Windows Node 24 observer
+      exceeded the five-second product deadline while starting several
+      PowerShell ACL apply/verify processes.
+- [x] Characterize the current-SID-only directory, SQLite lock, existing
+      store, unique temporary file, atomic replacement, and five-second
+      no-fallback contract before changing the implementation.
+- [x] Bound one mutation to the minimum distinct ACL transitions: apply plus
+      read-back for a private directory and each newly created file, and one
+      read-before-use verification for an existing lock/store. Carry a private
+      in-process directory capability so unchanged paths are not rechecked by
+      another PowerShell process in the same mutation.
+- [x] Keep malformed/symlink/ACL-drift state fail-loud, leave no late child or
+      partial final store after failure, and do not extend the product deadline.
+- [ ] Run focused Windows matrix tests, the complete suite, pack inspection,
+      registry-derived smoke, and the public Node 22/24 CI matrix before publish.
 
 ## Release wave
 

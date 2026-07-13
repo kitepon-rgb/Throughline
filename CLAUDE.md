@@ -22,6 +22,9 @@ error store を追加した。collection は canonical dotagents config の
 hooks と Codex connector を `ready` とし、Codex-only snapshot の overall 判定から未検査の
 Claude connector を除外する。Claude connector 自体は従来どおり `unverified` と明示し、
 read-only・privacy・exit 契約は変更しない。
+Windows runtime error observer は同一 mutation 内の重複した PowerShell ACL 検証を除き、
+初回3回・継続4回の distinct transition だけに限定する。5秒上限、既存fileの使用前検証、
+current-SID-only ACL、ACL済みtempからのatomic rename、失敗時の旧store保持は維持する。
 
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 

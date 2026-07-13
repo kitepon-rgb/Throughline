@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import childProcess, { spawn } from 'node:child_process';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -16,7 +16,7 @@ import {
   reopenRuntimeError,
   resolveRuntimeError,
 } from './runtime-error-store.mjs';
-import { applyWindowsPrivateAcl } from './windows-acl-test-helper.mjs';
+import { applyWindowsPrivateAcl, verifyWindowsPrivateAcl } from './windows-acl-test-helper.mjs';
 
 const TEST_PLATFORM = process.platform === 'win32' ? 'win32' : 'darwin';
 
@@ -81,6 +81,50 @@ test('runtime error store: Windows native uses the canonical LocalAppData paths'
     defaultRuntimeErrorStorePath(env),
     join(env.LOCALAPPDATA, 'throughline', 'runtime-errors.json'),
   );
+});
+
+test('runtime error store: one Windows mutation spends ACL processes only on distinct state transitions', (t) => {
+  const box = sandbox();
+  box.env.OS = 'Windows_NT';
+  enableCollection(box);
+  const calls = [];
+  t.mock.method(childProcess, 'spawnSync', (command, args, options) => {
+    calls.push({ command, args, options });
+    return { status: 0, signal: null, error: undefined };
+  });
+  const options = { env: box.env, configPath: box.configPath, storePath: box.storePath };
+
+  assert.equal(observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, options).status, 'recorded');
+  assert.equal(calls.length, 3, 'new directory, lock, and store each require one apply+verify process');
+  assert.ok(calls.every((call) => call.command === 'powershell.exe'));
+  calls.length = 0;
+
+  assert.equal(observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, options).status, 'recorded');
+  assert.equal(calls.length, 4, 'directory apply, existing lock/store verify, and replacement store apply are distinct');
+  assert.ok(calls.every((call) => call.options.timeout === 3_000));
+});
+
+test('runtime error store: Windows temporary ACL failure leaves the previous atomic store intact', (t) => {
+  const box = sandbox();
+  box.env.OS = 'Windows_NT';
+  enableCollection(box);
+  let calls = 0;
+  let failAt = Number.POSITIVE_INFINITY;
+  t.mock.method(childProcess, 'spawnSync', () => {
+    calls += 1;
+    return { status: calls === failAt ? 1 : 0, signal: null, error: undefined };
+  });
+  const options = { env: box.env, configPath: box.configPath, storePath: box.storePath };
+
+  observeRuntimeError({ code: 'HOOK_CODEX_FAILED', now: '2026-07-13T00:00:00.000Z' }, options);
+  const before = readFileSync(box.storePath, 'utf8');
+  failAt = calls + 4;
+  assert.throws(
+    () => observeRuntimeError({ code: 'HOOK_CODEX_FAILED', now: '2026-07-13T00:01:00.000Z' }, options),
+    /Windows owner-only ACL verification failed/,
+  );
+  assert.equal(readFileSync(box.storePath, 'utf8'), before);
+  assert.deepEqual(readdirSync(dirname(box.storePath)).filter((name) => name.endsWith('.tmp')), []);
 });
 
 test('runtime error store: reporting config and credentials are ignored and no network API is accepted', () => {
@@ -235,6 +279,10 @@ test('runtime error store: atomic private store has owner-only modes and bounded
   if (process.platform !== 'win32') {
     assert.equal(statSync(dirname(box.storePath)).mode & 0o777, 0o700);
     assert.equal(statSync(box.storePath).mode & 0o777, 0o600);
+  } else {
+    verifyWindowsPrivateAcl(dirname(box.storePath), true);
+    verifyWindowsPrivateAcl(`${box.storePath}.lock.sqlite`);
+    verifyWindowsPrivateAcl(box.storePath);
   }
   assert.doesNotThrow(() => JSON.parse(readFileSync(box.storePath, 'utf8')));
 

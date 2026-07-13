@@ -9,7 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import childProcess from 'node:child_process';
 import { arch as hostArch, homedir, platform as hostPlatform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -27,6 +27,7 @@ const BEST_EFFORT_TIMEOUT_MS = 750;
 const WINDOWS_BEST_EFFORT_TIMEOUT_MS = 5_000;
 const WINDOWS_ACL_TIMEOUT_MS = 3_000;
 const RESOLUTION_REASONS = new Set(['manual', 'recovered']);
+const PRIVATE_DIRECTORY_CAPABILITY = Symbol('throughline.private-directory');
 
 const DEFINITIONS = Object.freeze({
   HOOK_SESSION_START_FAILED: Object.freeze({
@@ -86,13 +87,13 @@ export function observeRuntimeError(input, options = {}) {
   if (!definition) throw new TypeError('未登録の runtime error code です');
   if (!collectionEnabled(options)) return { status: 'disabled' };
 
-  return withStoreLock(options, () => {
+  return withStoreLock(options, (privateDirectory) => {
     const now = normalizeTimestamp(input.now);
     const version = normalizeVersion(options.version ?? PACKAGE_VERSION);
     const fingerprint = createHash('sha256')
       .update(['throughline', definition.component, input.code, definition.template].join('\0'))
       .digest('hex');
-    const store = readStore(options);
+    const store = readStore(options, { privateDirectory });
     const existing = store.records.find((record) => record.fingerprint === fingerprint);
     const sequence = nextSequence(store);
     if (existing) {
@@ -115,7 +116,7 @@ export function observeRuntimeError(input, options = {}) {
         status: 'open', resolved_at: null, reason_code: null, sequence,
       });
     }
-    writeStore(store, options);
+    writeStore(store, options, privateDirectory);
     return { status: 'recorded', fingerprint, sequence };
   });
 }
@@ -124,8 +125,8 @@ export function resolveRuntimeError(fingerprint, options = {}) {
   assertExactOptions(options, ['env', 'configPath', 'storePath', 'now', 'reasonCode']);
   assertFingerprint(fingerprint);
   if (!collectionEnabled(options)) return { status: 'disabled' };
-  return withStoreLock(options, () => {
-    const store = readStore(options);
+  return withStoreLock(options, (privateDirectory) => {
+    const store = readStore(options, { privateDirectory });
     const record = store.records.find((candidate) => candidate.fingerprint === fingerprint);
     if (!record) return { status: 'not_found' };
     if (record.status === 'resolved') return { status: 'resolved', sequence: record.sequence };
@@ -135,7 +136,7 @@ export function resolveRuntimeError(fingerprint, options = {}) {
     record.resolved_at = normalizeTimestamp(options.now);
     record.reason_code = reasonCode;
     record.sequence = nextSequence(store);
-    writeStore(store, options);
+    writeStore(store, options, privateDirectory);
     return { status: 'resolved', sequence: record.sequence };
   });
 }
@@ -144,8 +145,8 @@ export function reopenRuntimeError(fingerprint, options = {}) {
   assertExactOptions(options, ['env', 'configPath', 'storePath']);
   assertFingerprint(fingerprint);
   if (!collectionEnabled(options)) return { status: 'disabled' };
-  return withStoreLock(options, () => {
-    const store = readStore(options);
+  return withStoreLock(options, (privateDirectory) => {
+    const store = readStore(options, { privateDirectory });
     const record = store.records.find((candidate) => candidate.fingerprint === fingerprint);
     if (!record) return { status: 'not_found' };
     if (record.status === 'open') return { status: 'open', sequence: record.sequence };
@@ -153,7 +154,7 @@ export function reopenRuntimeError(fingerprint, options = {}) {
     record.resolved_at = null;
     record.reason_code = null;
     record.sequence = nextSequence(store);
-    writeStore(store, options);
+    writeStore(store, options, privateDirectory);
     return { status: 'open', sequence: record.sequence };
   });
 }
@@ -161,12 +162,12 @@ export function reopenRuntimeError(fingerprint, options = {}) {
 export function acknowledgeRuntimeErrors(cursor, options = {}) {
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new TypeError('cursor は非負の整数が必要です');
   if (!collectionEnabled(options)) return { status: 'disabled', acknowledgedThrough: 0 };
-  return withStoreLock(options, () => {
-    const store = readStore(options);
+  return withStoreLock(options, (privateDirectory) => {
+    const store = readStore(options, { privateDirectory });
     const highWatermark = store.next_sequence - 1;
     if (cursor > highWatermark) throw new RangeError('cursor がstore high watermarkを超えています');
     store.acknowledged_through = Math.max(store.acknowledged_through, cursor);
-    writeStore(store, options);
+    writeStore(store, options, privateDirectory);
     return { status: 'acknowledged', acknowledgedThrough: store.acknowledged_through };
   });
 }
@@ -183,8 +184,8 @@ export function compactRuntimeErrors({
   }
   const options = { env, configPath, storePath };
   if (!collectionEnabled(options)) return { status: 'disabled', removed: 0 };
-  return withStoreLock(options, () => {
-    const store = readStore(options);
+  return withStoreLock(options, (privateDirectory) => {
+    const store = readStore(options, { privateDirectory });
     const cutoff = Date.parse(normalizeTimestamp(now)) - retentionMs;
     const before = store.records.length;
     store.records = store.records.filter((record) => {
@@ -192,7 +193,7 @@ export function compactRuntimeErrors({
       const expired = Date.parse(record.last_seen) <= cutoff;
       return !(acknowledged && record.status === 'resolved' && expired);
     });
-    writeStore(store, options);
+    writeStore(store, options, privateDirectory);
     return { status: 'compacted', removed: before - store.records.length };
   });
 }
@@ -256,7 +257,7 @@ export function getRuntimeErrorDiagnostics(options = {}) {
 export function recordRuntimeErrorBestEffort(code, options = {}) {
   const { stderr = process.stderr, ...storeOptions } = options;
   try {
-    const child = spawnSync(process.execPath, [fileURLToPath(new URL('./runtime-error-observer.mjs', import.meta.url)), code], {
+    const child = childProcess.spawnSync(process.execPath, [fileURLToPath(new URL('./runtime-error-observer.mjs', import.meta.url)), code], {
       env: storeOptions.env ?? process.env,
       encoding: 'utf8',
       stdio: 'ignore',
@@ -288,13 +289,13 @@ function emptyStore() {
   };
 }
 
-function readStore(options, { missingIsEmpty = true } = {}) {
+function readStore(options, { missingIsEmpty = true, privateDirectory } = {}) {
   const path = options.storePath || defaultRuntimeErrorStorePath(options.env);
   let parsed;
   try {
     const info = lstatSync(path);
     if (!info.isFile() || info.isSymbolicLink()) throw new Error('runtime error store path unsafe');
-    assertPrivateStoreDirectory(dirname(path), options.env);
+    assertPrivateDirectoryCapability(privateDirectory, dirname(path), options.env);
     assertPrivateStoreFile(info, options.env, path);
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch (error) {
@@ -305,19 +306,28 @@ function readStore(options, { missingIsEmpty = true } = {}) {
   return parsed;
 }
 
-function writeStore(store, options) {
+function writeStore(store, options, privateDirectory) {
   validateStore(store);
   const path = options.storePath || defaultRuntimeErrorStorePath(options.env);
   const directory = dirname(path);
-  ensurePrivateStoreDirectory(directory, options.env);
+  assertPrivateDirectoryCapability(privateDirectory, directory, options.env);
   const temporary = join(directory, `.runtime-errors.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
   try {
     writeFileSync(temporary, `${JSON.stringify(store)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    if (!isWindows(options.env)) chmodSync(temporary, 0o600);
+    if (!isWindows(options.env)) {
+      chmodSync(temporary, 0o600);
+    } else {
+      // The apply script performs an exact read-back verification. Repeating
+      // the same PowerShell verification here only consumes the bounded hook
+      // observer deadline without protecting a new state transition.
+      applyAndVerifyWindowsAcl(temporary, false);
+      assertPrivateStoreFileShape(lstatSync(temporary));
+    }
+    // ACL/mode is complete before replacement, so an ACL failure leaves the
+    // previous final store intact. Rename preserves the prepared file ACL.
     renameSync(temporary, path);
-    if (!isWindows(options.env)) chmodSync(path, 0o600);
-    else applyAndVerifyWindowsAcl(path, false);
-    assertPrivateStoreFile(lstatSync(path), options.env, path);
+    if (!isWindows(options.env)) assertPrivateStoreFile(lstatSync(path), options.env, path);
+    else assertPrivateStoreFileShape(lstatSync(path));
   } finally {
     rmSync(temporary, { force: true });
   }
@@ -339,15 +349,15 @@ function withStoreLock(options, operation) {
     if (isWindows(options.env)) applyAndVerifyWindowsAcl(lockPath, false);
     else chmodSync(lockPath, 0o600);
   }
-  assertPrivateStoreFile(lstatSync(lockPath), options.env, lockPath);
+  if (created && isWindows(options.env)) assertPrivateStoreFileShape(lstatSync(lockPath));
+  else assertPrivateStoreFile(lstatSync(lockPath), options.env, lockPath);
   const database = new DatabaseSync(lockPath);
   let active = false;
   try {
-    assertPrivateStoreFile(lstatSync(lockPath), options.env, lockPath);
     database.exec('PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL');
     database.exec('BEGIN IMMEDIATE');
     active = true;
-    const result = operation();
+    const result = operation(privateDirectoryCapability(directory, options.env));
     database.exec('COMMIT');
     active = false;
     return result;
@@ -363,10 +373,42 @@ function ensurePrivateStoreDirectory(directory, env = process.env) {
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('runtime error store directory unsafe');
   if (isWindows(env)) {
     applyAndVerifyWindowsAcl(directory, true);
+    assertPrivateStoreDirectoryShape(lstatSync(directory));
   } else {
     chmodSync(directory, 0o700);
+    assertPrivateStoreDirectory(directory, env);
   }
-  assertPrivateStoreDirectory(directory, env);
+}
+
+function privateDirectoryCapability(directory, env) {
+  return Object.freeze({
+    directory,
+    windows: isWindows(env),
+    [PRIVATE_DIRECTORY_CAPABILITY]: true,
+  });
+}
+
+function assertPrivateDirectoryCapability(capability, directory, env) {
+  if (!capability || capability[PRIVATE_DIRECTORY_CAPABILITY] !== true ||
+    capability.directory !== directory || capability.windows !== isWindows(env)) {
+    // Read-only callers do not hold a mutation capability and still perform
+    // the complete ACL/mode verification immediately before reading.
+    assertPrivateStoreDirectory(directory, env);
+    return;
+  }
+  assertPrivateStoreDirectoryShape(lstatSync(directory));
+}
+
+function assertPrivateStoreDirectoryShape(info) {
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error('runtime error store directory unsafe');
+  }
+}
+
+function assertPrivateStoreFileShape(info) {
+  if (!info.isFile() || info.isSymbolicLink()) {
+    throw new Error('runtime error store path unsafe');
+  }
 }
 
 function isWindows(env = process.env) {
@@ -496,13 +538,13 @@ function isCanonicalTimestamp(value) {
 
 function assertPrivateStoreDirectory(directory, env = process.env) {
   const info = lstatSync(directory);
-  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('runtime error store directory unsafe');
+  assertPrivateStoreDirectoryShape(info);
   if (isWindows(env)) verifyWindowsAcl(directory, true);
   else assertPosixOwnerMode(info, 0o700);
 }
 
 function assertPrivateStoreFile(info, env = process.env, path) {
-  if (!info.isFile() || info.isSymbolicLink()) throw new Error('runtime error store path unsafe');
+  assertPrivateStoreFileShape(info);
   if (isWindows(env)) verifyWindowsAcl(path, false);
   else assertPosixOwnerMode(info, 0o600);
 }
@@ -521,7 +563,7 @@ function verifyWindowsAcl(path, directory) {
 }
 
 function runWindowsAclScript(path, directory, script) {
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+  const result = childProcess.spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     env: { ...process.env, FACTORY_ACL_PATH: path, FACTORY_ACL_DIRECTORY: directory ? '1' : '0' },
     stdio: 'ignore', timeout: WINDOWS_ACL_TIMEOUT_MS, windowsHide: true,
   });

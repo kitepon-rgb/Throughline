@@ -18,6 +18,11 @@ shipped to npm but were not individually tagged on GitHub.
   Claude connector as a blocking `unverified` state. The Claude connector
   remains explicitly `unverified`; diagnostic output remains read-only and
   privacy-safe.
+- Windows runtime-error mutations no longer repeat identical PowerShell ACL
+  verification inside one bounded observation. Existing lock/store files are
+  still verified before use, new temporary files receive an exact
+  current-SID-only ACL before atomic replacement, and the five-second hook
+  observer deadline is unchanged.
 
 ## [0.6.2] — 2026-07-13
 
