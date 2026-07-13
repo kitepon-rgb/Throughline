@@ -532,8 +532,8 @@ const WINDOWS_ACL_VERIFY_SCRIPT = String.raw`
 $p=$env:FACTORY_ACL_PATH; $isDir=$env:FACTORY_ACL_DIRECTORY -eq '1'; $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $acl=if($isDir){[System.IO.Directory]::GetAccessControl($p)}else{[System.IO.File]::GetAccessControl($p)}
 $owner=$acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
-if($owner -ne $sid){exit 41}; $rules=@($acl.Access); if($rules.Count -ne 1){exit 42}
-$r=$rules[0]; if($r.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -ne $sid -or $r.AccessControlType -ne 'Allow' -or ($r.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl){exit 43}
+if($owner -ne $sid){exit 41}; $rules=@($acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])); if($rules.Count -ne 1){exit 42}
+$r=$rules[0]; if($r.IdentityReference.Value -ne $sid -or $r.AccessControlType -ne 'Allow' -or $r.IsInherited -or ($r.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl){exit 43}
 `;
 
 const WINDOWS_ACL_APPLY_SCRIPT = String.raw`
