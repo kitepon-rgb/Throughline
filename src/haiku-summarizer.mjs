@@ -36,7 +36,6 @@
  *   2. それでも失敗したら L2 全文を L1 に入れる（情報欠損ゼロ）
  */
 
-import { spawnSync } from 'child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir, tmpdir } from 'os';
@@ -45,6 +44,7 @@ import {
   CODEX_SIDECAR_STATUS,
   runCodexSidecarCommand,
 } from './codex-sidecar.mjs';
+import { spawnPortableSync } from './portable-spawn-sync.mjs';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 const MAX_RETRIES = 2;
@@ -206,11 +206,10 @@ function summarizeWithHaiku(l2Text, prompt, env) {
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const result = spawnSync('claude', ['-p', '--model', MODEL, prompt], {
+      const result = spawnPortableSync('claude', ['-p', '--model', MODEL, prompt], {
         input: l2Text,
         encoding: 'utf8',
         timeout: TIMEOUT_MS,
-        shell: process.platform === 'win32', // Windows は claude.cmd ラッパー
         env: childEnv,
         cwd: HAIKU_WORKDIR, // ← これが再帰防止の本丸
       });
@@ -247,7 +246,7 @@ function summarizeWithCodexCli(l2Text, { projectPath, env }) {
   const command = env.THROUGHLINE_CODEX_CLI_BIN ?? 'codex';
   const prompt = buildCodexPrompt(l2Text);
   const childEnv = { ...env, [CODEX_SUMMARIZER_GUARD_ENV]: '1' };
-  const result = spawnSync(
+  const result = spawnPortableSync(
     command,
     [
       'exec',
@@ -265,7 +264,6 @@ function summarizeWithCodexCli(l2Text, { projectPath, env }) {
       input: l2Text,
       encoding: 'utf8',
       timeout: CODEX_CLI_TIMEOUT_MS,
-      shell: process.platform === 'win32',
       env: childEnv,
       cwd: projectPath,
     },

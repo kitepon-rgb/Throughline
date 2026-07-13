@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnPortableSync } from './portable-spawn-sync.mjs';
 
 export const CODEX_SIDECAR_WORKFLOWS = Object.freeze([
   'review',
@@ -27,10 +27,7 @@ export function shouldShellWrapSidecarCommand(platform = process.platform) {
 }
 
 export function runCodexSidecarCommand(command, args, options = {}) {
-  return spawnSync(command, args, {
-    ...options,
-    shell: shouldShellWrapSidecarCommand(),
-  });
+  return spawnPortableSync(command, args, options);
 }
 
 export function inferWorkflowForPreset(preset) {
