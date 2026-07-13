@@ -58,6 +58,9 @@ existing transcript, handoff, or SQLite memory contracts.
       another PowerShell process in the same mutation.
 - [x] Keep malformed/symlink/ACL-drift state fail-loud, leave no late child or
       partial final store after failure, and do not extend the product deadline.
+- [x] Keep the production 3-second ACL and 5-second observer bounds unchanged,
+      but serialize Windows CI test files so parallel PowerShell fixture load
+      cannot consume those bounds before the contract under test runs.
 - [ ] Run focused Windows matrix tests, the complete suite, pack inspection,
       registry-derived smoke, and the public Node 22/24 CI matrix before publish.
 

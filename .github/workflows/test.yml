@@ -32,7 +32,12 @@ jobs:
           npm --version
 
       - name: Run unit tests
-        run: npm test
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            npm test -- --test-concurrency=1
+          else
+            npm test
+          fi
         shell: bash
 
       - name: Verify CLI smoke (--version)
