@@ -1,7 +1,10 @@
 // Keep tests hermetic when they are run from inside a live Codex session.
 // Individual tests that need these values set them explicitly in child env.
-delete process.env.THROUGHLINE_CODEX_THREAD_ID;
-delete process.env.CODEX_THREAD_ID;
+if (process.env.THROUGHLINE_TEST_ENV_ACTIVE !== '1') {
+  delete process.env.THROUGHLINE_CODEX_THREAD_ID;
+  delete process.env.CODEX_THREAD_ID;
+  process.env.THROUGHLINE_TEST_ENV_ACTIVE = '1';
+}
 
 // node:sqlite emits an ExperimentalWarning on Node 22.  Several CLI tests
 // intentionally assert their child process stderr contract, so suppress the
