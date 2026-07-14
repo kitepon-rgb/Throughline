@@ -103,7 +103,7 @@ function codexTurnEntry(turn, threadId, rolloutPath) {
   const assistant = rows.find((row) => row.role === 'assistant');
   if (!user || !assistant) return [];
   return [{
-    host: 'codex', thread_sha256: sha256(threadId), origin_sha256: sha256(threadId),
+    host: 'codex', thread_sha256: sha256(threadId), origin_sha256: hashAuditorBody(sessionId),
     user_sha256: hashAuditorBody(user.text), assistant_sha256: hashAuditorBody(assistant.text),
     completed_at: turn.completedAt, source_sha256: sha256(`${rolloutPath}\0${turn.number}`),
   }];

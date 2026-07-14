@@ -170,6 +170,8 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
   - commit `022c0b8`。completed chainのorigin/user/assistant SHA-256をDBのcompleted pairへ順序付きで
     全件照合し、一件でも不足・不一致なら本文ゼロの`projection_pending`とする。schema/project/I/Oは
     hard failure、本文上限でもturn recordとdigestを保持し、raw session identityをpublic resultへ出さない。
+- [x] Codex feedの`origin_sha256`をDB captureの`codex:<thread_id>` identityへ揃え、実DB fixtureで
+  `projection_pending`へ固定されないことを回帰化する。
 - [ ] bounded snapshot、delta pagination、page token検証を実装する。
 
 ### Phase 2: CLI read / wait
