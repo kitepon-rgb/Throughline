@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { decodeObserverCursor, encodeObserverCursor, resolveObserverTurnFeed } from './observer-turn-feed.mjs';
+import { decodeObserverCursor, encodeObserverCursor, readObserverTurnPage, resolveObserverTurnFeed } from './observer-turn-feed.mjs';
 import { writeCompletedTurnReceipt } from './completed-turn-receipts.mjs';
 import { hashAuditorBody } from './body-digest.mjs';
 
@@ -23,6 +23,30 @@ function writeRollout(home, project, id, events) {
 }
 function event(type, message, timestamp) { return { type: 'event_msg', timestamp, payload: { type, ...(message === undefined ? {} : { message }) } }; }
 function completeEvents(at = '2026-07-15T00:01:00.000Z') { return [event('user_message', 'request', '2026-07-15T00:00:01.000Z'), event('task_started', undefined, '2026-07-15T00:00:02.000Z'), event('agent_message', 'answer', '2026-07-15T00:00:03.000Z'), event('task_complete', undefined, at)]; }
+function createProjectionDb(path, project, sessionId) {
+  const db = new DatabaseSync(path);
+  db.exec(`PRAGMA user_version = 8;
+    CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
+    CREATE TABLE bodies (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, origin_session_id TEXT NOT NULL, turn_number INTEGER NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);`);
+  db.prepare('INSERT INTO sessions (session_id, project_path) VALUES (?, ?)').run(sessionId, project);
+  return db;
+}
+function addClaudeTurn(box, db, { sessionId = 'claude-session', origin, turn, user, assistant, at }) {
+  writeCompletedTurnReceipt({
+    projectPath: box.project, targetSessionId: sessionId, originSessionId: origin,
+    userBody: user, assistantBody: assistant, completedAt: at,
+  }, box.receiptOptions);
+  if (!db) return;
+  const insert = db.prepare('INSERT INTO bodies (session_id, origin_session_id, turn_number, role, text, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+  insert.run(sessionId, origin, turn, 'user', user, at * 2);
+  insert.run(sessionId, origin, turn, 'assistant', assistant, at * 2 + 1);
+}
+function rewritePageToken(token, mutate) {
+  const prefix = 'tlp1.';
+  const value = JSON.parse(Buffer.from(token.slice(prefix.length), 'base64url').toString('utf8'));
+  mutate(value);
+  return `${prefix}${Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')}`;
+}
 
 test('observer feed: task_complete前とsynthetic continuationはchainを進めない', () => {
   const box = fixture();
@@ -145,6 +169,128 @@ test('observer feed: DB projection is all-or-nothing and never exposes raw sessi
     assert.equal(fresh.turns.length, 1);
     assert.equal(fresh.turns[0].truncated, true);
     assert.doesNotMatch(JSON.stringify(fresh), /private-session|private-origin|captured user|captured answer/);
+  } finally {
+    db?.close();
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test('observer read: snapshot returns only the latest bounded DB-projected turns without pagination', () => {
+  const box = fixture();
+  const dbPath = join(box.root, 'throughline.db');
+  let db;
+  try {
+    db = createProjectionDb(dbPath, box.project, 'private-claude-session');
+    for (let turn = 1; turn <= 3; turn++) {
+      addClaudeTurn(box, db, {
+        sessionId: 'private-claude-session', origin: `private-origin-${turn}`, turn,
+        user: `user-${turn}`, assistant: `assistant-${turn}`, at: turn,
+      });
+    }
+    const result = readObserverTurnPage({
+      projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions,
+      dbPath, limit: 2,
+    });
+    assert.equal(result.schema, 'throughline.observer_read.v1');
+    assert.equal(result.status, 'snapshot');
+    assert.equal(result.host, 'claude');
+    assert.equal(result.historyTruncated, true);
+    assert.deepEqual(result.page, { complete: true, nextToken: null });
+    assert.deepEqual(result.turns.map((turn) => [turn.user, turn.assistant]), [
+      ['user-2', 'assistant-2'], ['user-3', 'assistant-3'],
+    ]);
+    assert.equal(result.turns.every((turn) => turn.origin_sha256 && turn.source_sha256 && Number.isInteger(turn.completed_at)), true);
+    assert.doesNotMatch(JSON.stringify(result), /private-claude-session|private-origin/);
+    for (const limit of [0, 101, 1.5]) {
+      assert.throws(() => readObserverTurnPage({
+        projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions, dbPath, limit,
+      }), /limit must be an integer between 1 and 100/);
+    }
+  } finally {
+    db?.close();
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test('observer read: delta pages keep the first through boundary while newer turns arrive', () => {
+  const box = fixture();
+  const dbPath = join(box.root, 'throughline.db');
+  let db;
+  try {
+    db = createProjectionDb(dbPath, box.project, 'claude-session');
+    addClaudeTurn(box, db, { origin: 'origin-1', turn: 1, user: 'user-1', assistant: 'assistant-1', at: 1 });
+    const baseline = resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions });
+    for (let turn = 2; turn <= 4; turn++) {
+      addClaudeTurn(box, db, { origin: `origin-${turn}`, turn, user: `user-${turn}`, assistant: `assistant-${turn}`, at: turn });
+    }
+
+    const first = readObserverTurnPage({
+      projectPath: box.project, afterCursor: baseline.throughCursor, limit: 1,
+      codexHome: box.home, receiptOptions: box.receiptOptions, dbPath,
+    });
+    assert.equal(first.status, 'delta');
+    assert.equal(first.page.complete, false);
+    assert.equal(first.turns[0].user, 'user-2');
+    assert.equal(typeof first.page.nextToken, 'string');
+    assert.doesNotMatch(first.page.nextToken, /claude-session|origin-2|user-2|assistant-2/);
+
+    addClaudeTurn(box, db, { origin: 'origin-5', turn: 5, user: 'user-5', assistant: 'assistant-5', at: 5 });
+    const second = readObserverTurnPage({
+      projectPath: box.project, afterCursor: baseline.throughCursor, throughCursor: first.throughCursor,
+      pageToken: first.page.nextToken, limit: 1, codexHome: box.home,
+      receiptOptions: box.receiptOptions, dbPath,
+    });
+    const third = readObserverTurnPage({
+      projectPath: box.project, afterCursor: baseline.throughCursor, throughCursor: second.throughCursor,
+      pageToken: second.page.nextToken, limit: 1, codexHome: box.home,
+      receiptOptions: box.receiptOptions, dbPath,
+    });
+    assert.equal(second.turns[0].user, 'user-3');
+    assert.equal(third.turns[0].user, 'user-4');
+    assert.deepEqual(third.page, { complete: true, nextToken: null });
+    assert.equal(JSON.stringify([first, second, third]).includes('user-5'), false);
+
+    const tamperedOffset = rewritePageToken(first.page.nextToken, (value) => { value.offset = 2; });
+    assert.throws(() => readObserverTurnPage({
+      projectPath: box.project, afterCursor: baseline.throughCursor, throughCursor: first.throughCursor,
+      pageToken: tamperedOffset, limit: 1, codexHome: box.home,
+      receiptOptions: box.receiptOptions, dbPath,
+    }), /page token binding invalid/);
+    assert.throws(() => readObserverTurnPage({
+      projectPath: box.other, afterCursor: baseline.throughCursor, throughCursor: first.throughCursor,
+      pageToken: first.page.nextToken, limit: 1, codexHome: box.home,
+      receiptOptions: box.receiptOptions, dbPath,
+    }), /page token binding invalid/);
+  } finally {
+    db?.close();
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test('observer read: a missing pair on a later page returns no partial body or continuation', () => {
+  const box = fixture();
+  const dbPath = join(box.root, 'throughline.db');
+  let db;
+  try {
+    db = createProjectionDb(dbPath, box.project, 'claude-session');
+    addClaudeTurn(box, db, { origin: 'origin-1', turn: 1, user: 'user-1', assistant: 'assistant-1', at: 1 });
+    const baseline = resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions });
+    addClaudeTurn(box, db, { origin: 'origin-2', turn: 2, user: 'user-2', assistant: 'assistant-2', at: 2 });
+    addClaudeTurn(box, null, { origin: 'origin-3', turn: 3, user: 'user-3', assistant: 'assistant-3', at: 3 });
+    const first = readObserverTurnPage({
+      projectPath: box.project, afterCursor: baseline.throughCursor, limit: 1,
+      codexHome: box.home, receiptOptions: box.receiptOptions, dbPath,
+    });
+    const pending = readObserverTurnPage({
+      projectPath: box.project, afterCursor: baseline.throughCursor, throughCursor: first.throughCursor,
+      pageToken: first.page.nextToken, limit: 1, codexHome: box.home,
+      receiptOptions: box.receiptOptions, dbPath,
+    });
+    assert.equal(first.status, 'delta');
+    assert.equal(pending.status, 'projection_pending');
+    assert.deepEqual(pending.turns, []);
+    assert.equal(pending.throughCursor, null);
+    assert.deepEqual(pending.page, { complete: false, nextToken: null });
   } finally {
     db?.close();
     rmSync(box.root, { recursive: true, force: true });

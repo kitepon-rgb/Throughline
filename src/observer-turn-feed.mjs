@@ -9,7 +9,12 @@ import { readCompletedTurnReceiptSnapshot } from './completed-turn-receipts.mjs'
 import { readCompletedPairProjection } from './auditor-context.mjs';
 
 export const OBSERVER_CURSOR_SCHEMA = 'throughline.observer_cursor.v1';
+export const OBSERVER_READ_SCHEMA = 'throughline.observer_read.v1';
+export const OBSERVER_PAGE_SCHEMA = 'throughline.observer_page.v1';
 const CURSOR_PREFIX = 'tlc1.';
+const PAGE_PREFIX = 'tlp1.';
+const DEFAULT_PAGE_LIMIT = 10;
+const MAX_PAGE_LIMIT = 100;
 
 /**
  * Resolves the latest completed-only parent and validates an optional opaque cursor.
@@ -52,6 +57,88 @@ export function resolveObserverTurnFeed({ projectPath, cursor = null, codexHome,
         : prior.thread_sha256 !== current.threadHash ? 'thread_switched'
           : prior.length === current.chain.length ? 'unchanged' : 'append';
   return withProjection(publicResult(status, cursor, throughCursor, current), current, project, { dbPath, maxBodyChars, maxTotalChars });
+}
+
+/**
+ * Reads one fixed Observer page. A continuation is bound to the exact project,
+ * after cursor, through cursor, and verified logical-series prefix.
+ */
+export function readObserverTurnPage({
+  projectPath, afterCursor = null, throughCursor = null, pageToken = null,
+  limit = DEFAULT_PAGE_LIMIT, codexHome, receiptOptions, dbPath, maxBodyChars, maxTotalChars,
+} = {}) {
+  assertPageLimit(limit);
+  const project = canonicalExistingProject(projectPath);
+  const projectSha256 = sha256(project);
+  const candidates = [...claudeCandidates(project, receiptOptions), ...codexCandidates(project, codexHome)];
+  const normalizedAfter = afterCursor ?? null;
+  const normalizedThrough = throughCursor ?? null;
+  const normalizedPageToken = pageToken ?? null;
+  let decodedPageToken = null;
+  if (normalizedPageToken !== null && (normalizedAfter === null || normalizedThrough === null)) {
+    throw new TypeError('observer page token requires afterCursor and throughCursor');
+  }
+  if (normalizedPageToken !== null) {
+    decodedPageToken = decodeObserverPageToken(normalizedPageToken);
+    validatePageTokenBinding(decodedPageToken, {
+      projectSha256, afterCursor: normalizedAfter, throughCursor: normalizedThrough,
+    });
+  }
+
+  let fixedThrough;
+  let fixedThroughCursor;
+  if (normalizedThrough === null) {
+    const selected = selectLatest(candidates);
+    if (selected?.ambiguous) return emptyReadResult('ambiguous_parent', normalizedAfter);
+    fixedThrough = selected ?? emptyCandidate();
+    fixedThroughCursor = encodeObserverCursor(cursorShape(fixedThrough, projectSha256));
+  } else {
+    const decodedThrough = decodeCursorForRead(normalizedThrough, projectSha256);
+    if (!decodedThrough) return emptyReadResult('resync_required', normalizedAfter);
+    const throughCandidate = validateCursorCandidate(decodedThrough, candidates);
+    if (!throughCandidate) return emptyReadResult('resync_required', normalizedAfter);
+    fixedThrough = fixedCandidate(throughCandidate, decodedThrough.length);
+    fixedThroughCursor = normalizedThrough;
+  }
+
+  if (normalizedAfter === null) {
+    if (normalizedPageToken !== null) throw new TypeError('snapshot does not accept a page token');
+    const historyTruncated = fixedThrough.chain.length > limit;
+    const pageEntries = fixedThrough.chain.slice(-limit);
+    return projectReadPage({
+      status: 'snapshot', afterCursor: null, throughCursor: fixedThroughCursor,
+      current: fixedThrough, pageEntries, project, dbPath, maxBodyChars, maxTotalChars,
+      historyTruncated, complete: true, nextToken: null,
+    });
+  }
+
+  const decodedAfter = decodeCursorForRead(normalizedAfter, projectSha256);
+  if (!decodedAfter) return emptyReadResult('resync_required', normalizedAfter);
+  const afterCandidate = validateCursorCandidate(decodedAfter, candidates);
+  if (!afterCandidate || fixedThrough.host === null && decodedAfter.host !== null) {
+    return emptyReadResult('resync_required', normalizedAfter);
+  }
+
+  const series = logicalDeltaSeries(decodedAfter, fixedThrough);
+  if (!series) return emptyReadResult('resync_required', normalizedAfter);
+  const { status, entries } = series;
+  let offset = 0;
+  if (decodedPageToken !== null) {
+    validatePageTokenPrefix(decodedPageToken, entries);
+    offset = decodedPageToken.offset;
+  }
+  const pageEntries = entries.slice(offset, offset + limit);
+  const nextOffset = offset + pageEntries.length;
+  const complete = nextOffset >= entries.length;
+  const nextToken = complete ? null : encodeObserverPageToken(pageTokenShape({
+    projectSha256, afterCursor: normalizedAfter, throughCursor: fixedThroughCursor,
+    offset: nextOffset, entries,
+  }));
+  return projectReadPage({
+    status, afterCursor: normalizedAfter, throughCursor: fixedThroughCursor,
+    current: fixedThrough, pageEntries, project, dbPath, maxBodyChars, maxTotalChars,
+    historyTruncated: false, complete, nextToken,
+  });
 }
 
 export function encodeObserverCursor(value) {
@@ -114,7 +201,7 @@ function candidate(host, threadHash, chain, historyFloor, sessionId) {
     sourceHash: chain.at(-1)?.source_sha256 ?? sha256(`${host}:${threadHash}`), sessionId };
 }
 
-function emptyCandidate() { return { host: null, threadHash: null, chain: [], historyFloor: 1, latestAt: -1, sourceHash: null }; }
+function emptyCandidate() { return { host: null, threadHash: null, chain: [], historyFloor: 1, latestAt: -1, sourceHash: null, sessionId: null }; }
 
 function selectLatest(candidates) {
   if (candidates.length === 0) return null;
@@ -152,6 +239,117 @@ function withProjection(result, current, projectPath, { dbPath, maxBodyChars, ma
   return { ...result, turns: projection.turns };
 }
 
+function decodeCursorForRead(token, projectSha256) {
+  let decoded;
+  try { decoded = decodeObserverCursor(token); } catch { return null; }
+  return decoded.project_sha256 === projectSha256 ? decoded : null;
+}
+
+function validateCursorCandidate(cursor, candidates) {
+  if (cursor.host === null) return emptyCandidate();
+  const current = candidates.find((item) => item.host === cursor.host && item.threadHash === cursor.thread_sha256);
+  if (!current || cursor.history_floor < current.historyFloor || cursor.length > current.chain.length ||
+    prefixDigest(current.chain.slice(0, cursor.length)) !== cursor.prefix_sha256) return null;
+  return current;
+}
+
+function fixedCandidate(current, length) {
+  const chain = current.chain.slice(0, length);
+  return {
+    ...current, chain, latestAt: chain.at(-1)?.completed_at ?? -1,
+    sourceHash: chain.at(-1)?.source_sha256 ?? current.sourceHash,
+  };
+}
+
+function logicalDeltaSeries(after, through) {
+  if (after.host === null) return { status: 'delta', entries: through.chain };
+  if (through.host === null) return null;
+  if (after.host !== through.host) return { status: 'host_switched', entries: through.chain };
+  if (after.thread_sha256 !== through.threadHash) return { status: 'thread_switched', entries: through.chain };
+  if (after.length > through.chain.length || prefixDigest(through.chain.slice(0, after.length)) !== after.prefix_sha256) return null;
+  return { status: 'delta', entries: through.chain.slice(after.length) };
+}
+
+function projectReadPage({
+  status, afterCursor, throughCursor, current, pageEntries, project, dbPath,
+  maxBodyChars, maxTotalChars, historyTruncated, complete, nextToken,
+}) {
+  const base = {
+    schema: OBSERVER_READ_SCHEMA, status, host: current.host, thread_sha256: current.threadHash,
+    afterCursor, throughCursor, turns: [], historyTruncated,
+    page: { complete, nextToken },
+  };
+  if (pageEntries.length === 0) return base;
+  const projection = readCompletedPairProjection({
+    ...(dbPath === undefined ? {} : { dbPath }), sessionId: current.sessionId, projectRoot: project,
+    expectedPairs: pageEntries.map(({ origin_sha256, user_sha256, assistant_sha256 }) => ({ origin_sha256, user_sha256, assistant_sha256 })),
+    ...(maxBodyChars === undefined ? {} : { maxBodyChars }),
+    ...(maxTotalChars === undefined ? {} : { maxTotalChars }),
+  });
+  if (projection.status === 'pending') {
+    return { ...base, status: 'projection_pending', throughCursor: null, page: { complete: false, nextToken: null } };
+  }
+  return {
+    ...base,
+    turns: pageEntries.map((entry, index) => ({ ...publicTurnEntry(entry), ...projection.turns[index] })),
+  };
+}
+
+function publicTurnEntry({ _sessionId: _sessionId, ...entry }) { return entry; }
+
+function emptyReadResult(status, afterCursor) {
+  return {
+    schema: OBSERVER_READ_SCHEMA, status, host: null, thread_sha256: null,
+    afterCursor, throughCursor: null, turns: [], historyTruncated: false,
+    page: { complete: true, nextToken: null },
+  };
+}
+
+function pageTokenShape({ projectSha256, afterCursor, throughCursor, offset, entries }) {
+  return {
+    schema: OBSERVER_PAGE_SCHEMA, project_sha256: projectSha256,
+    after_sha256: cursorTokenDigest(afterCursor), through_sha256: cursorTokenDigest(throughCursor),
+    offset, offset_prefix_sha256: prefixDigest(entries.slice(0, offset)),
+  };
+}
+
+function encodeObserverPageToken(value) {
+  validatePageTokenShape(value);
+  return `${PAGE_PREFIX}${Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')}`;
+}
+
+function decodeObserverPageToken(token) {
+  if (typeof token !== 'string' || token.length > 4096 || !token.startsWith(PAGE_PREFIX)) {
+    throw new TypeError('observer page token invalid');
+  }
+  const encoded = token.slice(PAGE_PREFIX.length);
+  let value;
+  try {
+    const bytes = Buffer.from(encoded, 'base64url');
+    if (bytes.toString('base64url') !== encoded) throw new TypeError('non-canonical token');
+    const json = bytes.toString('utf8');
+    value = JSON.parse(json);
+    if (JSON.stringify(value) !== json) throw new TypeError('non-canonical token');
+  } catch { throw new TypeError('observer page token invalid'); }
+  validatePageTokenShape(value);
+  return value;
+}
+
+function validatePageTokenBinding(token, { projectSha256, afterCursor, throughCursor }) {
+  if (token.project_sha256 !== projectSha256 || token.after_sha256 !== cursorTokenDigest(afterCursor) ||
+    token.through_sha256 !== cursorTokenDigest(throughCursor)) {
+    throw new TypeError('observer page token binding invalid');
+  }
+}
+
+function validatePageTokenPrefix(token, entries) {
+  if (token.offset > entries.length || token.offset_prefix_sha256 !== prefixDigest(entries.slice(0, token.offset))) {
+    throw new TypeError('observer page token binding invalid');
+  }
+}
+
+function cursorTokenDigest(value) { return sha256(value === null ? 'null' : value); }
+
 function prefixDigest(chain) {
   return sha256(chain.map((entry) => [entry.host, entry.thread_sha256, entry.origin_sha256,
     entry.user_sha256, entry.assistant_sha256, entry.completed_at, entry.source_sha256].join('\0')).join('\n'));
@@ -166,6 +364,20 @@ function canonicalExistingProject(value) {
 
 function sha256(value) { return createHash('sha256').update(String(value), 'utf8').digest('hex'); }
 function isSha256(value) { return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value); }
+function assertPageLimit(value) {
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_PAGE_LIMIT) {
+    throw new TypeError(`limit must be an integer between 1 and ${MAX_PAGE_LIMIT}`);
+  }
+}
+function validatePageTokenShape(value) {
+  const keys = ['schema', 'project_sha256', 'after_sha256', 'through_sha256', 'offset', 'offset_prefix_sha256'];
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== keys.length ||
+    keys.some((key) => !(key in value)) || value.schema !== OBSERVER_PAGE_SCHEMA ||
+    !isSha256(value.project_sha256) || !isSha256(value.after_sha256) || !isSha256(value.through_sha256) ||
+    !Number.isSafeInteger(value.offset) || value.offset < 0 || !isSha256(value.offset_prefix_sha256)) {
+    throw new TypeError('observer page token invalid');
+  }
+}
 function validateCursorShape(value) {
   const keys = ['schema', 'project_sha256', 'host', 'thread_sha256', 'history_floor', 'length', 'prefix_sha256'];
   const emptyPrefix = prefixDigest([]);
