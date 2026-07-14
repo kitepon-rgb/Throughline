@@ -34,6 +34,7 @@
 
 - [ADR 0001](adr/0001-claude-primary-codex-adapter.md): Claude primaryを維持し、Codexをadapterとして追加する。
 - [ADR 0002](adr/0002-observer-claude-completion-receipt.md): Claude completed turnはThroughline所有のStop receiptで固定する。
+- [ADR 0003](adr/0003-observer-completed-chain-cursor.md): Observer cursorをhost固有のcompleted pair chainとprefix検証へ束縛する。
 
 ## Entrypoints
 
