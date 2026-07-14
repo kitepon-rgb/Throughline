@@ -216,6 +216,33 @@ test('parseCodexRolloutFile: keeps final pending messages as current synthetic t
   }
 });
 
+test('parseCodexRolloutFile: completedAtは自身のtask_completeを観測した通常turnだけに付く', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-project-'));
+  try {
+    const rollout = writeRollout(home, {
+      id: '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9', cwd: project,
+      events: [
+        event('user_message', { message: 'completed request' }),
+        event('task_started'),
+        event('agent_message', { message: 'completed answer' }),
+        { timestamp: '2026-05-06T00:41:00.000Z', type: 'event_msg', payload: { type: 'task_complete' } },
+        event('agent_message', { message: 'synthetic continuation' }),
+        event('user_message', { message: 'open request' }),
+        event('task_started'),
+        event('agent_message', { message: 'open answer' }),
+      ],
+    });
+    const parsed = parseCodexRolloutFile(rollout);
+    assert.equal(parsed.activeTurns[0].completedAt, Date.parse('2026-05-06T00:41:00.000Z'));
+    assert.equal(parsed.activeTurns[1].completedAt, null);
+    assert.equal(parsed.activeTurns[2].completedAt, null);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
 test('parseCodexRolloutFile: trim source can exclude the current in-flight turn', () => {
   const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-project-'));

@@ -135,6 +135,7 @@ export function parseCodexRolloutFile(
               number: `rollout-${stats.parsedRows}`,
               messages: [],
               details: [],
+              completedAt: null,
             };
             activeTurns.push(postRollbackTurn);
           }
@@ -162,6 +163,7 @@ export function parseCodexRolloutFile(
         number: stats.taskStarted + 1,
         messages: pendingSplit.currentMessages,
         details: pendingSplit.currentDetails,
+        completedAt: null,
       };
       pendingMessages = [];
       pendingDetails = [];
@@ -175,6 +177,7 @@ export function parseCodexRolloutFile(
 
     if (payload.type === 'task_complete') {
       stats.taskComplete++;
+      if (openTurn) openTurn.completedAt = parseHostTimestamp(row.timestamp);
       openTurn = null;
       continue;
     }
@@ -230,6 +233,7 @@ export function parseCodexRolloutFile(
           number: `rollout-${stats.parsedRows}`,
           messages: [],
           details: [],
+          completedAt: null,
         };
         activeTurns.push(postRollbackTurn);
       }
@@ -262,6 +266,7 @@ export function parseCodexRolloutFile(
       number: `rollout-${stats.parsedRows}`,
       messages: pendingMessages,
       details: pendingDetails,
+      completedAt: null,
     });
   }
 
@@ -410,6 +415,7 @@ function splitPendingMessagesForTaskStart({ messages, details, syntheticNumber }
         number: syntheticNumber,
         messages,
         details,
+        completedAt: null,
       },
       currentMessages: [],
       currentDetails: [],
@@ -443,10 +449,17 @@ function splitPendingMessagesForTaskStart({ messages, details, syntheticNumber }
       number: syntheticNumber,
       messages: syntheticMessages,
       details: syntheticDetails,
+      completedAt: null,
     },
     currentMessages,
     currentDetails,
   };
+}
+
+function parseHostTimestamp(value) {
+  if (typeof value !== 'string') return null;
+  const timestamp = Date.parse(value);
+  return Number.isSafeInteger(timestamp) && timestamp >= 0 ? timestamp : null;
 }
 
 function removeRolledBackTurns(activeTurns, count) {

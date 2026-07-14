@@ -67,6 +67,29 @@ export function writeCompletedTurnReceipt(input, options = {}) {
   });
 }
 
+/** Read-only receipt snapshot. This never creates a directory, lock, or store file. */
+export function readCompletedTurnReceiptSnapshot(input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+    Object.keys(input).some((key) => !['projectPath', 'env', 'storePath'].includes(key))) {
+    throw new TypeError('completed turn receipt snapshot options are invalid');
+  }
+  const { projectPath, env = process.env, storePath } = input;
+  const projectSha256 = sha256(normalizeProjectPathForCompare(assertProjectPath(projectPath)));
+  const options = { env, storePath };
+  const path = storePathFor({ projectSha256 }, options);
+  try {
+    const info = lstatSync(path);
+    assertPrivateFile(info, env, path);
+    assertPrivateDirectory(dirname(path), env);
+    const store = JSON.parse(readFileSync(path, 'utf8'));
+    validateStore(store, projectSha256);
+    return cloneStore(store);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return emptyStore(projectSha256);
+    throw error;
+  }
+}
+
 function normalizeInput(input) {
   return {
     projectSha256: sha256(normalizeProjectPathForCompare(assertProjectPath(input.projectPath))),
@@ -287,6 +310,16 @@ function assertProjectPath(value) {
 
 function storePathFor(normalized, options) {
   return options.storePath || defaultCompletedTurnReceiptStorePath(normalized.projectSha256, options.env);
+}
+
+function cloneStore(store) {
+  return {
+    schema: store.schema,
+    project_sha256: store.project_sha256,
+    next_sequence: store.next_sequence,
+    history_floor: store.history_floor,
+    receipts: store.receipts.map((receipt) => ({ ...receipt })),
+  };
 }
 
 function sha256(value) {

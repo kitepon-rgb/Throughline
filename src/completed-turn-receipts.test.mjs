@@ -7,6 +7,7 @@ import {
   COMPLETED_TURN_RECEIPT_LIMIT,
   COMPLETED_TURN_RECEIPT_STORE_SCHEMA,
   defaultCompletedTurnReceiptStorePath,
+  readCompletedTurnReceiptSnapshot,
   writeCompletedTurnReceipt,
 } from './completed-turn-receipts.mjs';
 
@@ -138,6 +139,24 @@ test('completed turn receipt: explicit store path rejects a second project', () 
       () => writeCompletedTurnReceipt({ ...input(), projectPath: '/project-b' }, { storePath: box.storePath }),
       /schema invalid/,
     );
+  } finally {
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test('completed turn receipt: read-only snapshot validates project binding and does not create missing state', () => {
+  const box = sandbox();
+  try {
+    const missing = readCompletedTurnReceiptSnapshot({ projectPath: '/missing-project', storePath: box.storePath });
+    assert.equal(missing.receipts.length, 0);
+    assert.throws(() => readFileSync(box.storePath));
+    writeCompletedTurnReceipt({ ...input(), projectPath: '/project-a' }, { storePath: box.storePath });
+    assert.throws(
+      () => readCompletedTurnReceiptSnapshot({ projectPath: '/project-b', storePath: box.storePath }),
+      /schema invalid/,
+    );
+    assert.throws(() => readCompletedTurnReceiptSnapshot({ projectPath: '/project-a', unknown: true }), /options are invalid/);
+    assert.throws(() => readCompletedTurnReceiptSnapshot({ projectPath: null }), /projectPath/);
   } finally {
     rmSync(box.root, { recursive: true, force: true });
   }
