@@ -60,6 +60,7 @@ GitHub Release、npm shasum `4f3fcd2598a75f026358dae7f3eb3165242b580b` を確認
 | [docs/08_codex_dual_support.md](docs/08_codex_dual_support.md) | Claude / Codex 両対応の architecture brief。Claude path を置き換えず、Codex support を adapter / projection として追加する方針 |
 | [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md) | rollback を model-visible context の delete primitive と見る設計メモ。次フェーズでは Codex Rewind 互換の根拠として扱う |
 | [docs/10_transcript_injection_plan.md](docs/10_transcript_injection_plan.md) | v0.5 系の transcript injection 検証計画と実機ラン結果。Phase 0-2 / 0-5 (D 経路) と Phase 0-6 (`hookSpecificOutput.initialUserMessage` 経路) を実機検証し、両 no-go 確定。plugin scope での完成形は 道 C (v2.1 header + 現在地 anchor) と判定し v0.5.0 として release |
+| [docs/14_observer_completed_turn_feed_plan.md](docs/14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only project resolver、opaque cursor、JSON read / wait CLIのactive計画。MCP transportはObserver所有で、Throughlineは外部依存ゼロのlibrary / CLI境界を維持する |
 | [rag/INDEX.md](rag/INDEX.md) | Throughline 設計判断の根拠となる third-party spec 知識ベース。Claude Code hooks reference、Anthropic Messages API、`/clear`/`/compact` 挙動、openclaude の `initialUserMessage` source 抜粋を蓄積。各 finding は実機検証結果と対で更新 |
 | [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v8、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
 | [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録、npm publish 前のアクションメモ等）。歴史記述用 |

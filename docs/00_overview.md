@@ -18,6 +18,7 @@
 | [10_transcript_injection_plan.md](10_transcript_injection_plan.md) | transcript injection 検証計画と v0.5 実機結果 |
 | [11_codex_monitor_implementation_plan.md](11_codex_monitor_implementation_plan.md) | Codex monitor 対応の実装記録 |
 | [13_native_factory_diagnostics_plan.md](13_native_factory_diagnostics_plan.md) | native factory read-only readiness 診断の実装記録 |
+| [14_observer_completed_turn_feed_plan.md](14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only read / wait CLIのactive計画 |
 | [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) | local runtime error aggregate store の契約と実装 TODO |
 
 ## Supporting Records
@@ -28,6 +29,11 @@
 | [audit-2026-05/](audit-2026-05/) | 2026-05 の監査・インシデント記録 |
 | [archive/](archive/) | 破棄または履歴扱いの旧設計 |
 | [../rag/INDEX.md](../rag/INDEX.md) | 外部仕様・調査の再利用棚 |
+
+現行ADR:
+
+- [ADR 0001](adr/0001-claude-primary-codex-adapter.md): Claude primaryを維持し、Codexをadapterとして追加する。
+- [ADR 0002](adr/0002-observer-claude-completion-receipt.md): Claude completed turnはThroughline所有のStop receiptで固定する。
 
 ## Entrypoints
 
