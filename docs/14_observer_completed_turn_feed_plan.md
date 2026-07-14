@@ -111,7 +111,8 @@ rollout mtime、session index更新時刻、DB更新時刻だけで親を選ば�
 {
   "schema": "throughline.observer_read.v1",
   "status": "delta",
-  "threadId": "019f...",
+  "host": "codex",
+  "thread_sha256": "5a8f...",
   "afterCursor": "tlc1:...",
   "throughCursor": "tlc1:...",
   "turns": [],
@@ -172,7 +173,11 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     hard failure、本文上限でもturn recordとdigestを保持し、raw session identityをpublic resultへ出さない。
 - [x] Codex feedの`origin_sha256`をDB captureの`codex:<thread_id>` identityへ揃え、実DB fixtureで
   `projection_pending`へ固定されないことを回帰化する。
-- [ ] bounded snapshot、delta pagination、page token検証を実装する。
+- [x] bounded snapshot、delta pagination、page token検証を実装する。
+  - commit `7b07425`。初回through cursorで固定したlogical seriesだけをpage化し、project／exact
+    after／exact through／offset prefix digestへtokenを束縛した。snapshotは最新limit件で完了し、
+    deltaは途中の新規turnを混ぜず全件継続する。DB不足は本文・next token・through cursorを返さない。
+    関連gateは36/36 green、Control `observer-feed-20260715` revision 26でimmutable ADR 0006へfinalizeした。
 
 ### Phase 2: CLI read / wait
 
