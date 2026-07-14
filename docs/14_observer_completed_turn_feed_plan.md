@@ -166,7 +166,10 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
   - project digestごとのprivate storeへ分離し、256件の履歴上限と`history_floor`をproject単位で保持する。同一origin/pairのStop再実行はsession mergeでtargetが変わっても再採番せず、DB capture成功後・L1/L3前に同期publishする。
 - [x] host adapter境界を設け、Claude既存parserとCodex rollout parserのcompleted chainを共通projectionへ変換する。
 - [x] empty baseline、same-thread append、thread switch、host switch、ambiguous parent、rollback、version mismatchを実装する。
-- [ ] DB freshness照合を既存`auditor-context` helperと共有し、重複した別仕様を作らない。
+- [x] DB freshness照合を既存`auditor-context` helperと共有し、重複した別仕様を作らない。
+  - commit `022c0b8`。completed chainのorigin/user/assistant SHA-256をDBのcompleted pairへ順序付きで
+    全件照合し、一件でも不足・不一致なら本文ゼロの`projection_pending`とする。schema/project/I/Oは
+    hard failure、本文上限でもturn recordとdigestを保持し、raw session identityをpublic resultへ出さない。
 - [ ] bounded snapshot、delta pagination、page token検証を実装する。
 
 ### Phase 2: CLI read / wait

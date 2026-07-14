@@ -28,6 +28,12 @@ current-SID-only ACL、ACL済みtempからのatomic rename、失敗時の旧stor
 公開commit `fc83ddf`、CI `29284655280`（9/9 green）、npm `throughline@0.6.3`、tag /
 GitHub Release、npm shasum `4f3fcd2598a75f026358dae7f3eb3165242b580b` を確認済み。
 
+**Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
+`task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
+assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切
+返さず、schema/project/I/O異常はhard failure、本文bound時もturn recordとdigestを保持する。
+pagination、JSON read/wait CLI、65秒超live E2E、Phase full gateは未完了であり、公開版には未収録。
+
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 
 - `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
