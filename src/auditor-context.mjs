@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
@@ -6,6 +5,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { buildBodyRowsFromActiveTurns } from './codex-capture.mjs';
 import { parseCodexRolloutFile } from './codex-rollout-memory.mjs';
 import { getLogicalTurnGroups } from './transcript-reader.mjs';
+import { hashAuditorBody, normalizeAuditorBody } from './body-digest.mjs';
+
+export { hashAuditorBody, normalizeAuditorBody } from './body-digest.mjs';
 
 export const AUDITOR_CONTEXT_SCHEMA = 'throughline.auditor_context.v1';
 export const AUDITOR_CONTEXT_DB_SCHEMA_VERSION = 8;
@@ -15,14 +17,6 @@ export const DEFAULT_AUDITOR_MAX_TOTAL_CHARS = 4000;
 
 export function defaultAuditorContextDbPath() {
   return join(homedir(), '.throughline', 'throughline.db');
-}
-
-export function normalizeAuditorBody(value) {
-  return String(value ?? '').normalize('NFC').replace(/\r\n?/g, '\n').trim();
-}
-
-export function hashAuditorBody(value) {
-  return createHash('sha256').update(normalizeAuditorBody(value), 'utf8').digest('hex');
 }
 
 export function deriveAuditorFreshnessExpectation({ host, transcriptPath, sessionId } = {}) {

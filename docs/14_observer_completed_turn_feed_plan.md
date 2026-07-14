@@ -161,7 +161,8 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
 ### Phase 1: Core projection
 
 - [ ] `src/observer-turn-feed.mjs`へproject resolver、completed chain、opaque cursorを実装する。
-- [ ] Claude Stop hookからbounded private completion receiptをatomic publishし、project digest、session、pair digest、sequenceを固定する。receipt失敗時はcursorを進めない。
+- [x] Claude Stop hookからbounded private completion receiptをatomic publishし、project digest、session、pair digest、sequenceを固定する。receipt失敗時はcursorを進めない。
+  - project digestごとのprivate storeへ分離し、256件の履歴上限と`history_floor`をproject単位で保持する。同一origin/pairのStop再実行はsession mergeでtargetが変わっても再採番せず、DB capture成功後・L1/L3前に同期publishする。
 - [ ] host adapter境界を設け、Claude既存parserとCodex rollout parserのcompleted chainを共通projectionへ変換する。
 - [ ] empty baseline、same-thread append、thread switch、host switch、ambiguous parent、rollback、version mismatchを実装する。
 - [ ] DB freshness照合を既存`auditor-context` helperと共有し、重複した別仕様を作らない。

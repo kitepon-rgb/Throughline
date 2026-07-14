@@ -1,10 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   L2_WINDOW,
   countDistinctBodyTurns,
   pickOldestUnsummarizedTurn,
+  publishCapturedClaudeCompletionReceipt,
 } from './turn-processor.mjs';
 
 function makeDb() {
@@ -52,6 +56,61 @@ function insertSkeleton(db, { session, origin, turn, createdAt }) {
 
 test('L2_WINDOW is 20', () => {
   assert.equal(L2_WINDOW, 20);
+});
+
+test('publishCapturedClaudeCompletionReceipt: L2 capture済みpairをL1/L3より先にprivate receiptへ固定する', () => {
+  const db = makeDb();
+  const root = mkdtempSync(join(tmpdir(), 'throughline-turn-receipt-'));
+  const storePath = join(root, 'state', 'completed-turn-receipts.json');
+  try {
+    insertTurn(db, { session: 'target', origin: 'origin', turn: 7, createdAt: 1234 });
+    db.prepare(
+      `UPDATE bodies SET text = CASE role WHEN 'user' THEN ' request\r\n' ELSE 'answer' END
+       WHERE session_id = 'target' AND origin_session_id = 'origin' AND turn_number = 7`,
+    ).run();
+    const first = publishCapturedClaudeCompletionReceipt(db, {
+      target: 'target', origin: 'origin', turnNumber: 7, projectPath: '/repo',
+      receiptOptions: { storePath },
+    });
+    const second = publishCapturedClaudeCompletionReceipt(db, {
+      target: 'target', origin: 'origin', turnNumber: 7, projectPath: '/repo',
+      receiptOptions: { storePath },
+    });
+    assert.equal(first.sequence, 1);
+    assert.deepEqual(second, first, 'Stop retry must return the original receipt');
+    assert.equal(first.completed_at, 1234);
+    assert.equal(statSync(join(root, 'state')).mode & 0o777, 0o700);
+    assert.equal(statSync(storePath).mode & 0o777, 0o600);
+    const bytes = readFileSync(storePath, 'utf8');
+    assert.doesNotMatch(bytes, /request|answer|\/repo/);
+    assert.match(bytes, /"host":"claude"/);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('publishCapturedClaudeCompletionReceipt: incomplete DB pairはreceiptを作らず失敗する', () => {
+  const db = makeDb();
+  const root = mkdtempSync(join(tmpdir(), 'throughline-turn-receipt-'));
+  const storePath = join(root, 'state', 'completed-turn-receipts.json');
+  try {
+    db.prepare(
+      `INSERT INTO bodies (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES ('target', 'origin', 8, 'user', 'only user', 1, 1)`,
+    ).run();
+    assert.throws(
+      () => publishCapturedClaudeCompletionReceipt(db, {
+        target: 'target', origin: 'origin', turnNumber: 8, projectPath: '/repo',
+        receiptOptions: { storePath },
+      }),
+      /completed pair was not captured/,
+    );
+    assert.throws(() => statSync(storePath), { code: 'ENOENT' });
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('countDistinctBodyTurns: 2 ロール行 = 1 ターンとして数える', () => {
