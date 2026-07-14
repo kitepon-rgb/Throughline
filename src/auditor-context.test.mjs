@@ -9,6 +9,7 @@ import {
   AUDITOR_CONTEXT_SCHEMA,
   deriveAuditorFreshnessExpectation,
   hashAuditorBody,
+  readCompletedPairProjection,
   readAuditorContext,
 } from './auditor-context.mjs';
 
@@ -277,6 +278,67 @@ test('readAuditorContext: Codex freshness uses exact origin and both pair hashes
     assert.equal(result.turns.at(-1).turnNumber, 32);
     assert.equal(result.turns.some((turn) => turn.turnNumber === 33), false);
   });
+});
+
+test('readCompletedPairProjection: ordered chain matches each DB pair once and preserves bounded identities', () => {
+  withDb(({ db, path }) => {
+    const pairs = [
+      { originSessionId: 'origin-a', turnNumber: 1, user: 'first user', assistant: 'first answer' },
+      { originSessionId: 'origin-b', turnNumber: 2, user: 'second user', assistant: 'second answer' },
+    ];
+    seedSession(db, { pairs });
+    db.prepare('INSERT INTO bodies (session_id, origin_session_id, turn_number, role, text, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('session-1', 'extra', 3, 'user', 'not completed by chain', 10);
+    const expectedPairs = pairs.map((pair) => ({
+      origin_sha256: hashAuditorBody(pair.originSessionId), user_sha256: hashAuditorBody(pair.user), assistant_sha256: hashAuditorBody(pair.assistant),
+    }));
+    const result = readCompletedPairProjection({ dbPath: path, sessionId: 'session-1', projectRoot: '/repo', expectedPairs, maxBodyChars: 20, maxTotalChars: 0 });
+    assert.equal(result.status, 'fresh');
+    assert.equal(result.turns.length, 2);
+    assert.ok(result.turns.every((turn) => turn.truncated && turn.user === '' && turn.assistant === ''));
+    assert.deepEqual(result.turns.map((turn) => turn.origin_sha256), expectedPairs.map((pair) => pair.origin_sha256));
+  });
+});
+
+test('readCompletedPairProjection: missing or mismatched pair returns pending without partial bodies', () => {
+  withDb(({ db, path }) => {
+    const pairs = [
+      { originSessionId: 'origin-a', turnNumber: 1, user: 'first user', assistant: 'first answer' },
+      { originSessionId: 'origin-b', turnNumber: 2, user: 'second user', assistant: 'second answer' },
+    ];
+    seedSession(db, { pairs });
+    const expectedPairs = [
+      { origin_sha256: hashAuditorBody(pairs[0].originSessionId), user_sha256: hashAuditorBody(pairs[0].user), assistant_sha256: hashAuditorBody(pairs[0].assistant) },
+      { origin_sha256: hashAuditorBody(pairs[1].originSessionId), user_sha256: hashAuditorBody(pairs[1].user), assistant_sha256: hashAuditorBody('different') },
+    ];
+    assert.deepEqual(readCompletedPairProjection({ dbPath: path, sessionId: 'session-1', projectRoot: '/repo', expectedPairs }), {
+      status: 'pending', reason: 'pair_not_found', turns: [],
+    });
+  });
+});
+
+test('readCompletedPairProjection: missing session is pending without any body', () => {
+  withDb(({ path }) => {
+    const expectedPairs = [{
+      origin_sha256: hashAuditorBody('origin'), user_sha256: hashAuditorBody('user'), assistant_sha256: hashAuditorBody('assistant'),
+    }];
+    assert.deepEqual(readCompletedPairProjection({ dbPath: path, sessionId: 'missing-session', projectRoot: '/repo', expectedPairs }), {
+      status: 'pending', reason: 'session_not_found', turns: [],
+    });
+  });
+});
+
+test('readCompletedPairProjection: schema and project mismatch are hard failures', () => {
+  const pair = { originSessionId: 'origin-a', turnNumber: 1, user: 'user', assistant: 'answer' };
+  const expectedPairs = [{ origin_sha256: hashAuditorBody(pair.originSessionId), user_sha256: hashAuditorBody(pair.user), assistant_sha256: hashAuditorBody(pair.assistant) }];
+  withDb(({ db, path }) => {
+    seedSession(db, { projectPath: '/other', pairs: [pair] });
+    assert.throws(() => readCompletedPairProjection({ dbPath: path, sessionId: 'session-1', projectRoot: '/repo', expectedPairs }), (error) => error.code === 'E_AUDITOR_CONTEXT_PROJECT');
+  });
+  withDb(({ db, path }) => {
+    seedSession(db, { pairs: [pair] });
+    assert.throws(() => readCompletedPairProjection({ dbPath: path, sessionId: 'session-1', projectRoot: '/repo', expectedPairs }), (error) => error.code === 'E_AUDITOR_CONTEXT_SCHEMA');
+  }, { version: 7 });
 });
 
 function snapshotSqliteFiles(path) {

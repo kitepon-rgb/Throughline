@@ -176,6 +176,40 @@ export function readAuditorContext({
   }
 }
 
+/** Read-only, ordered completed-pair projection for the Observer feed. */
+export function readCompletedPairProjection({
+  dbPath = defaultAuditorContextDbPath(), sessionId, projectRoot, expectedPairs,
+  maxBodyChars = DEFAULT_AUDITOR_MAX_BODY_CHARS, maxTotalChars = DEFAULT_AUDITOR_MAX_TOTAL_CHARS,
+} = {}) {
+  assertNonEmptyString(sessionId, 'sessionId');
+  assertNonEmptyString(projectRoot, 'projectRoot');
+  assertExpectedPairs(expectedPairs);
+  assertPositiveInteger(maxBodyChars, 'maxBodyChars');
+  if (!Number.isInteger(maxTotalChars) || maxTotalChars < 0) throw new TypeError('maxTotalChars must be an integer >= 0');
+  if (!existsSync(dbPath)) return { status: 'pending', reason: 'db_not_found', turns: [] };
+  let db;
+  try { db = new DatabaseSync(dbPath, { readOnly: true }); } catch (cause) {
+    throw new AuditorContextError('E_AUDITOR_CONTEXT_DB_OPEN', 'auditor context DB could not be opened', { cause });
+  }
+  try {
+    const version = Number(db.prepare('PRAGMA user_version').get()?.user_version ?? 0);
+    if (version !== AUDITOR_CONTEXT_DB_SCHEMA_VERSION) throw new AuditorContextError('E_AUDITOR_CONTEXT_SCHEMA', 'auditor context DB schema is unsupported');
+    const session = db.prepare('SELECT session_id, project_path FROM sessions WHERE session_id = ?').get(sessionId);
+    if (!session) return { status: 'pending', reason: 'session_not_found', turns: [] };
+    if (!isSameProjectOrDescendant(session.project_path, projectRoot)) throw new AuditorContextError('E_AUDITOR_CONTEXT_PROJECT', 'auditor context DB project does not match');
+    const rows = db.prepare(
+      `SELECT id, origin_session_id, turn_number, role, text, created_at FROM bodies
+       WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY created_at ASC, id ASC`,
+    ).all(sessionId);
+    const matched = matchExpectedPairs(buildCompletedPairs(rows), expectedPairs);
+    if (!matched) return { status: 'pending', reason: 'pair_not_found', turns: [] };
+    return { status: 'fresh', turns: boundProjectedPairs(matched, { maxBodyChars, maxTotalChars }) };
+  } catch (cause) {
+    if (cause instanceof AuditorContextError) throw cause;
+    throw new AuditorContextError('E_AUDITOR_CONTEXT_QUERY', 'auditor context query failed', { cause });
+  } finally { db.close(); }
+}
+
 export class AuditorContextError extends Error {
   constructor(code, message, { cause } = {}) {
     super(message, { cause });
@@ -256,6 +290,35 @@ function boundCompletedPairs(pairs, { maxBodyChars, maxTotalChars }) {
   return { turns: selected, chars, truncated };
 }
 
+function matchExpectedPairs(completed, expectedPairs) {
+  const matched = [];
+  let searchStart = 0;
+  for (const expected of expectedPairs) {
+    const index = completed.findIndex((pair, pairIndex) => pairIndex >= searchStart &&
+      hashAuditorBody(pair.originSessionId) === expected.origin_sha256 &&
+      hashAuditorBody(pair.user) === expected.user_sha256 && hashAuditorBody(pair.assistant) === expected.assistant_sha256);
+    if (index < 0) return null;
+    matched.push({ ...completed[index], expected });
+    searchStart = index + 1;
+  }
+  return matched;
+}
+
+function boundProjectedPairs(pairs, { maxBodyChars, maxTotalChars }) {
+  let remaining = maxTotalChars;
+  return pairs.map((pair) => {
+    const user = tail(pair.user, Math.min(maxBodyChars, remaining));
+    remaining -= user.length;
+    const assistant = tail(pair.assistant, Math.min(maxBodyChars, remaining));
+    remaining -= assistant.length;
+    return {
+      origin_sha256: pair.expected.origin_sha256, user_sha256: pair.expected.user_sha256,
+      assistant_sha256: pair.expected.assistant_sha256, user, assistant,
+      truncated: user.length < pair.user.length || assistant.length < pair.assistant.length,
+    };
+  });
+}
+
 function emptyResult(status, reason, { sessionId, projectRoot, recentTurns, dbSchemaVersion } = {}) {
   return {
     schema: AUDITOR_CONTEXT_SCHEMA,
@@ -322,3 +385,12 @@ function assertPositiveInteger(value, name) {
     throw new TypeError(`${name} must be an integer >= 1`);
   }
 }
+
+function assertExpectedPairs(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.some((pair) => !pair || typeof pair !== 'object' ||
+    Object.keys(pair).length !== 3 || !isLowercaseSha256(pair.origin_sha256) || !isLowercaseSha256(pair.user_sha256) || !isLowercaseSha256(pair.assistant_sha256))) {
+    throw new TypeError('expectedPairs must be a non-empty SHA-256 chain');
+  }
+}
+
+function isLowercaseSha256(value) { return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value); }

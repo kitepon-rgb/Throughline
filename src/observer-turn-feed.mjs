@@ -6,6 +6,7 @@ import { parseCodexRolloutFile } from './codex-rollout-memory.mjs';
 import { hashAuditorBody } from './body-digest.mjs';
 import { buildBodyRowsFromActiveTurns, buildCodexThroughlineSessionId } from './codex-capture.mjs';
 import { readCompletedTurnReceiptSnapshot } from './completed-turn-receipts.mjs';
+import { readCompletedPairProjection } from './auditor-context.mjs';
 
 export const OBSERVER_CURSOR_SCHEMA = 'throughline.observer_cursor.v1';
 const CURSOR_PREFIX = 'tlc1.';
@@ -14,7 +15,7 @@ const CURSOR_PREFIX = 'tlc1.';
  * Resolves the latest completed-only parent and validates an optional opaque cursor.
  * This core intentionally returns identities only as SHA-256 values; body projection is later work.
  */
-export function resolveObserverTurnFeed({ projectPath, cursor = null, codexHome, receiptOptions } = {}) {
+export function resolveObserverTurnFeed({ projectPath, cursor = null, codexHome, receiptOptions, dbPath, maxBodyChars, maxTotalChars } = {}) {
   const project = canonicalExistingProject(projectPath);
   const projectSha256 = sha256(project);
   const claude = claudeCandidates(project, receiptOptions);
@@ -25,7 +26,7 @@ export function resolveObserverTurnFeed({ projectPath, cursor = null, codexHome,
     if (selected?.ambiguous) return { schema: OBSERVER_CURSOR_SCHEMA, status: 'ambiguous_parent', cursor: null };
     const current = selected ?? emptyCandidate();
     const throughCursor = encodeObserverCursor(cursorShape(current, projectSha256));
-    return publicResult('snapshot', null, throughCursor, current);
+    return withProjection(publicResult('snapshot', null, throughCursor, current), current, project, { dbPath, maxBodyChars, maxTotalChars });
   }
 
   let prior;
@@ -45,11 +46,12 @@ export function resolveObserverTurnFeed({ projectPath, cursor = null, codexHome,
   if (selected?.ambiguous) return { schema: OBSERVER_CURSOR_SCHEMA, status: 'ambiguous_parent', cursor: null };
   const current = selected ?? emptyCandidate();
   const throughCursor = encodeObserverCursor(cursorShape(current, projectSha256));
-  if (prior.host === null && current.host !== null) return publicResult('append', cursor, throughCursor, current);
-  if (prior.host !== null && current.host === null) return publicResult('resync_required', cursor, throughCursor, current);
-  if (prior.host !== current.host) return publicResult('host_switched', cursor, throughCursor, current);
-  if (prior.thread_sha256 !== current.threadHash) return publicResult('thread_switched', cursor, throughCursor, current);
-  return publicResult(prior.length === current.chain.length ? 'unchanged' : 'append', cursor, throughCursor, current);
+  const status = prior.host === null && current.host !== null ? 'append'
+    : prior.host !== null && current.host === null ? 'resync_required'
+      : prior.host !== current.host ? 'host_switched'
+        : prior.thread_sha256 !== current.threadHash ? 'thread_switched'
+          : prior.length === current.chain.length ? 'unchanged' : 'append';
+  return withProjection(publicResult(status, cursor, throughCursor, current), current, project, { dbPath, maxBodyChars, maxTotalChars });
 }
 
 export function encodeObserverCursor(value) {
@@ -76,11 +78,11 @@ function claudeCandidates(projectPath, receiptOptions) {
     chain.push({
       host: 'claude', thread_sha256: threadHash, origin_sha256: sha256(receipt.origin_session_id),
       user_sha256: receipt.user_sha256, assistant_sha256: receipt.assistant_sha256,
-      completed_at: receipt.completed_at, source_sha256: sha256(`claude:${receipt.sequence}`),
+      completed_at: receipt.completed_at, source_sha256: sha256(`claude:${receipt.sequence}`), _sessionId: receipt.target_session_id,
     });
     grouped.set(threadHash, chain);
   }
-  return [...grouped].map(([threadHash, chain]) => candidate('claude', threadHash, chain, snapshot.history_floor));
+  return [...grouped].map(([threadHash, chain]) => candidate('claude', threadHash, chain, snapshot.history_floor, chain.at(-1)?._sessionId ?? null));
 }
 
 function codexCandidates(projectPath, codexHome) {
@@ -88,7 +90,7 @@ function codexCandidates(projectPath, codexHome) {
     .map((item) => {
       const parsed = parseCodexRolloutFile(item.rolloutPath);
       const chain = parsed.activeTurns.flatMap((turn) => codexTurnEntry(turn, item.id, item.rolloutPath));
-      return candidate('codex', sha256(item.id), chain, 1);
+      return candidate('codex', sha256(item.id), chain, 1, buildCodexThroughlineSessionId(item.id));
     })
     .filter((item) => item.chain.length > 0);
 }
@@ -107,9 +109,9 @@ function codexTurnEntry(turn, threadId, rolloutPath) {
   }];
 }
 
-function candidate(host, threadHash, chain, historyFloor) {
+function candidate(host, threadHash, chain, historyFloor, sessionId) {
   return { host, threadHash, chain, historyFloor, latestAt: chain.at(-1)?.completed_at ?? -1,
-    sourceHash: chain.at(-1)?.source_sha256 ?? sha256(`${host}:${threadHash}`) };
+    sourceHash: chain.at(-1)?.source_sha256 ?? sha256(`${host}:${threadHash}`), sessionId };
 }
 
 function emptyCandidate() { return { host: null, threadHash: null, chain: [], historyFloor: 1, latestAt: -1, sourceHash: null }; }
@@ -134,8 +136,20 @@ function publicResult(status, afterCursor, throughCursor, current) {
   return {
     schema: OBSERVER_CURSOR_SCHEMA, status, afterCursor, throughCursor,
     host: current.host, thread_sha256: current.threadHash,
-    chain: current.chain.map((entry) => ({ ...entry })),
+    chain: current.chain.map(({ _sessionId: _sessionId, ...entry }) => ({ ...entry })),
   };
+}
+
+function withProjection(result, current, projectPath, { dbPath, maxBodyChars, maxTotalChars }) {
+  if (!dbPath || current.chain.length === 0 || result.status === 'resync_required') return result;
+  const projection = readCompletedPairProjection({
+    dbPath, sessionId: current.sessionId, projectRoot: projectPath,
+    expectedPairs: current.chain.map(({ origin_sha256, user_sha256, assistant_sha256 }) => ({ origin_sha256, user_sha256, assistant_sha256 })),
+    ...(maxBodyChars === undefined ? {} : { maxBodyChars }),
+    ...(maxTotalChars === undefined ? {} : { maxTotalChars }),
+  });
+  if (projection.status === 'pending') return { ...result, status: 'projection_pending', throughCursor: null, turns: [] };
+  return { ...result, turns: projection.turns };
 }
 
 function prefixDigest(chain) {

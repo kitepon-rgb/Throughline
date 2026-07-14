@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { decodeObserverCursor, encodeObserverCursor, resolveObserverTurnFeed } from './observer-turn-feed.mjs';
 import { writeCompletedTurnReceipt } from './completed-turn-receipts.mjs';
 import { hashAuditorBody } from './body-digest.mjs';
@@ -120,4 +121,32 @@ test('observer feed: prior source loss never downgrades into a switch', () => {
     rmSync(receiptPath, { recursive: true, force: true });
     assert.equal(resolveObserverTurnFeed({ projectPath: box.project, cursor: claudePrior.throughCursor, codexHome: box.home, receiptOptions: box.receiptOptions }).status, 'resync_required', 'source全消失もresync');
   } finally { rmSync(box.root, { recursive: true, force: true }); }
+});
+
+test('observer feed: DB projection is all-or-nothing and never exposes raw session identity', () => {
+  const box = fixture();
+  const dbPath = join(box.root, 'throughline.db');
+  let db;
+  try {
+    const options = box.receiptOptions;
+    writeCompletedTurnReceipt({ projectPath: box.project, targetSessionId: 'private-session', originSessionId: 'private-origin', userBody: 'captured user', assistantBody: 'captured answer', completedAt: 1 }, options);
+    const pending = resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: options, dbPath });
+    assert.equal(pending.status, 'projection_pending');
+    assert.deepEqual(pending.turns, []);
+    db = new DatabaseSync(dbPath);
+    db.exec(`PRAGMA user_version = 8;
+      CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
+      CREATE TABLE bodies (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, origin_session_id TEXT NOT NULL, turn_number INTEGER NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);`);
+    db.prepare('INSERT INTO sessions (session_id, project_path) VALUES (?, ?)').run('private-session', box.project);
+    db.prepare('INSERT INTO bodies (session_id, origin_session_id, turn_number, role, text, created_at) VALUES (?, ?, 1, ?, ?, ?)').run('private-session', 'private-origin', 'user', 'captured user', 1);
+    db.prepare('INSERT INTO bodies (session_id, origin_session_id, turn_number, role, text, created_at) VALUES (?, ?, 1, ?, ?, ?)').run('private-session', 'private-origin', 'assistant', 'captured answer', 2);
+    const fresh = resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: options, dbPath, maxTotalChars: 0 });
+    assert.equal(fresh.status, 'snapshot');
+    assert.equal(fresh.turns.length, 1);
+    assert.equal(fresh.turns[0].truncated, true);
+    assert.doesNotMatch(JSON.stringify(fresh), /private-session|private-origin|captured user|captured answer/);
+  } finally {
+    db?.close();
+    rmSync(box.root, { recursive: true, force: true });
+  }
 });
