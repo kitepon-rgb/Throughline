@@ -150,21 +150,22 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
 
 - [ ] 進行中turnを含むDBとcompleted-only rolloutの差をfixture testで固定する。
 - [ ] Stop continuation後、最終`task_complete`までcursorが進まないtestを置く。
-- [ ] rollbackでordinalが変わってもpair hash prefixで検出できるtestを置く。
-- [ ] project配下cwdと別projectの候補分離を固定する。
+- [x] rollbackでordinalが変わってもpair hash prefixで検出できるtestを置く。
+- [x] project配下cwdと別projectの候補分離を固定する。
 - [x] Claude transcript、Throughline DB projection、Stop hookの順序を実hostで観測し、完了turnを進行中turnから分ける正式証拠を裁定する。
   - Claude Code 2.1.207／Haiku 4.5／plan権限で、final assistant後にStop hooksが走ることを実hostで確認した。final assistant、process exit、mtimeを証拠にせず、Throughline Stop hookがpair capture成功後に書く製品所有receiptを採用する。正本は[ADR 0002](adr/0002-observer-claude-completion-receipt.md)。
 - [x] Claudeのthread identity、project解決、continuation後の完了境界、再起動／resumeをfixtureと実測で固定する。
   - headless `result/end_turn`と同じ`session_id`の`--resume`、`SessionStart:resume`を確認した。backgroundは`--print`と両立せず、`claude --bg '<task>'`がjob handleを返す。`agents --json`、`logs`、`stop`で`busy/working → idle/done → stop`を回収できた。
-- [ ] ClaudeとCodexの候補が同じprojectにある場合のhost switchと曖昧性を固定する。
+- [x] ClaudeとCodexの候補が同じprojectにある場合のhost switchと曖昧性を固定する。
 
 ### Phase 1: Core projection
 
-- [ ] `src/observer-turn-feed.mjs`へproject resolver、completed chain、opaque cursorを実装する。
+- [x] `src/observer-turn-feed.mjs`へproject resolver、completed chain、opaque cursorを実装する。
+  - commit `def92f4`。Codexは自身の`task_complete`時刻だけを採用し、Claude receiptと共通のhash-only chainへ投影する。prior sourceのrollback／消失をswitchより先に検証する。
 - [x] Claude Stop hookからbounded private completion receiptをatomic publishし、project digest、session、pair digest、sequenceを固定する。receipt失敗時はcursorを進めない。
   - project digestごとのprivate storeへ分離し、256件の履歴上限と`history_floor`をproject単位で保持する。同一origin/pairのStop再実行はsession mergeでtargetが変わっても再採番せず、DB capture成功後・L1/L3前に同期publishする。
-- [ ] host adapter境界を設け、Claude既存parserとCodex rollout parserのcompleted chainを共通projectionへ変換する。
-- [ ] empty baseline、same-thread append、thread switch、host switch、ambiguous parent、rollback、version mismatchを実装する。
+- [x] host adapter境界を設け、Claude既存parserとCodex rollout parserのcompleted chainを共通projectionへ変換する。
+- [x] empty baseline、same-thread append、thread switch、host switch、ambiguous parent、rollback、version mismatchを実装する。
 - [ ] DB freshness照合を既存`auditor-context` helperと共有し、重複した別仕様を作らない。
 - [ ] bounded snapshot、delta pagination、page token検証を実装する。
 
