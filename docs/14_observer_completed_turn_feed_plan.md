@@ -205,7 +205,10 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
 
 ### Phase 3: Integration
 
-- [ ] Observer fixtureからCLIだけを使うblack-box contract testを通す。
+- [x] Observer fixtureからCLIだけを使うblack-box contract testを通す。
+  - Observer commit `45d1458`のintegration testから実`bin/throughline.mjs`だけを起動し、isolated環境で
+    empty snapshot、待機中changed、timeout、呼出前completionの即時changed、`projection_pending`を確認した。
+    実行時間2.27秒、1/1 green。Observer Control revision 49で親受入済み。
 - [ ] Claude／CodexそれぞれのObserver fixtureで65秒超live waitと3600秒設定を確認する。
 - [ ] Claude hook、Codex capture、auditor-context、token monitorの回帰を通す。
 - [ ] README、CLAUDE.md、docs overview、CHANGELOGを実装済み挙動に同期する。
