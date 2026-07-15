@@ -196,7 +196,9 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
   - 公開4状態をstdout JSON／exit 0、hard failureを固定codeのstderr JSON／exit 1へ固定した。
     実bin dispatchを含む関連gateは12/12 green、Control `observer-feed-20260715` revision 43で
     immutable ADR 0008へfinalizeした。
-- [ ] 65秒超live waitと3600秒設定をblack-boxで確認する。
+- [x] 65秒超live waitと3600秒設定をblack-boxで確認する。
+  - 隔離HOMEの実`throughline observer-wait`へ`--timeout-seconds 3600`を渡し、65.1秒後に
+    Claude completed receiptを投入した。65,142msで`changed`、stderr空、exit 0を一回で確認した。
 
 ### Phase 3: Integration
 
