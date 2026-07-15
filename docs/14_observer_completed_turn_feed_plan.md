@@ -222,8 +222,19 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
   - commit `fb558d7`。JSON-only CLI、opaque cursor、read/wait状態、3600秒上限、host固有completed証拠、
     DB/WAL/rollout直接監視へfallbackしない境界を同期した。Control `observer-feed-20260715` revision 60で
     ADR 0009へfinalize済み。
-- [ ] `npm test`、`npm pack --dry-run --json`、`git diff --check`をgreenにする。
-- [ ] 独立監査でin-flight混入、thread誤選択、cursor欠落、cancel leak、privacyを反証する。
+- [x] `npm test`、`npm pack --dry-run --json`、`git diff --check`をgreenにする。
+  - fullは監査前HEAD `c5d6f2d`で661件中660件成功、失敗0、Windows限定1件skip。
+    監査後deltaはfocused 28/28で検証した。修正後packはentryCount 190、`git diff --check`も成功。
+- [x] 独立監査でin-flight混入、thread誤選択、cursor欠落、cancel leak、privacyを反証する。
+  - 監査時点の製品判定はFAILEDとしてControl revision 67でrejectし、P1/P2を採用した。
+  - [x] P1: 複数turn backfillで全completed pairをClaude receiptへ時系列publishする。
+    commit `02a809f`、focused gate 28/28成功。
+  - [x] P2: Codex project resolverでPOSIX pathのcaseを保持する。
+    commit `88fafaf`、focused gate 28/28成功。
+  - Phase受入Decisionは[ADR 0010](adr/0010-observer-o1-phase-acceptance.md)。
+  - 監査修正Control `observer-feed-o1-audit-fixes-20260715`はbehavior-change revision 15、
+    元Control `observer-feed-20260715`はclosure revision 78でfinalizeした。lane境界は
+    [ADR 0011](adr/0011-observer-o1-control-lane-reconciliation.md)。
 
 ## 受け入れ条件
 
