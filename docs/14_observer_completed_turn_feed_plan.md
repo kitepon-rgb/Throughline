@@ -186,9 +186,16 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     重複・未知引数を拒否する。既知のread状態はstdout JSON／exit 0、hard failureは固定codeの
     stderr JSON／exit 1とし、内部path・本文・cursor・hashをerrorへ漏らさない。実bin dispatchを含む
     関連gateは14/14 green、Control `observer-feed-20260715` revision 33でimmutable ADR 0007へfinalizeした。
-- [ ] `observer-wait`の即時changed、待機changed、timeout、deadline再確認を実装する。
-- [ ] SIGINT / SIGTERM / parent disconnectで待機を明示cancelする。
-- [ ] CLI help、bin dispatch、import-safe testを追加する。
+- [x] `observer-wait`の即時changed、待機changed、timeout、deadline再確認を実装する。
+  - core commit `60c4036`。monotonic deadline、各wakeでtimeout判定より先の再計算、deadline上の
+    最終poll、abort競合、timer/listener cleanupを実装した。関連gateは15/15 green。
+- [x] SIGINT / SIGTERM / parent disconnectで待機を明示cancelする。
+  - CLI commit `1165efd`。IPC disconnectに加え、起動時ppidの変化と`kill(pid, 0)`のESRCHをcancelへ
+    写し、EPERMは親不在扱いしない。signal listenerと親watch timerをfinallyで解放する。
+- [x] CLI help、bin dispatch、import-safe testを追加する。
+  - 公開4状態をstdout JSON／exit 0、hard failureを固定codeのstderr JSON／exit 1へ固定した。
+    実bin dispatchを含む関連gateは12/12 green、Control `observer-feed-20260715` revision 43で
+    immutable ADR 0008へfinalizeした。
 - [ ] 65秒超live waitと3600秒設定をblack-boxで確認する。
 
 ### Phase 3: Integration
