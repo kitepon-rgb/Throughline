@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { readCompletedTurnReceiptSnapshot } from './completed-turn-receipts.mjs';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -401,6 +402,9 @@ test('process-turn subprocess backfills all completed logical turns from a multi
         { role: 'user', text: 'second request' },
       ],
     );
+    const receipts = readCompletedTurnReceiptSnapshot({ projectPath: project, env: childEnv(home) });
+    assert.equal(receipts.receipts.length, 2);
+    assert.deepEqual(receipts.receipts.map((entry) => entry.sequence), [1, 2]);
     db.close();
   } finally {
     rmSync(project, { recursive: true, force: true });

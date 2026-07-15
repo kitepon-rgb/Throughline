@@ -222,15 +222,18 @@ export async function run() {
   const turnNumber = backfill.lastTurnNumber;
 
   // Claude Stop hook が completion boundary であることを受け、L2 の user/assistant
-  // pair が DB に commit 済みであることを確認してから receipt を publish する。
+  // pair が DB に commit 済みであることを確認してから全logical turnのreceiptを時系列publishする。
+  // 過去のStopでDBだけ回収済みだったpairもreceipt storeの冪等性で穴埋めする。
   // receipt failure は Stop hook の failure として上位へ伝播させる。L1/L3/usage は
   // receipt 後の派生処理なので、そこで失敗しても completed pair を取り消さない。
-  publishCapturedClaudeCompletionReceipt(db, {
-    target,
-    origin,
-    turnNumber,
-    projectPath: cwd ?? process.cwd(),
-  });
+  for (const completedTurnNumber of backfill.turnNumbers) {
+    publishCapturedClaudeCompletionReceipt(db, {
+      target,
+      origin,
+      turnNumber: completedTurnNumber,
+      projectPath: cwd ?? process.cwd(),
+    });
+  }
 
   // L1 = 遅延要約。target 配下の bodies ターン数 (distinct origin×turn) が
   // WINDOW を超えていたら、最古の未要約ターンを 1 件だけ要約する。

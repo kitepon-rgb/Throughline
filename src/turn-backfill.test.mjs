@@ -58,7 +58,13 @@ test('backfillBodies: multi-fragment group uses last fragment index for both bod
       const result = backfillBodies(db, {
         targetSessionId: 'target', originSessionId: 'origin', transcriptPath: path, now: 999,
       });
-      assert.deepEqual(result, { groups: 2, insertedTurns: 2, skippedExisting: 0, lastTurnNumber: 4 });
+      assert.deepEqual(result, {
+        groups: 2,
+        insertedTurns: 2,
+        skippedExisting: 0,
+        lastTurnNumber: 4,
+        turnNumbers: [2, 4],
+      });
       assert.deepEqual(
         db.prepare('SELECT turn_number, role, text FROM bodies ORDER BY turn_number, role').all().map((row) => ({ ...row })),
         [
@@ -103,7 +109,7 @@ test('backfillBodies: user-only group is dropped', () => {
       backfillBodies(db, {
         targetSessionId: 'target', originSessionId: 'origin', transcriptPath: path, now: 999,
       }),
-      { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null },
+      { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null, turnNumbers: [] },
     );
   });
 });
@@ -193,13 +199,13 @@ test('backfillBodies: sidechain entries and missing or empty paths produce no gr
         backfillBodies(db, {
           targetSessionId: 'target', originSessionId: 'origin', transcriptPath: null, now: 999,
         }),
-        { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null },
+        { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null, turnNumbers: [] },
       );
       assert.deepEqual(
         backfillBodies(db, {
           targetSessionId: 'target', originSessionId: 'origin', transcriptPath: '', now: 999,
         }),
-        { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null },
+        { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null, turnNumbers: [] },
       );
     },
   );

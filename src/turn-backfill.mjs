@@ -59,12 +59,12 @@ export function deriveTranscriptPath(projectPath, sessionId) {
  * @param {string} opts.originSessionId transcript を所有する origin session_id
  * @param {string|null|undefined} opts.transcriptPath
  * @param {number} opts.now timestamp 欠損時の fallback epoch ms
- * @returns {{groups: number, insertedTurns: number, skippedExisting: number, lastTurnNumber: number|null}}
+ * @returns {{groups: number, insertedTurns: number, skippedExisting: number, lastTurnNumber: number|null, turnNumbers: number[]}}
  */
 export function backfillBodies(db, { targetSessionId, originSessionId, transcriptPath, now }) {
   const groups = getLogicalTurnGroups(transcriptPath);
   if (groups.length === 0) {
-    return { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null };
+    return { groups: 0, insertedTurns: 0, skippedExisting: 0, lastTurnNumber: null, turnNumbers: [] };
   }
 
   const existing = new Set(
@@ -127,5 +127,6 @@ export function backfillBodies(db, { targetSessionId, originSessionId, transcrip
     insertedTurns,
     skippedExisting,
     lastTurnNumber: groups[groups.length - 1].representative.index,
+    turnNumbers: groups.map((group) => group.representative.index),
   };
 }
