@@ -48,15 +48,54 @@ function rewritePageToken(token, mutate) {
   return `${prefix}${Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')}`;
 }
 
-test('observer feed: task_complete前とsynthetic continuationはchainを進めない', () => {
+test('observer feed: in-flight DB recordとStop continuationは最終task_completeまでchainを進めない', () => {
   const box = fixture();
+  const dbPath = join(box.root, 'throughline.db');
+  let db;
   try {
     const id = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+    const sessionId = `codex:${id}`;
+    db = createProjectionDb(dbPath, box.project, sessionId);
+    const insert = db.prepare('INSERT INTO bodies (session_id, origin_session_id, turn_number, role, text, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    insert.run(sessionId, sessionId, 1, 'user', 'in-flight request', 1);
+    insert.run(sessionId, sessionId, 1, 'assistant', 'in-flight answer', 2);
     writeRollout(box.home, box.project, id, completeEvents().slice(0, 3));
-    assert.equal(resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions }).chain.length, 0);
-    writeRollout(box.home, box.project, id, [...completeEvents(), event('agent_message', 'continuation', '2026-07-15T00:01:01.000Z')]);
-    assert.equal(resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions }).chain.length, 1);
-  } finally { rmSync(box.root, { recursive: true, force: true }); }
+    const dbAhead = resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions, dbPath });
+    assert.equal(dbAhead.status, 'snapshot');
+    assert.equal(dbAhead.chain.length, 0, 'DBにpair本文があってもrollout未完了turnをcompleted feedへ出さない');
+    const emptyCursor = decodeObserverCursor(dbAhead.throughCursor);
+    assert.equal(emptyCursor.host, null);
+    assert.equal(emptyCursor.thread_sha256, null);
+    assert.equal(emptyCursor.length, 0);
+
+    writeRollout(box.home, box.project, id, completeEvents());
+    const baseline = resolveObserverTurnFeed({ projectPath: box.project, codexHome: box.home, receiptOptions: box.receiptOptions });
+    writeRollout(box.home, box.project, id, [
+      ...completeEvents(),
+      event('user_message', 'continuation request', '2026-07-15T00:01:01.000Z'),
+      event('task_started', undefined, '2026-07-15T00:01:02.000Z'),
+      event('agent_message', 'Stop continuation', '2026-07-15T00:01:03.000Z'),
+    ]);
+    const beforeFinalComplete = resolveObserverTurnFeed({ projectPath: box.project, cursor: baseline.throughCursor, codexHome: box.home, receiptOptions: box.receiptOptions });
+    assert.equal(beforeFinalComplete.status, 'unchanged');
+    assert.equal(beforeFinalComplete.throughCursor, baseline.throughCursor);
+    assert.equal(beforeFinalComplete.chain.length, 1);
+
+    writeRollout(box.home, box.project, id, [
+      ...completeEvents(),
+      event('user_message', 'continuation request', '2026-07-15T00:01:01.000Z'),
+      event('task_started', undefined, '2026-07-15T00:01:02.000Z'),
+      event('agent_message', 'Stop continuation', '2026-07-15T00:01:03.000Z'),
+      event('task_complete', undefined, '2026-07-15T00:01:04.000Z'),
+    ]);
+    const afterFinalComplete = resolveObserverTurnFeed({ projectPath: box.project, cursor: baseline.throughCursor, codexHome: box.home, receiptOptions: box.receiptOptions });
+    assert.equal(afterFinalComplete.status, 'append');
+    assert.notEqual(afterFinalComplete.throughCursor, baseline.throughCursor);
+    assert.equal(afterFinalComplete.chain.length, 2);
+  } finally {
+    db?.close();
+    rmSync(box.root, { recursive: true, force: true });
+  }
 });
 
 test('observer feed: same-thread append, rollback prefix change, and project separation', () => {

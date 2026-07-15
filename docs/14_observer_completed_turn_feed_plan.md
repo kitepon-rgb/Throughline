@@ -149,8 +149,11 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
 
 ### Phase 0: Characterization
 
-- [ ] 進行中turnを含むDBとcompleted-only rolloutの差をfixture testで固定する。
-- [ ] Stop continuation後、最終`task_complete`までcursorが進まないtestを置く。
+- [x] 進行中turnを含むDBとcompleted-only rolloutの差をfixture testで固定する。
+- [x] Stop continuation後、最終`task_complete`までcursorが進まないtestを置く。
+  - 同一fixtureでDBにuser／assistant pairが先行してもcompleted chainが空のままであること、既存完了turn後の
+    Stop continuation本文が最終`task_complete`まで`unchanged`となり、完了後だけ`append`されることを固定した。
+    関連gateは9/9 green、Control `observer-feed-20260715` revision 50で親受入済み。
 - [x] rollbackでordinalが変わってもpair hash prefixで検出できるtestを置く。
 - [x] project配下cwdと別projectの候補分離を固定する。
 - [x] Claude transcript、Throughline DB projection、Stop hookの順序を実hostで観測し、完了turnを進行中turnから分ける正式証拠を裁定する。
