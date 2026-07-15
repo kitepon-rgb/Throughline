@@ -209,7 +209,12 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
   - Observer commit `45d1458`のintegration testから実`bin/throughline.mjs`だけを起動し、isolated環境で
     empty snapshot、待機中changed、timeout、呼出前completionの即時changed、`projection_pending`を確認した。
     実行時間2.27秒、1/1 green。Observer Control revision 49で親受入済み。
-- [ ] Claude／CodexそれぞれのObserver fixtureで65秒超live waitと3600秒設定を確認する。
+- [x] Claude／CodexそれぞれのObserver fixtureで65秒超live waitと3600秒設定を確認する。
+  - Observer commit `dc31c08`で、別projectのClaude receipt／Codex `task_complete`を使う2本のwaitを
+    並行起動し、一度の65.1秒待機後に両方が`changed`となるblack-box fixtureを追加した。
+    両CLI argvの`--timeout-seconds 3600`も固定した。focused gateは2/2 green、68,441.638ms。
+  - 不変の受入証拠はObserver `docs/adr/0045-o1-dual-host-live-wait-acceptance.md`とControl
+    `observer-o1-live-fixture-adr-20260715` revision 3。可変planを参照した旧receiptは使わない。
 - [ ] Claude hook、Codex capture、auditor-context、token monitorの回帰を通す。
 - [ ] README、CLAUDE.md、docs overview、CHANGELOGを実装済み挙動に同期する。
 - [ ] `npm test`、`npm pack --dry-run --json`、`git diff --check`をgreenにする。
