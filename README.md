@@ -734,6 +734,8 @@ aggregate は collection が既定OFFで、canonical dotagents config の
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
 | `throughline monitor --diag`                   | Dump TTY/columns/env diagnostics (for debugging monitor render bugs) |
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
+| `throughline observer-read --project <absolute-directory> --json` | Read one completed-turn Observer page through the JSON-only public boundary |
+| `throughline observer-wait --project <absolute-directory> --after-cursor <opaque> [--timeout-seconds 3600] --json` | Wait up to 3600 seconds for a completed-turn Observer cursor change |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |
 | `throughline doctor --session <id-prefix>`     | Diagnose a specific session — detect state/transcript drift, idle vs. stuck |
 | `throughline doctor --trim --host claude\|codex` | Diagnose trim host boundaries, manual procedure, and Codex host primitive blockage |
@@ -786,6 +788,29 @@ Slash commands (invoked by the user in Claude Code):
 Hook subcommands (invoked by Claude Code, not by humans):
 `session-start` (SessionStart), `process-turn` (Stop),
 `prompt-submit` (UserPromptSubmit — detects `/tl` and `/clear` and writes a baton).
+
+### Observer completed-turn feed (development)
+
+`observer-read` and `observer-wait` are JSON-only, read-only CLI boundaries for
+the separate Observer product; Throughline does not add an MCP server or grant
+Observer access to its DB, WAL, or rollout files. Pass an existing absolute
+project directory. The returned `throughline.observer_cursor.v1` cursor is
+opaque and bounded: callers may store and return it, but must not decode or
+modify it.
+
+`observer-read` returns a completed-only `snapshot`, `delta`,
+`thread_switched`, or `host_switched` page. A stale or invalid cursor returns
+`resync_required`; a completed source whose DB pair projection is not yet fresh
+returns `projection_pending` without bodies. Pagination is bound to the exact
+project, after cursor, and fixed through cursor, so a newly completed turn is
+collected by the next wait instead of being mixed into an in-progress page.
+
+`observer-wait` returns one of four successful states: `changed`, `timeout`,
+`resync_required`, or `ambiguous_parent`. `timeout` preserves the input cursor.
+The default and maximum `--timeout-seconds` value is 3600. Claude completion is
+derived from Throughline's private Stop receipt; Codex completion is derived
+only from that host's rollout `task_complete`. The CLI never recommends DB
+polling as a fallback.
 
 ### `throughline detail` — for AI, not humans
 

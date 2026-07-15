@@ -10,6 +10,18 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Added
+
+- Added the development-stage, JSON-only completed-turn Observer CLI boundary:
+  `throughline observer-read` returns opaque-cursor pages and `throughline
+  observer-wait` waits up to 3600 seconds for a cursor change. The completed
+  feed uses Throughline-owned Claude Stop receipts and Codex rollout
+  `task_complete` records; it does not expose or require direct DB/WAL/rollout
+  polling. Wait returns `changed`, `timeout`, `resync_required`, or
+  `ambiguous_parent`; read reports stale DB projection as `projection_pending`
+  without bodies. This is unreleased: the remaining regression and release
+  gates are not recorded as complete.
+
 ## [0.6.3] — 2026-07-14
 
 ### Fixed

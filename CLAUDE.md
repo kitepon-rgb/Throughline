@@ -32,7 +32,9 @@ GitHub Release、npm shasum `4f3fcd2598a75f026358dae7f3eb3165242b580b` を確認
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
 assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切
 返さず、schema/project/I/O異常はhard failure、本文bound時もturn recordとdigestを保持する。
-pagination、JSON read/wait CLI、65秒超live E2E、Phase full gateは未完了であり、公開版には未収録。
+pagination、JSON-only `observer-read` / `observer-wait` CLI、最大3600秒wait、Claude／Codex別projectの
+65秒超live E2Eは実装済み。公開版への収録、hook／capture／auditor／monitor回帰、full gateは未完のまま
+であり、MCP transportはObserver所有、ThroughlineはCLI境界だけを提供する。
 
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 
@@ -83,6 +85,7 @@ pagination、JSON read/wait CLI、65秒超live E2E、Phase full gateは未完了
 |---|---|
 | [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v8 migration。`node:sqlite` 組み込み、依存ゼロ |
 | [src/auditor-context.mjs](src/auditor-context.mjs) | Spotter 専用の read-only auditor projection。指定 session / project の completed L2 user/assistant pair だけを、最新 pair の origin / turn / SHA-256 freshness と schema v8 で検査し、bounded JSON context を返す。DB 作成・migration・書き込みはしない。Spotter 側の opt-in と送信判断は Throughline の責務外 |
+| [src/observer-turn-feed.mjs](src/observer-turn-feed.mjs) | Observer向けのcompleted-only Claude receipt／Codex `task_complete` projection、opaque cursor、fixed-through pagination。DB/WALを公開せず、host ambiguityとcursor不整合はfail closedにする |
 | [src/transcript-reader.mjs](src/transcript-reader.mjs) | transcript JSONL パーサー |
 | [src/transcript-usage.mjs](src/transcript-usage.mjs) | 最新 assistant の `message.usage` から実測トークン数を抽出、1M context 検出 |
 | [src/codex-capture.mjs](src/codex-capture.mjs) | Codex rollout JSONL の active turns を Throughline DB の `bodies` に保存する capture adapter。`thread_rolled_back` 適用後の active thread だけを `codex:<thread_id>` session として再構成する |
@@ -130,6 +133,8 @@ pagination、JSON read/wait CLI、65秒超live E2E、Phase full gateは未完了
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
 | [src/cli/auditor-context.mjs](src/cli/auditor-context.mjs) | `auditor-context` — Spotter 専用・JSON-only の read-only projection。`--session` / `--project` と、explicit pair identity/hash または `--host claude\|codex --transcript` を受ける（排他）。`fresh` だけに L2 body を含め、`empty` / `stale` / `session_mismatch` / `unavailable` / `schema_mismatch` は空 turns を返す。DB は create/migrate/write しない |
+| [src/cli/observer-read.mjs](src/cli/observer-read.mjs) | `observer-read` — existing absolute project向けJSON-only completed-turn page。opaque cursorを受け、snapshot / delta / thread・host switch、`resync_required`、`projection_pending`を返す |
+| [src/cli/observer-wait.mjs](src/cli/observer-wait.mjs) | `observer-wait` — opaque after cursorから最大3600秒待機し、`changed` / `timeout` / `resync_required` / `ambiguous_parent`だけをJSONで返す。cancelは成功に丸めない |
 | [src/cli/runtime-errors.mjs](src/cli/runtime-errors.mjs) | `runtime-errors snapshot\|diagnostics\|ack\|resolve\|reopen\|compact --json` — product-owned store の bounded JSON API。snapshot/diagnostics は state path を出さず、mutation API は cursor または fingerprint だけを受け付ける |
 | [src/cli/codex-capture.mjs](src/cli/codex-capture.mjs) | `codex-capture` — 明示 Codex thread id の rollout active turns を `codex:<thread_id>` session として DB に保存する。thread id が無い場合は自動推測しない |
 | [src/cli/codex-summarize.mjs](src/cli/codex-summarize.mjs) | `codex-summarize` — captured `codex:<thread_id>` session の古い L2 を Codex CLI backend で L1 skeleton に要約する。Claude Haiku へ fallback しない |
