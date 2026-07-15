@@ -185,7 +185,7 @@ function normalizePath(value) {
   } catch {
     // Keep the lexical path when it cannot be resolved.
   }
-  return resolved.split(sep).join('/').replace(/\/+$/, '').toLowerCase();
+  return resolved.split(sep).join('/').replace(/\/+$/, '');
 }
 
 function isSameProjectOrDescendant(candidate, root) {

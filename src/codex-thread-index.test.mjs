@@ -67,6 +67,24 @@ test('listCodexThreadCandidates: filters rollouts to current project and merges 
   }
 });
 
+test('listCodexThreadCandidates: POSIX project path matching preserves case', {
+  skip: process.platform === 'win32' ? 'Windows paths are case-insensitive' : undefined,
+}, () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
+  const root = mkdtempSync(join(tmpdir(), 'tl-codex-case-'));
+  const project = join(root, 'Project');
+  const other = join(root, 'project');
+  try {
+    writeRollout(home, { day: '06', started: '2026-05-06T09-40-50', id: '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9', cwd: project });
+    writeRollout(home, { day: '06', started: '2026-05-06T09-41-50', id: '019dfabb-1111-7111-8111-111111111111', cwd: other });
+    const candidates = listCodexThreadCandidates({ codexHome: home, projectPath: project });
+    assert.deepEqual(candidates.map((entry) => entry.cwd), [project]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('listCodexThreadCandidates: sorts by rollout mtime rather than stale index updated_at', () => {
   const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
   const project = mkdtempSync(join(tmpdir(), 'tl-codex-project-'));
