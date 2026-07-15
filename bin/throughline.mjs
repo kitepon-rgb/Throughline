@@ -74,6 +74,11 @@ switch (cmd) {
     if (exitCode !== 0) process.exitCode = exitCode;
     break;
   }
+  case 'observer-read': {
+    const exitCode = (await import('../src/cli/observer-read.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
   case 'factory-diagnostics': {
     const exitCode = (await import('../src/cli/factory-diagnostics.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
@@ -184,6 +189,8 @@ Usage:
                               Read only bounded completed user/assistant context
                               for an auditor; requires either --host plus --transcript,
                               or explicit pair identity/hashes; always requires --json
+  throughline observer-read --project <absolute-directory> --json
+                              Read one JSON-only completed-turn Observer page
   throughline factory-diagnostics --json
                               Read-only native factory readiness JSON. Never emits
                               session/prompt bodies, secrets, absolute paths, or raw state
