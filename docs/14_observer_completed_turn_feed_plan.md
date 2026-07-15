@@ -181,7 +181,11 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
 
 ### Phase 2: CLI read / wait
 
-- [ ] `observer-read`と厳格なJSON schema / exit契約を実装する。
+- [x] `observer-read`と厳格なJSON schema / exit契約を実装する。
+  - commit `e3380fa`。公開入口を`throughline observer-read --project <absolute> --json`へ固定し、
+    重複・未知引数を拒否する。既知のread状態はstdout JSON／exit 0、hard failureは固定codeの
+    stderr JSON／exit 1とし、内部path・本文・cursor・hashをerrorへ漏らさない。実bin dispatchを含む
+    関連gateは14/14 green、Control `observer-feed-20260715` revision 33でimmutable ADR 0007へfinalizeした。
 - [ ] `observer-wait`の即時changed、待機changed、timeout、deadline再確認を実装する。
 - [ ] SIGINT / SIGTERM / parent disconnectで待機を明示cancelする。
 - [ ] CLI help、bin dispatch、import-safe testを追加する。
