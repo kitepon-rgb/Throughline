@@ -215,8 +215,13 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     両CLI argvの`--timeout-seconds 3600`も固定した。focused gateは2/2 green、68,441.638ms。
   - 不変の受入証拠はObserver `docs/adr/0045-o1-dual-host-live-wait-acceptance.md`とControl
     `observer-o1-live-fixture-adr-20260715` revision 3。可変planを参照した旧receiptは使わない。
-- [ ] Claude hook、Codex capture、auditor-context、token monitorの回帰を通す。
-- [ ] README、CLAUDE.md、docs overview、CHANGELOGを実装済み挙動に同期する。
+- [x] Claude hook、Codex capture、auditor-context、token monitorの回帰を通す。
+  - 関連6 test fileを一度だけ実行し、130/130 green、失敗・skip・cancel・todo各0、807.298ms。
+    受入は[ADR 0009](adr/0009-observer-integration-regression-and-docs.md)へ固定した。
+- [x] README、CLAUDE.md、docs overview、CHANGELOGを実装済み挙動に同期する。
+  - commit `fb558d7`。JSON-only CLI、opaque cursor、read/wait状態、3600秒上限、host固有completed証拠、
+    DB/WAL/rollout直接監視へfallbackしない境界を同期した。Control `observer-feed-20260715` revision 60で
+    ADR 0009へfinalize済み。
 - [ ] `npm test`、`npm pack --dry-run --json`、`git diff --check`をgreenにする。
 - [ ] 独立監査でin-flight混入、thread誤選択、cursor欠落、cancel leak、privacyを反証する。
 
