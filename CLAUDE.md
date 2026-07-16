@@ -37,8 +37,9 @@ pagination、JSON-only `observer-read` / `observer-wait` CLI、最大3600秒wait
 であり、MCP transportはObserver所有、ThroughlineはCLI境界だけを提供する。
 2026-07-16のObserver queue 19e実Claudeでは、async Stop hookがfinal assistant行のtranscript
 可視化前にbackfillして正常no-opとなるflush raceを再現した。`last_assistant_message`を本文ではなく
-latest logical groupのbounded flush barrierにだけ使う修理を
-[ADR 0012](docs/adr/0012-claude-stop-transcript-flush-barrier.md)／docs 14 Phase 4で進行中である。
+latest logical groupのbounded flush barrierにだけ使う修理はcommit `a46b915`で完了した。
+正本は[ADR 0012](docs/adr/0012-claude-stop-transcript-flush-barrier.md)／docs 14 Phase 4。Observer queue 19eの
+candidate再梱包・live再検証は未完である。
 
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 

@@ -251,8 +251,8 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
 - [x] delayed assistant append、古い同文answer＋current user-only、deadline、通常同期flushをfocused testで固定する。
   - `node --test src/turn-processor.test.mjs`: 14/14成功。
   - `node --test --test-name-pattern='process-turn subprocess' src/hook-entrypoints.test.mjs`: 2/2成功。
-- [ ] hook／backfill／receiptのrelated gateを一度通し、独立commit後にObserver queue 19eへ戻る。
-  - related 7ファイルは78/78成功。独立commitの確定後に完了へする。
+- [x] hook／backfill／receiptのrelated gateを一度通し、独立commit後にObserver queue 19eへ戻る。
+  - related 7ファイルは78/78成功。修理はcommit `a46b915`として独立確定した。
 
 ## 受け入れ条件
 
