@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -326,6 +328,57 @@ test('readCompletedPairProjection: missing session is pending without any body',
       status: 'pending', reason: 'session_not_found', turns: [],
     });
   });
+});
+
+test('readCompletedPairProjection: bounded wait内にwriter lockが解放されれば同じpairを読む', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tl-observer-read-busy-'));
+  const path = join(dir, 'throughline.db');
+  const pair = { originSessionId: 'origin-a', turnNumber: 1, user: 'user', assistant: 'answer' };
+  const expectedPairs = [{
+    origin_sha256: hashAuditorBody(pair.originSessionId),
+    user_sha256: hashAuditorBody(pair.user),
+    assistant_sha256: hashAuditorBody(pair.assistant),
+  }];
+  const db = new DatabaseSync(path);
+  db.exec(`
+    PRAGMA journal_mode = DELETE;
+    PRAGMA user_version = 8;
+    CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
+    CREATE TABLE bodies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      origin_session_id TEXT NOT NULL,
+      turn_number INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+  seedSession(db, { pairs: [pair] });
+  db.close();
+  const writer = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { DatabaseSync } from 'node:sqlite';
+    const db = new DatabaseSync(process.argv[1]);
+    db.exec('BEGIN EXCLUSIVE');
+    process.stdout.write('ready\\n');
+    setTimeout(() => { db.exec('ROLLBACK'); db.close(); }, 200);
+  `, path], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = once(writer, 'exit');
+  try {
+    await once(writer.stdout, 'data');
+    const startedAt = Date.now();
+    const result = readCompletedPairProjection({
+      dbPath: path, sessionId: 'session-1', projectRoot: '/repo', expectedPairs,
+    });
+    assert.equal(result.status, 'fresh');
+    assert.deepEqual(result.turns.map((turn) => turn.origin_sha256), expectedPairs.map((entry) => entry.origin_sha256));
+    assert.ok(Date.now() - startedAt >= 100);
+    const [code] = await exited;
+    assert.equal(code, 0);
+  } finally {
+    if (writer.exitCode === null) writer.kill('SIGTERM');
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('readCompletedPairProjection: schema and project mismatch are hard failures', () => {

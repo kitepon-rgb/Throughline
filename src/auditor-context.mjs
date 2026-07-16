@@ -14,6 +14,7 @@ export const AUDITOR_CONTEXT_DB_SCHEMA_VERSION = 8;
 export const DEFAULT_AUDITOR_RECENT_TURNS = 2;
 export const DEFAULT_AUDITOR_MAX_BODY_CHARS = 1200;
 export const DEFAULT_AUDITOR_MAX_TOTAL_CHARS = 4000;
+const OBSERVER_PROJECTION_BUSY_TIMEOUT_MS = 1_000;
 
 export function defaultAuditorContextDbPath() {
   return join(homedir(), '.throughline', 'throughline.db');
@@ -188,7 +189,11 @@ export function readCompletedPairProjection({
   if (!Number.isInteger(maxTotalChars) || maxTotalChars < 0) throw new TypeError('maxTotalChars must be an integer >= 0');
   if (!existsSync(dbPath)) return { status: 'pending', reason: 'db_not_found', turns: [] };
   let db;
-  try { db = new DatabaseSync(dbPath, { readOnly: true }); } catch (cause) {
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+    db.exec(`PRAGMA busy_timeout = ${OBSERVER_PROJECTION_BUSY_TIMEOUT_MS}`);
+  } catch (cause) {
+    db?.close();
     throw new AuditorContextError('E_AUDITOR_CONTEXT_DB_OPEN', 'auditor context DB could not be opened', { cause });
   }
   try {
