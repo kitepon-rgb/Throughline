@@ -236,6 +236,24 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     元Control `observer-feed-20260715`はclosure revision 78でfinalizeした。lane境界は
     [ADR 0011](adr/0011-observer-o1-control-lane-reconciliation.md)。
 
+### Phase 4: queue 19e live defect correction
+
+- [x] Claude async Stop hookのtranscript flush raceを閉じる。
+  - queue 19eの実Claude turnはassistant `end_turn`、Stop hook 4本・error 0、candidate `process-turn`
+    state更新まで成立したが、実行時DBはuser／assistantとも0件、receiptも0件だった。同じtranscriptを
+    turn後に読むとlatest logical groupは1件なので、shape不一致でなくfinal assistant行の可視化前に
+    一回だけbackfillしたraceである。
+  - `last_assistant_message`は本文ソースにせず、latest user groupに対応するassistantがtranscriptへ
+    永続化されたことを確定するbounded barrierにだけ使う。古い同文answer、前turn、DB本文へfallbackしない。
+  - markerがあるStopでdeadlineまで一致しなければ`HOOK_PROCESS_TURN_FAILED`として明示失敗し、
+    completionなしへ丸めない。markerを持たない旧hostだけは既存one-shot parser契約を維持する。
+  - 正本Decisionは[ADR 0012](adr/0012-claude-stop-transcript-flush-barrier.md)。
+- [x] delayed assistant append、古い同文answer＋current user-only、deadline、通常同期flushをfocused testで固定する。
+  - `node --test src/turn-processor.test.mjs`: 14/14成功。
+  - `node --test --test-name-pattern='process-turn subprocess' src/hook-entrypoints.test.mjs`: 2/2成功。
+- [ ] hook／backfill／receiptのrelated gateを一度通し、独立commit後にObserver queue 19eへ戻る。
+  - related 7ファイルは78/78成功。独立commitの確定後に完了へする。
+
 ## 受け入れ条件
 
 1. project絶対pathだけから最新の完了済みClaude／Codex親hostとthreadを解決する。

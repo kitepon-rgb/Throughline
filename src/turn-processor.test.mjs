@@ -1,14 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   L2_WINDOW,
+  CLAUDE_STOP_TRANSCRIPT_FLUSH_INTERVAL_MS,
+  CLAUDE_STOP_TRANSCRIPT_FLUSH_TIMEOUT_MS,
   countDistinctBodyTurns,
   pickOldestUnsummarizedTurn,
   publishCapturedClaudeCompletionReceipt,
+  waitForClaudeStopTranscriptFlush,
 } from './turn-processor.mjs';
 
 function makeDb() {
@@ -56,6 +59,80 @@ function insertSkeleton(db, { session, origin, turn, createdAt }) {
 
 test('L2_WINDOW is 20', () => {
   assert.equal(L2_WINDOW, 20);
+});
+
+test('Claude Stop flush barrierはlatest userの遅延assistantを待ち、過去の同文answerを採用しない', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'throughline-stop-flush-'));
+  const transcriptPath = join(root, 'transcript.jsonl');
+  const answer = 'same answer';
+  let elapsed = 0;
+  let waits = 0;
+  try {
+    writeFileSync(
+      transcriptPath,
+      [
+        { type: 'user', message: { role: 'user', content: 'old question' } },
+        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: answer }] } },
+        { type: 'user', message: { role: 'user', content: 'current question' } },
+      ].map((entry) => JSON.stringify(entry)).join('\n'),
+      'utf8',
+    );
+    const result = await waitForClaudeStopTranscriptFlush({
+      transcriptPath,
+      lastAssistantMessage: answer,
+      timeoutMs: 100,
+      intervalMs: 10,
+      now: () => elapsed,
+      wait: async (milliseconds) => {
+        elapsed += milliseconds;
+        waits++;
+        if (waits === 1) {
+          appendFileSync(
+            transcriptPath,
+            `\n${JSON.stringify({
+              type: 'assistant',
+              message: { role: 'assistant', content: [{ type: 'text', text: answer }] },
+            })}`,
+            'utf8',
+          );
+        }
+      },
+    });
+    assert.deepEqual(result, { status: 'ready', userTurnNumber: 2, assistantTurnNumber: 3 });
+    assert.equal(waits, 1, 'past identical answer must not satisfy the current user group');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Claude Stop flush barrierはmarker不一致をdeadlineで明示失敗する', async () => {
+  let elapsed = 0;
+  await assert.rejects(
+    waitForClaudeStopTranscriptFlush({
+      transcriptPath: '/missing',
+      lastAssistantMessage: 'expected',
+      timeoutMs: 30,
+      intervalMs: 10,
+      readCompletion: () => ({ userTurnNumber: 4, assistantTurnNumber: null, assistantContent: null }),
+      now: () => elapsed,
+      wait: async (milliseconds) => { elapsed += milliseconds; },
+    }),
+    /not visible before deadline/,
+  );
+  assert.equal(elapsed, 30);
+});
+
+test('Claude Stop flush barrierはmarkerなし旧payloadをone-shot互換へ残す', async () => {
+  let reads = 0;
+  const result = await waitForClaudeStopTranscriptFlush({
+    transcriptPath: '/unused',
+    lastAssistantMessage: undefined,
+    readCompletion: () => { reads++; return null; },
+  });
+  assert.deepEqual(result, { status: 'marker_unavailable' });
+  assert.equal(reads, 0);
+  assert.equal(CLAUDE_STOP_TRANSCRIPT_FLUSH_TIMEOUT_MS, 2_000);
+  assert.equal(CLAUDE_STOP_TRANSCRIPT_FLUSH_INTERVAL_MS, 25);
 });
 
 test('publishCapturedClaudeCompletionReceipt: L2 capture済みpairをL1/L3より先にprivate receiptへ固定する', () => {

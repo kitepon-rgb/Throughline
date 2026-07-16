@@ -35,6 +35,10 @@ assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は
 pagination、JSON-only `observer-read` / `observer-wait` CLI、最大3600秒wait、Claude／Codex別projectの
 65秒超live E2Eは実装済み。公開版への収録、hook／capture／auditor／monitor回帰、full gateは未完のまま
 であり、MCP transportはObserver所有、ThroughlineはCLI境界だけを提供する。
+2026-07-16のObserver queue 19e実Claudeでは、async Stop hookがfinal assistant行のtranscript
+可視化前にbackfillして正常no-opとなるflush raceを再現した。`last_assistant_message`を本文ではなく
+latest logical groupのbounded flush barrierにだけ使う修理を
+[ADR 0012](docs/adr/0012-claude-stop-transcript-flush-barrier.md)／docs 14 Phase 4で進行中である。
 
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 

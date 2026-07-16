@@ -334,6 +334,7 @@ test('process-turn subprocess stores L2 bodies and L3 details in an isolated DB'
         session_id: 'turn-session',
         cwd: project,
         transcript_path: transcriptPath,
+        last_assistant_message: 'check passed',
       }),
     });
 
@@ -389,7 +390,12 @@ test('process-turn subprocess backfills all completed logical turns from a multi
     const result = runNode([join(REPO_ROOT, 'src/turn-processor.mjs')], {
       home,
       cwd: project,
-      input: JSON.stringify({ session_id: 'multi-turn-session', cwd: project, transcript_path: transcriptPath }),
+      input: JSON.stringify({
+        session_id: 'multi-turn-session',
+        cwd: project,
+        transcript_path: transcriptPath,
+        last_assistant_message: 'second answer',
+      }),
     });
     assert.equal(result.status, 0, result.stderr);
     const db = openDb(home);

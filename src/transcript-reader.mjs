@@ -142,6 +142,38 @@ export function getLogicalTurnGroups(transcriptPath) {
 }
 
 /**
+ * transcript上のlatest user groupが、現在どのassistant本文まで永続化されたかを返す。
+ * 過去のcompleted groupではなく最後のuser以後だけを見るため、同文answerの誤帰属を避ける。
+ *
+ * @param {string} transcriptPath
+ * @returns {{userTurnNumber: number, assistantTurnNumber: number|null, assistantContent: string|null}|null}
+ */
+export function readLatestLogicalTurnCompletion(transcriptPath) {
+  const turns = readTranscript(transcriptPath);
+  let latestUserIndex = -1;
+  for (let index = turns.length - 1; index >= 0; index--) {
+    if (turns[index].role === 'user') {
+      latestUserIndex = index;
+      break;
+    }
+  }
+  if (latestUserIndex < 0) return null;
+
+  const user = turns[latestUserIndex];
+  let representative = null;
+  for (let index = latestUserIndex + 1; index < turns.length; index++) {
+    const turn = turns[index];
+    if (turn.role === 'user') break;
+    if (turn.role === 'assistant' && !isJunkAssistantText(turn.content)) representative = turn;
+  }
+  return {
+    userTurnNumber: user.turn_number,
+    assistantTurnNumber: representative?.turn_number ?? null,
+    assistantContent: representative?.content ?? null,
+  };
+}
+
+/**
  * ANSI エスケープシーケンスを除去する。
  * ツール出力（特に Bash）にしばしば含まれる色コードを剥がす。
  * @param {string} s

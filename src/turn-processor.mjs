@@ -33,6 +33,7 @@
 import { getDb } from './db.mjs';
 import {
   readRawEntries,
+  readLatestLogicalTurnCompletion,
   sliceCurrentTurnEntries,
   extractDetailBlocks,
 } from './transcript-reader.mjs';
@@ -48,6 +49,44 @@ import { writeCompletedTurnReceipt } from './completed-turn-receipts.mjs';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
+export const CLAUDE_STOP_TRANSCRIPT_FLUSH_TIMEOUT_MS = 2_000;
+export const CLAUDE_STOP_TRANSCRIPT_FLUSH_INTERVAL_MS = 25;
+
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+/**
+ * Claude Stop payloadのassistant identityがlatest user groupへ永続化されるまで待つ。
+ * markerは本文ソースにせず、transcript可視化のbarrierにだけ使う。
+ */
+export async function waitForClaudeStopTranscriptFlush({
+  transcriptPath,
+  lastAssistantMessage,
+  timeoutMs = CLAUDE_STOP_TRANSCRIPT_FLUSH_TIMEOUT_MS,
+  intervalMs = CLAUDE_STOP_TRANSCRIPT_FLUSH_INTERVAL_MS,
+  readCompletion = readLatestLogicalTurnCompletion,
+  now = Date.now,
+  wait = delay,
+}) {
+  if (typeof lastAssistantMessage !== 'string' || lastAssistantMessage.length === 0) {
+    return { status: 'marker_unavailable' };
+  }
+  const deadline = now() + timeoutMs;
+  for (;;) {
+    const completion = readCompletion(transcriptPath);
+    if (completion?.assistantContent === lastAssistantMessage) {
+      return {
+        status: 'ready',
+        userTurnNumber: completion.userTurnNumber,
+        assistantTurnNumber: completion.assistantTurnNumber,
+      };
+    }
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      throw new Error('Claude Stop transcript completion was not visible before deadline');
+    }
+    await wait(Math.min(intervalMs, remaining));
+  }
+}
 
 /**
  * target 配下の distinct (origin_session_id, turn_number) ターン数を返す。
@@ -152,7 +191,7 @@ export async function run() {
   });
 
   const payload = JSON.parse(raw || '{}');
-  const { session_id, transcript_path, cwd } = payload;
+  const { session_id, transcript_path, cwd, last_assistant_message } = payload;
   if (!session_id) throw new Error('Missing session_id in Stop payload');
 
   // VSCode で開かれたプロジェクトに .vscode/tasks.json を自動プロビジョニングする。
@@ -164,6 +203,11 @@ export async function run() {
     const msg = err instanceof Error ? err.message : 'unknown';
     process.stderr.write(`[vscode-task] ${msg}\n`);
   }
+
+  await waitForClaudeStopTranscriptFlush({
+    transcriptPath: transcript_path,
+    lastAssistantMessage: last_assistant_message,
+  });
 
   // Stop hook 時点で state ファイルを更新 → token-monitor の「アクティブ行」判定が
   // アシスタント応答終了時刻まで追従する
