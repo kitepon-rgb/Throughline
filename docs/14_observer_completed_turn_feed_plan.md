@@ -253,7 +253,7 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
   - `node --test --test-name-pattern='process-turn subprocess' src/hook-entrypoints.test.mjs`: 2/2成功。
 - [x] hook／backfill／receiptのrelated gateを一度通し、独立commit後にObserver queue 19eへ戻る。
   - related 7ファイルは78/78成功。修理はcommit `a46b915`として独立確定した。
-- [ ] Codex Stop captureと同時の`observer-read`が一時SQLite lockをhard failureにする競合を閉じる。
+- [x] Codex Stop captureと同時の`observer-read`が一時SQLite lockをhard failureにする競合を閉じる。
   - queue 19e実Codexで、親2turn目の`task_complete`とfeed書込みは成功したが、Observer production
     callerの同時`observer-read`が`E_THROUGHLINE_EXEC`で終了した。直後の同じ公開readはturn 2件を返し、
     私有driverでも同じ書込み瞬間の単発nonzeroを再現した。
@@ -263,7 +263,10 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
   - [x] `readCompletedPairProjection`だけに1秒のSQLite busy timeoutを設定した。別processのexclusive
     writerを200ms後に解放するfocused testは修正前15/16、修正後16/16。Observer read／wait、
     auditor、receipt、Codex hook／captureのrelated gateは78/78、構文・新規ADR lint・diff checkはgreen。
-  - [ ] 修理済みcandidateのqueue 19e実Codexで2 completed-turn／2 Observer cycleを再確認する。
+  - [x] 修理済みcandidateのqueue 19e実Codex r11で、親completed-turn 2件、同じObserver generationの
+    completed cycle 2件、初回cycle後65秒超継続、pending reservation／cycle／model operation残留なしを
+    確認した。caller SIGINTはcancelled／exit 130、managed app-serverと親app-serverはterminal、projectは
+    空のまま。raw thread／turn ID、prompt、model output、credentialは保存していない。
 
 ## 受け入れ条件
 

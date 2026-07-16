@@ -44,7 +44,8 @@ candidate再梱包・live再検証は未完である。
 failureにしてObserver callerを終了させる競合も再現した。completed projectionのread-only接続だけに
 1秒のbounded busy waitを追加し、Spotter auditorの既存lock failure、schema／project／上限超過の
 hard failure、`projection_pending`契約は変更していない。focused 16/16、related 78/78はgreen。
-正本は[ADR 0013](docs/adr/0013-observer-read-busy-writer-gate.md)／docs 14 Phase 4。実Codex再受入れは未完。
+正本は[ADR 0013](docs/adr/0013-observer-read-busy-writer-gate.md)／docs 14 Phase 4。修理済みcandidateの
+実Codex r11で親completed-turn 2件、Observer completed cycle 2件、65秒超継続、正常停止を受け入れた。
 
 **設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
 

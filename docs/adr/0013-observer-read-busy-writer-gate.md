@@ -4,7 +4,7 @@
 
 ## Status
 
-Implemented。queue 19e実Codex candidateでの受入れ待ち。
+Accepted。
 
 ## Context
 
@@ -36,3 +36,11 @@ completed feedはDB lagを`projection_pending`として扱うが、SQLite lock�
 - focused `src/auditor-context.test.mjs`: 修正前15/16、修正後16/16 PASS。
 - related Observer read／wait、auditor、receipt、Codex hook／capture: 78/78 PASS。
 - 変更source／testの構文検査、新規ADR lint、`git diff --check`: PASS。
+
+Live acceptance（2026-07-16）:
+
+- 修理済みcandidateのqueue 19e実Codex r11で、親completed-turn 2件と同じObserver generationの
+  completed cycle 2件を確認した。
+- 初回cycle後65秒超の継続、pending reservation／cycle／model operation残留なしを確認した。
+- caller SIGINTはcancelled／exit 130、managed app-serverと親app-serverはterminalとなった。
+- projectは空のまま。raw ID、prompt、model output、credentialは保存していない。
