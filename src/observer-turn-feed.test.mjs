@@ -25,7 +25,7 @@ function event(type, message, timestamp) { return { type: 'event_msg', timestamp
 function completeEvents(at = '2026-07-15T00:01:00.000Z') { return [event('user_message', 'request', '2026-07-15T00:00:01.000Z'), event('task_started', undefined, '2026-07-15T00:00:02.000Z'), event('agent_message', 'answer', '2026-07-15T00:00:03.000Z'), event('task_complete', undefined, at)]; }
 function createProjectionDb(path, project, sessionId) {
   const db = new DatabaseSync(path);
-  db.exec(`PRAGMA user_version = 8;
+  db.exec(`PRAGMA user_version = 9;
     CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
     CREATE TABLE bodies (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, origin_session_id TEXT NOT NULL, turn_number INTEGER NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);`);
   db.prepare('INSERT INTO sessions (session_id, project_path) VALUES (?, ?)').run(sessionId, project);
@@ -197,7 +197,7 @@ test('observer feed: DB projection is all-or-nothing and never exposes raw sessi
     assert.equal(pending.status, 'projection_pending');
     assert.deepEqual(pending.turns, []);
     db = new DatabaseSync(dbPath);
-    db.exec(`PRAGMA user_version = 8;
+    db.exec(`PRAGMA user_version = 9;
       CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
       CREATE TABLE bodies (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, origin_session_id TEXT NOT NULL, turn_number INTEGER NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);`);
     db.prepare('INSERT INTO sessions (session_id, project_path) VALUES (?, ?)').run('private-session', box.project);

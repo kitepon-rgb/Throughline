@@ -28,7 +28,7 @@ test('observer Codex projection: feed origin hash matches codex:<thread_id> DB i
     writeFileSync(join(rolloutDir, `rollout-2026-07-15T00-00-00-${threadId}.jsonl`), events.map(JSON.stringify).join('\n'));
 
     db = new DatabaseSync(dbPath);
-    db.exec(`PRAGMA user_version = 8;
+    db.exec(`PRAGMA user_version = 9;
       CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
       CREATE TABLE bodies (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, origin_session_id TEXT NOT NULL, turn_number INTEGER NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);`);
     db.prepare('INSERT INTO sessions (session_id, project_path) VALUES (?, ?)').run(sessionId, project);

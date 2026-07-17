@@ -116,7 +116,7 @@ test('factory-diagnostics DB inspection rejects version-only fake schema', () =>
   const dbPath = join(dir, 'throughline.db');
   try {
     const db = new DatabaseSync(dbPath);
-    db.exec('PRAGMA user_version = 8; CREATE TABLE sessions (session_id TEXT)');
+    db.exec('PRAGMA user_version = 9; CREATE TABLE sessions (session_id TEXT)');
     db.close();
     assert.equal(inspectFactoryDatabase({ dbPath }).status, 'not_ready');
   } finally {
