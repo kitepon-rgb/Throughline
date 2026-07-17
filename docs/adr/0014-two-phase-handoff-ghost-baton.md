@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted（実装済み。live acceptanceは未実施 — 本ADR末尾の残項参照）。
+Accepted（実装済み・live acceptance 済み — 本ADR末尾の記録参照）。
 
 ## Context
 
@@ -90,12 +90,21 @@ Accepted（実装済み。live acceptanceは未実施 — 本ADR末尾の残項�
 - 10k 実測: 一時 UserPromptSubmit hook + `claude -p`（Haiku）の tracer 実験で、
   11,953 字 stdout の 10k 境界後 tracer がモデル不可視、`<persisted-output>` 化を確認。
 
-Live acceptance（未実施 — 公開前に必要）:
+Live acceptance（2026-07-17、このMacで dev 版 global install 後に実施）:
 
-- [ ] このMacで dev 版を install し、実 Claude Code で `/tl` → `/clear` → 新セッション
-      初回プロンプトの注入と decision log（phase 2種）を確認する。
-- [ ] multi-window で近接 SessionStart を伴う実機再現（可能なら）。
-- [ ] 幽霊2体（c4f05b96 / 90cb0c0e）が抱えた記憶の回収（本ADRのスコープ外、別作業）。
+- [x] 実 Claude Code（headless、実 hooks 経由）で、記憶セッション → `/tl` → 新セッション
+      初回プロンプトの引き継ぎを確認。後継が合言葉を即答し、decision log に
+      `phase=session-start`（pending_registered）→ `phase=prompt-submit`
+      （`triggered_path=baton`, `merged=true`, injection 2,095 字・省略ゼロ）が刻まれた。
+      DB は初回 hook 発火で v9 へ migrate（session `8452e936`、前任 `c8b485bd`）。
+- [x] 自己バトン食いの不在を実機確認: `/tl` を打った resume セッション自身の pending は
+      `baton missing` で消化され（消費が baton 書込より先）、バトンは後継まで残った。
+      `baton_age_ms` は誕生時刻基準（21,200ms）で記録された。
+- [x] 幽霊2体（c4f05b96 / 90cb0c0e）の記憶回収済み（skeletons 30 / bodies 166 /
+      details 2,247 を実セッション `9fb15563` へ。DB バックアップ
+      `throughline.db.backup-20260717-ghost-recovery` 取得済み）。
+- [ ] multi-window での近接 SessionStart 実機再現は未実施（幽霊の発生タイミングを
+      任意に誘発できないため。回帰は subprocess テストの incident 再現形で担保）。
 
 ## 関連
 
