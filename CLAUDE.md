@@ -28,13 +28,24 @@ current-SID-only ACL、ACL済みtempからのatomic rename、失敗時の旧stor
 公開commit `fc83ddf`、CI `29284655280`（9/9 green）、npm `throughline@0.6.3`、tag /
 GitHub Release、npm shasum `4f3fcd2598a75f026358dae7f3eb3165242b580b` を確認済み。
 
+**v0.7.0（2026-07-17公開）**: 二相ハンドオフ（[ADR 0014](docs/adr/0014-two-phase-handoff-ghost-baton.md)：幽霊SessionStartの
+バトン奪取排除、schema v9 `pending_handoffs`、注入9,500字予算＋省略行の時刻参照）、
+L1要約の`gpt-5.6-luna`/low/割合1/5化と設定可能化（[ADR 0015](docs/adr/0015-l1-summarizer-model-effort-ratio.md)、Codex CLIへの明示`-m`）、
+Observer completed-turn CLI（observer-read / observer-wait）の初収録。
+公開commit `c0a5feb`のCIは9/9 green（run `29577249733`。Observer一式の初Windows CIで露出した
+8.3短縮名（RUNNER~1）のproject比較不一致とreceipt POSIX permission断言を修理済み）、
+npm `latest`、shasum `4e3e08f72423fedaf8a287201d6eb5840abedb78`、tag / GitHub Release、
+隔離installで二相・L1 backend・observer CLIの収録を確認し、このMacのglobalをregistry 0.7.0へ
+同期した。実機受入れ（合言葉引き継ぎ・decision log二相刻印・自己バトン食い不在・luna経路）は
+ADR 0014/0015に記録。upstream報告は[anthropics/claude-code#78455](https://github.com/anthropics/claude-code/issues/78455)。
+
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
 assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切
 返さず、schema/project/I/O異常はhard failure、本文bound時もturn recordとdigestを保持する。
 pagination、JSON-only `observer-read` / `observer-wait` CLI、最大3600秒wait、Claude／Codex別projectの
-65秒超live E2Eは実装済み。公開版への収録、hook／capture／auditor／monitor回帰、full gateは未完のまま
-であり、MCP transportはObserver所有、ThroughlineはCLI境界だけを提供する。
+65秒超live E2Eは実装済み。**v0.7.0（2026-07-17公開）で npm 公開版へ初収録**した。
+MCP transportはObserver所有、ThroughlineはCLI境界だけを提供する。
 2026-07-16のObserver queue 19e実Claudeでは、async Stop hookがfinal assistant行のtranscript
 可視化前にbackfillして正常no-opとなるflush raceを再現した。`last_assistant_message`を本文ではなく
 latest logical groupのbounded flush barrierにだけ使う修理はcommit `a46b915`で完了した。
