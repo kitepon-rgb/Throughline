@@ -158,7 +158,7 @@ function buildResumeSections(db, { sessionId, isInheritance, excludeOriginId = n
     const isLastOfTurn = lastIdxPerTurn.get(key) === i;
     const partCounts = isLastOfTurn ? (l3ByTurn.get(key)?.partCounts ?? new Map()) : new Map();
     const suffix = buildPartsSummary(partCounts);
-    l2Lines.push({ text: `[${r.time}] [${r.role}]: ${r.text}${suffix}`, time: r.time });
+    l2Lines.push({ text: `[${r.time}] [${r.role}]: ${r.text}${suffix}`, time: r.time, role: r.role });
   }
 
   return { header, anchorLines, l1Lines, l2Lines };
@@ -220,8 +220,13 @@ export function buildResumeContext(
  */
 export const INJECTION_BUDGET_CHARS = 9_500;
 
-// 予算超過時に注入へ入れる省略告知の予約分（この分を先に差し引いてから詰める）
-const OMISSION_NOTE_RESERVE = 200;
+// 予算超過時に注入へ入れる省略告知の予約分（この分を先に差し引いてから詰める）。
+// 告知には省略した L2 行の [時刻 role] 参照リストを含める — 窓内の L2 行にはまだ
+// L1 要約が無いことがあり、時刻が無いと `throughline detail` で取り出せなくなる
+// （= 「要約せず削る。ただし参照は必ず残す」コンセプトの担保）。
+const OMISSION_NOTE_RESERVE = 500;
+// l2Note 単体の上限 (RESERVE から l1Note ぶんの余裕を引いた値)
+const L2_NOTE_MAX_CHARS = 430;
 // 最新 L2 行が単体で予算を超える場合に、切り詰めてでも入れる最小の残余
 const MIN_TRUNCATED_L2_CHARS = 400;
 
@@ -307,11 +312,30 @@ export function buildBudgetedResumeContext(
     droppedL1Rows > 0
       ? `（注入予算 ${maxChars} 字超過のため古い L1 を ${droppedL1Rows} 行省略）`
       : null;
-  const l2Note =
-    droppedL2Rows > 0
-      ? `（注入予算 ${maxChars} 字超過のため古い L2 を ${droppedL2Rows} 行省略 — ` +
-        '上の L1 要約と `throughline detail HH:MM:SS` で参照できます）'
-      : null;
+
+  // 省略 L2 行の取り出し手がかり: [時刻 role] を新しい側 (文脈に近い側) から
+  // L2_NOTE_MAX_CHARS に収まるだけ列挙し、残りは「ほか N 行」に畳む。
+  let l2Note = null;
+  if (droppedL2Rows > 0) {
+    const base =
+      `（注入予算 ${maxChars} 字超過のため古い L2 を ${droppedL2Rows} 行省略。` +
+      '各行の全文は `throughline detail 時刻` で取得可。省略分 (新しい順): ';
+    const closing = '）';
+    const dropped = sections.l2Lines.slice(0, droppedL2Rows);
+    const refs = [];
+    let used = base.length + closing.length;
+    for (let i = dropped.length - 1; i >= 0; i -= 1) {
+      const ref = `[${dropped[i].time} ${dropped[i].role}]`;
+      const foldTail = i > 0 ? ` ほか${i}行`.length : 0;
+      if (used + ref.length + 1 + foldTail > L2_NOTE_MAX_CHARS) {
+        refs.push(`ほか${i + 1}行`);
+        break;
+      }
+      refs.push(ref);
+      used += ref.length + 1;
+    }
+    l2Note = base + refs.join(' ') + closing;
+  }
 
   const text = joinSections(
     { header: sections.header, anchorLines: sections.anchorLines, l1Lines: keptL1, l2Lines: keptL2 },

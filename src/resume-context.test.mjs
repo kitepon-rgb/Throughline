@@ -676,6 +676,37 @@ test('budgeted: drops oldest L2 rows first, keeps newest, and stays within maxCh
   assert.ok(budgeted.text.includes('turn-10'), 'newest L2 row must survive');
   assert.ok(!budgeted.text.includes('turn-01 '), 'oldest L2 row must be dropped');
   assert.match(budgeted.text, /古い L2 を \d+ 行省略/, 'omission must be announced, not silent');
+  // 「削るときは取り出すための参照を必ず残す」: 落とした行の [時刻 role] リストが
+  // 告知に載っていること (窓内の行にはまだ L1 が無く、時刻が無いと detail で引けない)
+  assert.match(
+    budgeted.text,
+    /省略分 \(新しい順\): (\[\d{2}:\d{2}:\d{2} assistant\][ ]?)+/,
+    'dropped rows must be listed with [time role] refs for throughline detail',
+  );
+});
+
+test('budgeted: very many dropped rows fold into ほかN行 keeping the note bounded', () => {
+  const db = makeDb();
+  for (let turn = 1; turn <= 40; turn += 1) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn,
+      role: 'assistant',
+      text: `turn-${String(turn).padStart(2, '0')} ` + 'x'.repeat(700),
+      createdAt: 1000 + turn * 1000,
+    });
+  }
+
+  const budgeted = buildBudgetedResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+    maxChars: 4000,
+  });
+
+  assert.ok(budgeted);
+  assert.ok(budgeted.totalChars <= 4000);
+  assert.match(budgeted.text, /ほか\d+行/, 'overflow refs must fold into a count');
 });
 
 test('budgeted: a single oversized newest L2 row is truncated with a detail pointer', () => {
