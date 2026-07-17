@@ -40,14 +40,16 @@ test('DIAG: windows path canonicalization operands', () => {
     console.error('[DIAG] realpath.native   =', realpathSync.native(project));
     console.error('[DIAG] auditorCanonical  =', auditorCanonical(project));
 
+    // 実際に落ちている observer-codex-projection.test.mjs の fixture を完全複製する
     const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
     const rollout = join(codexHome, 'sessions', '2026', '07', '15', `rollout-2026-07-15T00-00-00-${threadId}.jsonl`);
     writeFileSync(rollout, [
       JSON.stringify({ type: 'session_meta', timestamp: '2026-07-15T00:00:00.000Z', payload: { id: threadId, cwd: project } }),
       JSON.stringify({ type: 'event_msg', timestamp: '2026-07-15T00:00:01.000Z', payload: { type: 'user_message', message: 'hello' } }),
-      JSON.stringify({ type: 'event_msg', timestamp: '2026-07-15T00:00:02.000Z', payload: { type: 'agent_message', message: 'world' } }),
-      JSON.stringify({ type: 'event_msg', timestamp: '2026-07-15T00:00:03.000Z', payload: { type: 'task_complete', last_agent_message: 'world' } }),
-    ].join('\n') + '\n', 'utf8');
+      JSON.stringify({ type: 'event_msg', timestamp: '2026-07-15T00:00:02.000Z', payload: { type: 'task_started' } }),
+      JSON.stringify({ type: 'event_msg', timestamp: '2026-07-15T00:00:03.000Z', payload: { type: 'agent_message', message: 'world' } }),
+      JSON.stringify({ type: 'event_msg', timestamp: '2026-07-15T00:00:04.000Z', payload: { type: 'task_complete' } }),
+    ].join('\n'), 'utf8');
 
     const db = new DatabaseSync(dbPath);
     db.exec(`

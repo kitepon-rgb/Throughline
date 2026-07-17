@@ -201,7 +201,8 @@ export function readCompletedPairProjection({
     if (version !== AUDITOR_CONTEXT_DB_SCHEMA_VERSION) throw new AuditorContextError('E_AUDITOR_CONTEXT_SCHEMA', 'auditor context DB schema is unsupported');
     const session = db.prepare('SELECT session_id, project_path FROM sessions WHERE session_id = ?').get(sessionId);
     if (!session) return { status: 'pending', reason: 'session_not_found', turns: [] };
-    if (!isSameProjectOrDescendant(session.project_path, projectRoot)) throw new AuditorContextError('E_AUDITOR_CONTEXT_PROJECT', 'auditor context DB project does not match');
+    // TEMP DIAG (v0.7.0 release blocker調査 — 特定後に復元): オペランドを付ける
+    if (!isSameProjectOrDescendant(session.project_path, projectRoot)) throw new AuditorContextError('E_AUDITOR_CONTEXT_PROJECT', `auditor context DB project does not match [DIAG db=${JSON.stringify(session.project_path)} root=${JSON.stringify(projectRoot)}]`);
     const rows = db.prepare(
       `SELECT id, origin_session_id, turn_number, role, text, created_at FROM bodies
        WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY created_at ASC, id ASC`,
