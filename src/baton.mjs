@@ -43,16 +43,29 @@ export function writeBaton(db, { projectPath, sessionId, now = Date.now() }) {
 /**
  * 同 project_path のバトンを読み出して削除する (atomic)。
  *
+ * 適格性は `bornAt`（= 消費者セッションの誕生時刻）基準で判定する:
+ *   age = bornAt - baton.created_at
+ *   - age < 0     : バトンは消費者セッションより後に書かれた（本来の後継は
+ *                   その後に生まれる別セッション）→ **消さずに残し** skip。
+ *                   二相ハンドオフでは消費が最初のプロンプト時点まで遅延するため、
+ *                   「自分より後に書かれたバトン」を走行中セッションが横取りしない
+ *                   ためのガード。
+ *   - age > ttlMs : TTL 超過。従来どおり削除して破棄。
+ *   - それ以外    : 削除して sessionId を返す。
+ * `bornAt` 省略時は now と同値（= 従来の SessionStart 即時消費と同じ判定）。
+ *
  * 戻り値:
- *   - { sessionId, ageMs }                                : バトン存在 かつ TTL 以内
- *   - { sessionId: null, skipReason: 'expired', ageMs }   : TTL 超過で破棄
- *   - { sessionId: null, skipReason: 'missing' }          : バトン無し
+ *   - { sessionId, ageMs }                                    : バトン存在 かつ適格
+ *   - { sessionId: null, skipReason: 'expired', ageMs }       : TTL 超過で破棄
+ *   - { sessionId: null, skipReason: 'future_baton', ageMs }  : 消費者誕生より後の
+ *                                                               バトン（残置）
+ *   - { sessionId: null, skipReason: 'missing' }              : バトン無し
  *
  * @param {import('node:sqlite').DatabaseSync} db
- * @param {{ projectPath: string, now?: number, ttlMs?: number }} params
- * @returns {{ sessionId: string | null, ageMs?: number, skipReason?: 'expired' | 'missing' }}
+ * @param {{ projectPath: string, now?: number, bornAt?: number, ttlMs?: number }} params
+ * @returns {{ sessionId: string | null, ageMs?: number, skipReason?: 'expired' | 'missing' | 'future_baton' }}
  */
-export function consumeBaton(db, { projectPath, now = Date.now(), ttlMs = BATON_TTL_MS }) {
+export function consumeBaton(db, { projectPath, now = Date.now(), bornAt = now, ttlMs = BATON_TTL_MS }) {
   db.exec('BEGIN IMMEDIATE');
   try {
     // Windows 互換: ドライブレターの大小差を吸収するため COLLATE NOCASE
@@ -67,10 +80,17 @@ export function consumeBaton(db, { projectPath, now = Date.now(), ttlMs = BATON_
       return { sessionId: null, skipReason: 'missing' };
     }
 
+    const ageMs = bornAt - row.created_at;
+
+    if (ageMs < 0) {
+      // 消費者より未来のバトンは本来の後継のために残す（削除しない）
+      db.exec('COMMIT');
+      return { sessionId: null, skipReason: 'future_baton', ageMs };
+    }
+
     db.prepare('DELETE FROM handoff_batons WHERE project_path = ? COLLATE NOCASE').run(
       projectPath,
     );
-    const ageMs = now - row.created_at;
 
     if (ageMs > ttlMs) {
       db.exec('COMMIT');

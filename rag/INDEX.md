@@ -86,6 +86,10 @@ Verified via [openclaude source](04-skills/raw/initialUserMessage-investigation.
 
 SessionEnd reason enum: `clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other`、default timeout 1.5s（/clear にも適用）— [session-end-reasons.md](01-hooks/raw/session-end-reasons.md)。実測: ビルトイン /clear はどのクライアントでも UserPromptSubmit に届かない（同一セッション /tl 対照実験 ×2 + VSCode 2.1.207）。VSCode は `source:"clear"` を送るが Desktop 2.1.205 は `source:"startup"`（クライアント実装差・バージョン交絡棄却済み）。→ Desktop の /clear 検知は SessionEnd(reason='clear') が唯一の hook 経路候補（実機検証は [docs/12](../docs/12_desktop_clear_handoff_plan.md) A Phase 1）。
 
+### Finding 9: hook stdout は ~10k 字で persisted-output に file 化、モデル可視は先頭 2KB のみ (2026-07-17)
+
+SessionStart / UserPromptSubmit の hook stdout は約 10,000 字超で `<persisted-output>`（保存ファイルパス + 先頭 2KB preview）に置換され、モデルには preview しか届かない（silent degradation、hook は exit 0 のまま）。境界実測 9,501 字 inline / 15,286 字 file 化。実運用の 10k 超注入 12 件（v2.1.195 以降）は 12/12 劣化 — 記憶注入の L1+L2 本体は読まれていなかった。対処は 9,500 字予算内レンダリング。詳細: [hook-stdout-10k-persisted-output.md](01-hooks/hook-stdout-10k-persisted-output.md)、[ADR 0014](../docs/adr/0014-two-phase-handoff-ghost-baton.md)。
+
 ---
 
 ## Throughline 仮説の見直し

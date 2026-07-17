@@ -1,0 +1,159 @@
+/**
+ * handoff-executor.mjs — 最初の UserPromptSubmit で実行する引き継ぎ本体
+ *
+ * 二相ハンドオフ (ADR 0014) の第二相。SessionStart が登録した pending intent を
+ * 消費し、baton path 優先 → auto path の順で前任を merge して、予算内の
+ * resume context を組み立てて返す。呼び出し元 (prompt-submit) が stdout へ書く。
+ *
+ * 幽霊セッション (transcript を生成しない SessionStart) はプロンプトを発火しない
+ * ため、この経路に到達できない。= バトンも auto 前任も実体のあるセッションだけが
+ * 受け取れる。
+ */
+
+import { existsSync } from 'node:fs';
+import { consumeBaton } from './baton.mjs';
+import { consumePendingHandoff } from './pending-handoff.mjs';
+import { mergeSpecificPredecessor, resolveMergeTarget } from './session-merger.mjs';
+import { backfillBodies, deriveTranscriptPath, logBackfill } from './turn-backfill.mjs';
+import { buildBudgetedResumeContext } from './resume-context.mjs';
+import { readAllSessionStates } from './state-file.mjs';
+
+/**
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {{ sessionId: string, projectPath: string, now?: number }} params
+ * @returns {{
+ *   attempted: boolean,            // pending 行が存在した (= newborn の初回プロンプト)
+ *   triggeredPath: 'baton' | 'auto' | null,
+ *   baton: object | null,          // consumeBaton の生返り値 (ログ用)
+ *   pendingCreatedAt: number | null,
+ *   mergeResult: object,           // mergeSpecificPredecessor の返り値 or skip
+ *   injectionText: string | null,  // 予算内注入テキスト (merge 成立時のみ)
+ *   injectionStats: object | null, // dropped counts 等 (ログ用)
+ * }}
+ */
+export function executeFirstPromptHandoff(db, { sessionId, projectPath, now = Date.now() }) {
+  const pending = consumePendingHandoff(db, { sessionId });
+  if (!pending) {
+    return {
+      attempted: false,
+      triggeredPath: null,
+      baton: null,
+      pendingCreatedAt: null,
+      mergeResult: { merged: false, skipReason: 'not_newborn' },
+      injectionText: null,
+      injectionStats: null,
+    };
+  }
+
+  // baton 適格性はセッション誕生時刻 (pending.createdAt) 基準。
+  // 誕生後に書かれたバトンは future_baton として残置される (本来の後継のもの)。
+  const baton = consumeBaton(db, { projectPath, now, bornAt: pending.createdAt });
+
+  let triggeredPath = null;
+  let mergeResult = { merged: false, skipReason: 'no_trigger' };
+
+  if (baton.sessionId) {
+    triggeredPath = 'baton';
+    const { target: predecessorId } = resolveMergeTarget(db, baton.sessionId);
+    mergeResult = mergeSpecificPredecessor(db, {
+      newSessionId: sessionId,
+      predecessorId,
+      now,
+    });
+  } else if (pending.autoPredecessorId) {
+    triggeredPath = 'auto';
+    const { target: predecessorId } = resolveMergeTarget(db, pending.autoPredecessorId);
+    mergeResult = mergeSpecificPredecessor(db, {
+      newSessionId: sessionId,
+      predecessorId,
+      now,
+    });
+  }
+
+  let injectionText = null;
+  let injectionStats = null;
+
+  if (mergeResult.merged) {
+    const predecessorId = mergeResult.predecessorId;
+    // /clear 直前ターンの取りこぼしを注入前に回収する。前任の transcript path は
+    // project path から決定的に導出する — state ファイルは Stop 不発の前任
+    // (まさに回収したい事例) では存在しないため補助。
+    const derivedTranscriptPath = deriveTranscriptPath(projectPath, predecessorId);
+    const stateTranscriptPath = readAllSessionStates().find(
+      (state) => state.sessionId === predecessorId,
+    )?.transcriptPath;
+    const predecessorTranscriptPath = existsSync(derivedTranscriptPath)
+      ? derivedTranscriptPath
+      : stateTranscriptPath && existsSync(stateTranscriptPath)
+        ? stateTranscriptPath
+        : null;
+
+    if (predecessorTranscriptPath) {
+      try {
+        const backfill = backfillBodies(db, {
+          targetSessionId: sessionId,
+          originSessionId: predecessorId,
+          transcriptPath: predecessorTranscriptPath,
+          now,
+        });
+        logBackfill({
+          ts: new Date(now).toISOString(),
+          hook: 'prompt-submit',
+          session_id: sessionId,
+          target: sessionId,
+          origin: predecessorId,
+          transcript_path: predecessorTranscriptPath,
+          groups: backfill.groups,
+          inserted_turns: backfill.insertedTurns,
+          skipped_existing: backfill.skippedExisting,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[prompt-submit:backfill] ${message}\n`);
+        logBackfill({
+          ts: new Date(now).toISOString(),
+          hook: 'prompt-submit',
+          session_id: sessionId,
+          target: sessionId,
+          origin: predecessorId,
+          transcript_path: predecessorTranscriptPath,
+          error: message,
+        });
+      }
+    } else {
+      logBackfill({
+        ts: new Date(now).toISOString(),
+        hook: 'prompt-submit',
+        session_id: sessionId,
+        target: sessionId,
+        origin: predecessorId,
+        transcript_path: null,
+        skip_reason: 'no_transcript_path',
+      });
+    }
+
+    const budgeted = buildBudgetedResumeContext(db, {
+      sessionId,
+      isInheritance: true,
+    });
+    if (budgeted) {
+      injectionText = budgeted.text;
+      injectionStats = {
+        total_chars: budgeted.totalChars,
+        dropped_l1_rows: budgeted.droppedL1Rows,
+        dropped_l2_rows: budgeted.droppedL2Rows,
+        truncated_newest_l2: budgeted.truncatedNewestL2,
+      };
+    }
+  }
+
+  return {
+    attempted: true,
+    triggeredPath,
+    baton,
+    pendingCreatedAt: pending.createdAt,
+    mergeResult,
+    injectionText,
+    injectionStats,
+  };
+}

@@ -1,64 +1,37 @@
 #!/usr/bin/env node
 /**
- * SessionStart hook — セッション登録 + 引き継ぎ判定 + 注入
+ * SessionStart hook — セッション登録 + 引き継ぎ intent 登録（二相ハンドオフの第一相）
  *
  * stdin: { session_id, source, cwd, transcript_path, hook_event_name }
  *
- * 【引き継ぎ条件 (2 経路)】 docs/02_clear_auto_handoff_plan.md
+ * 【二相ハンドオフ】 ADR 0014 / docs/02_clear_auto_handoff_plan.md
  *
- *   1. baton path: ユーザーが旧セッションで `/tl` を打つと UserPromptSubmit hook が
- *      handoff_batons に session_id を書く。本 hook が TTL 1 時間以内に消費して
- *      前任を merge + 引継ぎ stdout 注入。`source` 値関係なく発火。
- *   2. auto path: `source='clear'` かつ env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が
- *      `'1'` でない場合、同 project_path の最新 Claude unmerged session を
- *      自動 merge して注入。
+ *   Claude Code は同一 project_path に対し短時間 (実測 315–488ms) に複数の
+ *   SessionStart を発火させることがあり、一部は transcript を一度も生成しない
+ *   幽霊セッションになる。SessionStart 時点では実体と幽霊を判別できない
+ *   （transcript は本物でも hook より数百 ms 遅れて作られる）ため、
+ *   この hook では merge も注入も行わない:
  *
- *   両方同時成立はしない (consumeBaton が先発、baton ありなら baton path、
- *   なければ source 判定)。env で OFF にしたユーザーは `/tl` を打ってから
- *   新セッションスタートで baton path を使う。
- *
- * 役割:
  *   1. sessions テーブルに新セッションを INSERT OR IGNORE
- *   2. baton path 判定 (consumeBaton + mergeSpecificPredecessor)
- *   3. baton 無し かつ source='clear' かつ env disable 無し → auto path 判定
- *   4. 合流成立なら curated memory (L1+L2+L3 refs) を「引き継ぎヘッダ」付きで stdout 注入
- *   5. 判定結果を ~/.throughline/logs/inheritance-decision.log に記録
+ *   2. auto path (source='clear' かつ env THROUGHLINE_DISABLE_AUTO_HANDOFF != '1')
+ *      なら前任candidateをこの時点で解決して凍結（transcript 実在フィルタ付き —
+ *      幽霊 twin を前任に選ばない）
+ *   3. registerPendingHandoff で intent を登録
+ *   4. 判定を ~/.throughline/logs/inheritance-decision.log に記録 (phase='session-start')
+ *
+ *   バトンの消費・merge・注入は最初の UserPromptSubmit (= 実体の証明) で行う。
+ *   幽霊はプロンプトを発火しないため記憶を奪えない。
  */
 
 import { getDb } from './db.mjs';
-import { consumeBaton } from './baton.mjs';
-import { mergeSpecificPredecessor, resolveMergeTarget } from './session-merger.mjs';
-import { backfillBodies, deriveTranscriptPath, logBackfill } from './turn-backfill.mjs';
-import { buildResumeContext } from './resume-context.mjs';
+import { registerPendingHandoff } from './pending-handoff.mjs';
+import { deriveTranscriptPath } from './turn-backfill.mjs';
 import { readAllSessionStates } from './state-file.mjs';
 import { ensureMonitorTaskFile } from './vscode-task.mjs';
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
-import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
+import { logDecision } from './decision-log.mjs';
+import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
-
-// SPIKE ONLY — Phase 0-2 / 0-4 検証用。marker file 削除で無効化される。
-// docs/10_transcript_injection_plan.md §3 Phase 0-2 参照。
-const SPIKE_MARKER_PATH = join(homedir(), '.throughline', 'spike-inject.flag');
-
-// Phase 0-6: initialUserMessage が interactive モードで効くか実機検証する experimental switch。
-// flag 存在時、SessionStart hook は plain stdout の代わりに JSON 出力に切り替わり、
-// hookSpecificOutput.initialUserMessage に tracer 入りメッセージを乗せる。
-// openclaude の OSS 実装では「headless 専用」と記載されているが、real CC の挙動は未確認。
-const INITIAL_USER_MESSAGE_TEST_FLAG = join(homedir(), '.throughline', 'initial-user-message-test.flag');
-
-function logInitialUserMessageTest(entry) {
-  const path = join(homedir(), '.throughline', 'logs', 'initial-user-message-test.log');
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, JSON.stringify(entry) + '\n', 'utf8');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'unknown';
-    process.stderr.write(`[session-start:initialUserMessage-test-log] ${msg}\n`);
-  }
-}
 
 const ENV_DISABLE_AUTO_HANDOFF = 'THROUGHLINE_DISABLE_AUTO_HANDOFF';
 
@@ -67,8 +40,13 @@ function isAutoHandoffDisabled(env) {
 }
 
 /**
- * 同 project_path の最新 Claude unmerged session を返す (auto path 用 predecessor)。
- * Codex session (`codex:*`) と現セッション自身は除外。
+ * 同 project_path の最新 Claude unmerged session から、transcript が実在する
+ * 最初の candidate を返す (auto path 用 predecessor)。
+ *
+ * transcript 実在フィルタの理由 (ADR 0014): /clear の二重 SessionStart では
+ * 幽霊 twin も sessions 行を持ち、updated_at が最新になるため、フィルタ無しだと
+ * 幽霊を前任に選んで実前任を取りこぼす (2026-05 の auto path incident 群)。
+ * 実前任は /clear 前に活動していた実体なので transcript を必ず持つ。
  *
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {string} projectPath
@@ -76,30 +54,30 @@ function isAutoHandoffDisabled(env) {
  * @returns {{ session_id: string } | null}
  */
 function findLatestClaudePredecessor(db, projectPath, currentSessionId) {
-  return (
-    db
-      .prepare(
-        `SELECT session_id FROM sessions
-         WHERE lower(project_path) = lower(?)
-           AND merged_into IS NULL
-           AND session_id != ?
-           AND session_id NOT LIKE 'codex:%'
-         ORDER BY updated_at DESC
-         LIMIT 1`,
-      )
-      .get(projectPath, currentSessionId) ?? null
-  );
-}
+  const candidates = db
+    .prepare(
+      `SELECT session_id FROM sessions
+       WHERE lower(project_path) = lower(?)
+         AND merged_into IS NULL
+         AND session_id != ?
+         AND session_id NOT LIKE 'codex:%'
+       ORDER BY updated_at DESC
+       LIMIT 5`,
+    )
+    .all(projectPath, currentSessionId);
 
-function logDecision(entry) {
-  const path = join(homedir(), '.throughline', 'logs', 'inheritance-decision.log');
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, JSON.stringify(entry) + '\n', 'utf8');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'unknown';
-    process.stderr.write(`[session-start:decision-log] ${msg}\n`);
+  if (candidates.length === 0) return null;
+
+  const states = readAllSessionStates();
+  for (const row of candidates) {
+    const derived = deriveTranscriptPath(projectPath, row.session_id);
+    if (existsSync(derived)) return row;
+    const stateTranscriptPath = states.find(
+      (state) => state.sessionId === row.session_id,
+    )?.transcriptPath;
+    if (stateTranscriptPath && existsSync(stateTranscriptPath)) return row;
   }
+  return null;
 }
 
 export async function run() {
@@ -135,183 +113,42 @@ export async function run() {
      VALUES (?, ?, 'active', ?, ?)`,
   ).run(session_id, projectPath, now, now);
 
-  // 2. baton 消費
-  const baton = consumeBaton(db, { projectPath, now });
-
-  // 3. 引継ぎ判定
-  let mergeResult = { merged: false, skipReason: 'no_trigger' };
-  let triggeredPath = null;
+  // 2. auto path intent: source='clear' なら前任をこの時点で解決して凍結する。
+  //    初回プロンプトまでの間に他ウィンドウが動いても「/clear が意味した前任」がずれない。
   const autoDisabled = isAutoHandoffDisabled(process.env);
-
-  if (baton.sessionId) {
-    // baton path
-    triggeredPath = 'baton';
-    const { target: predecessorId } = resolveMergeTarget(db, baton.sessionId);
-    mergeResult = mergeSpecificPredecessor(db, {
-      newSessionId: session_id,
-      predecessorId,
-      now,
-    });
-  } else if (source === 'clear' && !autoDisabled) {
-    // auto path: 同 project の最新 Claude unmerged session を自動 predecessor にする
-    triggeredPath = 'auto';
+  let autoPredecessorId = null;
+  let intentNote = null;
+  if (source === 'clear' && autoDisabled) {
+    intentNote = 'auto_handoff_disabled';
+  } else if (source === 'clear') {
     const predRow = findLatestClaudePredecessor(db, projectPath, session_id);
     if (predRow?.session_id) {
-      const { target: predecessorId } = resolveMergeTarget(db, predRow.session_id);
-      mergeResult = mergeSpecificPredecessor(db, {
-        newSessionId: session_id,
-        predecessorId,
-        now,
-      });
+      autoPredecessorId = predRow.session_id;
     } else {
-      mergeResult = { merged: false, skipReason: 'no_predecessor' };
-    }
-  } else if (source === 'clear' && autoDisabled) {
-    triggeredPath = 'auto-disabled';
-    mergeResult = { merged: false, skipReason: 'auto_handoff_disabled' };
-  }
-
-  // 4. 合流成立なら curated memory を stdout 注入 (L1 + L2 + L3 refs)
-  //    順序厳守: stdout flush を先に完了させてから spike 分岐へ進む。
-  //    spike が throw しても stdout は既に attachment に保存されている。
-  //
-  //    Phase 0-6: initialUserMessage test flag 存在時は JSON 出力に切り替え、
-  //    initialUserMessage が interactive モードで messages[] に乗るか実機検証する。
-  if (mergeResult.merged) {
-    const predecessorId = mergeResult.predecessorId;
-    // /clear 直前ターンの取りこぼしを注入前に回収する。前任の transcript path は project path
-    // から決定的に導出する — state ファイルは Stop 不発の前任（まさに回収したい事例）では存在しないため補助。
-    const derivedTranscriptPath = deriveTranscriptPath(projectPath, predecessorId);
-    const stateTranscriptPath = readAllSessionStates().find(
-      (state) => state.sessionId === predecessorId,
-    )?.transcriptPath;
-    const predecessorTranscriptPath = existsSync(derivedTranscriptPath)
-      ? derivedTranscriptPath
-      : stateTranscriptPath && existsSync(stateTranscriptPath)
-        ? stateTranscriptPath
-        : null;
-
-    if (predecessorTranscriptPath) {
-      try {
-        const backfill = backfillBodies(db, {
-          targetSessionId: session_id,
-          originSessionId: predecessorId,
-          transcriptPath: predecessorTranscriptPath,
-          now,
-        });
-        logBackfill({
-          ts: new Date(now).toISOString(),
-          hook: 'session-start',
-          session_id,
-          target: session_id,
-          origin: predecessorId,
-          transcript_path: predecessorTranscriptPath,
-          groups: backfill.groups,
-          inserted_turns: backfill.insertedTurns,
-          skipped_existing: backfill.skippedExisting,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[session-start:backfill] ${message}\n`);
-        logBackfill({
-          ts: new Date(now).toISOString(),
-          hook: 'session-start',
-          session_id,
-          target: session_id,
-          origin: predecessorId,
-          transcript_path: predecessorTranscriptPath,
-          error: message,
-        });
-      }
-    } else {
-      logBackfill({
-        ts: new Date(now).toISOString(),
-        hook: 'session-start',
-        session_id,
-        target: session_id,
-        origin: predecessorId,
-        transcript_path: null,
-        skip_reason: 'no_transcript_path',
-      });
-    }
-
-    const text = buildResumeContext(db, {
-      sessionId: session_id,
-      isInheritance: true,
-    });
-    if (existsSync(INITIAL_USER_MESSAGE_TEST_FLAG)) {
-      // TEST MODE: emit JSON with initialUserMessage tracer. Plain stdout は出さない
-      // (= 通常 Throughline 案内文無し)。テスト 1 回限定。flag を削除すれば即復帰。
-      const tracer = randomBytes(4).toString('hex');
-      const initialMessage =
-        `[initial-user-tracer: ${tracer}]\n\n` +
-        `This text is being delivered via the SessionStart hook's ` +
-        `hookSpecificOutput.initialUserMessage field. If you can quote the 8-hex ` +
-        `tracer above when asked, it means initialUserMessage IS consumed in ` +
-        `interactive mode (not headless-only as openclaude documents).`;
-      const jsonOutput = JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'SessionStart',
-          initialUserMessage: initialMessage,
-        },
-      });
-      process.stdout.write(jsonOutput + '\n');
-      logInitialUserMessageTest({
-        ts: new Date(now).toISOString(),
-        session_id,
-        tracer,
-        mode: 'json-initial-user-message-only',
-        had_resume_context: Boolean(text),
-      });
-    } else if (text) {
-      process.stdout.write(text + '\n');
+      intentNote = 'no_predecessor';
     }
   }
 
-  // 5. SPIKE: marker file あり + merge 成立 + transcript_path あり の 3 条件で
-  //    L2 を user/assistant role 付きで transcript_path にも append する。
-  //    本実装ではない (docs/10_transcript_injection_plan.md Phase 0-2)。
-  //
-  //    tracer: 末尾 assistant 行に stdout 注入には含まれない一意トークンを付与する。
-  //    次の /clear 後に Claude が tracer を再現できれば JSONL 経路はモデル可視。
-  let spikeResult = null;
-  const spikeMarkerExists = existsSync(SPIKE_MARKER_PATH);
-  if (spikeMarkerExists && mergeResult.merged && transcript_path) {
-    try {
-      const { spikeInject, generateSpikeTracer } = await import('./spike-transcript-writer.mjs');
-      const tracer = generateSpikeTracer();
-      spikeResult = spikeInject({
-        db,
-        targetJsonlPath: transcript_path,
-        newSessionId: session_id,
-        cwd: projectPath,
-        version: payload.version ?? '2.1.145',
-        gitBranch: payload.gitBranch ?? 'main',
-        tracer,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown';
-      process.stderr.write(`[spike-inject] ${msg}\n`);
-      spikeResult = { error: msg };
-    }
-  }
+  // 3. pending intent 登録。merge / 注入はしない (最初の UserPromptSubmit で実行)。
+  registerPendingHandoff(db, {
+    sessionId: session_id,
+    projectPath,
+    source: source ?? null,
+    autoPredecessorId,
+    now,
+  });
 
   logDecision({
     ts: new Date(now).toISOString(),
+    phase: 'session-start',
     source: source ?? null,
     session_id,
     project_path: projectPath,
     transcript_path: transcript_path ?? null,
-    triggered_path: triggeredPath,
     auto_handoff_disabled: autoDisabled,
-    baton_session_id: baton.sessionId ?? null,
-    baton_age_ms: baton.ageMs ?? null,
-    baton_skip_reason: baton.skipReason ?? null,
-    merged: mergeResult.merged,
-    merge_skip_reason: mergeResult.skipReason ?? null,
-    predecessor_id: mergeResult.predecessorId ?? null,
-    spike_marker_exists: spikeMarkerExists,
-    spike_result: spikeResult,
+    auto_predecessor_id: autoPredecessorId,
+    intent_note: intentNote,
+    pending_registered: true,
   });
 
   process.exit(0);

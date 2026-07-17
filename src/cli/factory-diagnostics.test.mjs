@@ -195,7 +195,7 @@ test('factory-diagnostics hook inspection summarizes every canonical ready event
 
 function createFactorySchema(db) {
   db.exec(`
-    PRAGMA user_version = 8;
+    PRAGMA user_version = 9;
     CREATE TABLE sessions (
       session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL, status TEXT NOT NULL,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, merged_into TEXT
@@ -216,6 +216,10 @@ function createFactorySchema(db) {
     );
     CREATE TABLE handoff_batons (
       project_path TEXT PRIMARY KEY, session_id TEXT NOT NULL, created_at INTEGER NOT NULL
+    );
+    CREATE TABLE pending_handoffs (
+      session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL, source TEXT,
+      auto_predecessor_id TEXT, created_at INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX uq_skeletons_turn_v3
       ON skeletons(session_id, origin_session_id, turn_number, role);

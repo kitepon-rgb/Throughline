@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { buildResumeContext } from './resume-context.mjs';
+import {
+  buildResumeContext,
+  buildBudgetedResumeContext,
+  INJECTION_BUDGET_CHARS,
+} from './resume-context.mjs';
 
 function makeDb() {
   const db = new DatabaseSync(':memory:');
@@ -622,4 +626,102 @@ test('buildResumeContext: ignores inflightMemo (kept only for signature compatib
 
   assert.ok(text);
   assert.ok(!text.includes('**Next**: keep going'));
+});
+
+// ---- buildBudgetedResumeContext (ADR 0014: hook stdout の 10k file 化対策) ----
+
+test('INJECTION_BUDGET_CHARS stays under the measured 10k persisted-output limit', () => {
+  assert.ok(INJECTION_BUDGET_CHARS <= 9_501, '実測 inline 通過上限 9,501 字以下であること');
+});
+
+test('budgeted: under budget output matches the unbudgeted renderer, nothing dropped', () => {
+  const db = makeDb();
+  insertBody(db, { session: 'new', origin: 'old', turn: 1, role: 'user', text: 'short question', createdAt: 1000 });
+  insertBody(db, { session: 'new', origin: 'old', turn: 1, role: 'assistant', text: 'short answer', createdAt: 1100 });
+
+  const full = buildResumeContext(db, { sessionId: 'new', isInheritance: true });
+  const budgeted = buildBudgetedResumeContext(db, { sessionId: 'new', isInheritance: true });
+
+  assert.ok(budgeted);
+  assert.equal(budgeted.text, full);
+  assert.equal(budgeted.droppedL1Rows, 0);
+  assert.equal(budgeted.droppedL2Rows, 0);
+  assert.equal(budgeted.truncatedNewestL2, false);
+  assert.ok(budgeted.totalChars <= INJECTION_BUDGET_CHARS);
+});
+
+test('budgeted: drops oldest L2 rows first, keeps newest, and stays within maxChars', () => {
+  const db = makeDb();
+  // 各 ~800 字 × 10 行 = 本文だけで ~8,000 字 → maxChars 4000 で古い行が落ちる
+  for (let turn = 1; turn <= 10; turn += 1) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn,
+      role: 'assistant',
+      text: `turn-${String(turn).padStart(2, '0')} ` + 'x'.repeat(800),
+      createdAt: 1000 + turn * 100,
+    });
+  }
+
+  const budgeted = buildBudgetedResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+    maxChars: 4000,
+  });
+
+  assert.ok(budgeted);
+  assert.ok(budgeted.totalChars <= 4000, `totalChars ${budgeted.totalChars} must fit budget`);
+  assert.ok(budgeted.droppedL2Rows > 0, 'some old L2 rows must be dropped');
+  assert.ok(budgeted.text.includes('turn-10'), 'newest L2 row must survive');
+  assert.ok(!budgeted.text.includes('turn-01 '), 'oldest L2 row must be dropped');
+  assert.match(budgeted.text, /古い L2 を \d+ 行省略/, 'omission must be announced, not silent');
+});
+
+test('budgeted: a single oversized newest L2 row is truncated with a detail pointer', () => {
+  const db = makeDb();
+  insertBody(db, {
+    session: 'new',
+    origin: 'old',
+    turn: 1,
+    role: 'assistant',
+    text: 'HEAD-MARKER ' + 'y'.repeat(20_000),
+    createdAt: 1000,
+  });
+
+  const budgeted = buildBudgetedResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+    maxChars: 4000,
+  });
+
+  assert.ok(budgeted);
+  assert.ok(budgeted.totalChars <= 4000);
+  assert.equal(budgeted.truncatedNewestL2, true);
+  assert.ok(budgeted.text.includes('HEAD-MARKER'), 'the head of the newest row must survive');
+  assert.match(budgeted.text, /全文: throughline detail /, 'truncation must point to detail command');
+});
+
+test('budgeted: header and anchor always survive even under pressure', () => {
+  const db = makeDb();
+  for (let turn = 1; turn <= 5; turn += 1) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn,
+      role: 'assistant',
+      text: 'z'.repeat(3000),
+      createdAt: 1000 + turn,
+    });
+  }
+
+  const budgeted = buildBudgetedResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+    maxChars: 4000,
+  });
+
+  assert.ok(budgeted);
+  assert.match(budgeted.text, /^## Throughline: 直前スレッドの継続応答用コンテキスト/);
+  assert.ok(budgeted.text.includes('### 現在地 (直前のやりとり)'));
 });

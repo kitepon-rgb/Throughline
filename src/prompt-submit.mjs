@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 /**
- * UserPromptSubmit hook — /tl & /clear スラッシュコマンド検出 + バトン書き込み + Phase 0-5 spike
+ * UserPromptSubmit hook — 二相ハンドオフ第二相 + /tl & /clear バトン書き込み + Phase 0-5 spike
  *
  * stdin: { session_id, cwd, prompt, transcript_path, hook_event_name, ... }
  *
  * 動作:
+ *   - **二相ハンドオフ第二相 (ADR 0014)**: このセッションの pending intent
+ *     (SessionStart が登録) が残っていれば、それを消費して baton path 優先 →
+ *     auto path の順で前任を merge し、予算内 resume context を stdout 注入する。
+ *     プロンプト到達 = セッション実在の証明であり、transcript を生成しない幽霊
+ *     SessionStart はここに到達できない (= バトン・記憶を奪えない)。
+ *     注入がこの hook に移ったため、SessionStart 側の注入は廃止済み
+ *     (旧「二重注入回避」制約はこの構成では発生しない)。
  *   - prompt が /tl (単独 or /tl ... 形式) で始まっていればバトンを書き込んで終了
  *   - prompt が /clear (単独 or /clear ... 形式) で始まっていれば、現セッションの
  *     session_id をバトンに書き込んで終了。
@@ -27,6 +34,8 @@
 
 import { getDb } from './db.mjs';
 import { writeBaton } from './baton.mjs';
+import { executeFirstPromptHandoff } from './handoff-executor.mjs';
+import { logDecision } from './decision-log.mjs';
 import { ensureMonitorTaskFile } from './vscode-task.mjs';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -144,6 +153,42 @@ export async function run() {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown';
     process.stderr.write(`[vscode-task] ${msg}\n`);
+  }
+
+  // 二相ハンドオフの第二相 (ADR 0014): このプロンプトが newborn セッションの
+  // 初回プロンプトなら、pending intent を消費して merge + 注入をここで行う。
+  // プロンプト到達 = セッション実在の証明。幽霊 SessionStart はここに来られない。
+  // /tl・/clear のバトン書き込みより先に実行する (初回プロンプトが /tl でも、
+  // 引き継ぎを受けてから自分のバトンを書く順序になり、自己バトン食いが起きない)。
+  if (session_id) {
+    const db = getDb();
+    const projectPath = cwd ?? process.cwd();
+    const now = Date.now();
+    const handoff = executeFirstPromptHandoff(db, {
+      sessionId: session_id,
+      projectPath,
+      now,
+    });
+    if (handoff.attempted) {
+      if (handoff.injectionText) {
+        process.stdout.write(handoff.injectionText + '\n');
+      }
+      logDecision({
+        ts: new Date(now).toISOString(),
+        phase: 'prompt-submit',
+        session_id,
+        project_path: projectPath,
+        pending_created_at: handoff.pendingCreatedAt,
+        triggered_path: handoff.triggeredPath,
+        baton_session_id: handoff.baton?.sessionId ?? null,
+        baton_age_ms: handoff.baton?.ageMs ?? null,
+        baton_skip_reason: handoff.baton?.skipReason ?? null,
+        merged: handoff.mergeResult.merged,
+        merge_skip_reason: handoff.mergeResult.skipReason ?? null,
+        predecessor_id: handoff.mergeResult.predecessorId ?? null,
+        injection: handoff.injectionStats,
+      });
+    }
   }
 
   const tlMatch = isBatonCommand(prompt);

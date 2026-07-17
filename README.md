@@ -109,7 +109,7 @@ Anthropic API usage from the transcript JSONL (no `length / 4` heuristics).
 
 ---
 
-## Three-layer memory model (schema v8)
+## Three-layer memory model (schema v9)
 
 ```mermaid
 flowchart LR
@@ -119,7 +119,7 @@ flowchart LR
     H --> L3[("L3 · details<br/>tool I/O · thinking")]
     H -. "async<br/>Haiku" .-> L1[("L1 · skeletons<br/>one-liners")]
 
-    L2 -- "recent 20 turns" --> S["Next SessionStart<br/>injection"]
+    L2 -- "recent 20 turns" --> S["Next session's first prompt<br/>injection"]
     L1 -- "older turns" --> S
     L3 -. "on demand · throughline detail" .-> S
 
@@ -177,13 +177,14 @@ flowchart LR
     U["User types<br/>/clear or /tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
     W --> B[("handoff_batons<br/>SQLite")]
     M["VSCode menu<br/>clear"] -->|no UserPromptSubmit| X["no baton"]
-    NS["Next SessionStart"] --> C{"baton<br/>present?"}
+    NS["Next SessionStart<br/>(registers intent only)"] --> FP["First user prompt<br/>(proof the session is real)"]
+    FP --> C{"baton<br/>present?"}
     B -.-> C
     X -.-> C
     C -->|yes| P1["baton path<br/>(primary)<br/>merge that exact predecessor"]
-    C -->|no, source='clear'| P2["auto path<br/>(fallback)<br/>findLatestClaudePredecessor"]
+    C -->|no, source='clear'| P2["auto path<br/>(fallback)<br/>predecessor frozen at SessionStart"]
     C -->|no, source!='clear'| P3["fresh session<br/>no merge"]
-    P1 --> INJ["inject L1 + L2 + L3 refs"]
+    P1 --> INJ["inject L1 + L2 + L3 refs<br/>(budgeted ≤ 9,500 chars)"]
     P2 --> INJ
 
     classDef primary fill:#7c5cff,stroke:#1a1f2e,color:#fff
@@ -198,9 +199,20 @@ flowchart LR
 
 When the user types `/clear` or `/tl` in the prompt, the `UserPromptSubmit`
 hook writes a handoff baton with **that session's `session_id`** into the
-`handoff_batons` table. The next `SessionStart` (within the 1-hour TTL)
-consumes the baton and merges that exact predecessor's memory into the new
-session, regardless of the `source` value.
+`handoff_batons` table. The next new session consumes the baton **at its
+first user prompt** (eligibility: the session must have been born within the
+1-hour TTL after the baton was written) and merges that exact predecessor's
+memory, regardless of the `source` value.
+
+Why the first prompt and not `SessionStart` itself: Claude Code can fire
+multiple `SessionStart` hooks for the same project within a few hundred
+milliseconds, and some of them never materialize into a real session (no
+transcript is ever written). At `SessionStart` time a real session and such a
+"ghost" are indistinguishable — even a real session's transcript file appears
+only ~0.5s **after** the hook fires. A ghost that consumed the baton first
+would silently swallow the predecessor's memory while the real session
+started empty. Deferring consumption to the first user prompt closes this:
+a ghost never submits a prompt, so it can never take the baton (ADR 0014).
 
 This path is deterministic: it names the predecessor by id rather than
 guessing, so multi-window scenarios where "most recently updated session"
@@ -216,8 +228,10 @@ typed /tl:    Session A → /tl    → (new chat / restart) → Session B (consu
 Since Claude Code 2.1.128, the SessionStart hook receives `source='clear'`
 reliably after `/clear`. When no baton is present (for example because the
 `/clear` was triggered by the VSCode extension's menu and never reached
-`UserPromptSubmit`), Throughline falls back to `findLatestClaudePredecessor`
-to pick the most recent unmerged session for the same project and merges it.
+`UserPromptSubmit`), Throughline resolves the most recent unmerged session
+for the same project **at `SessionStart` time** (freezing that choice, and
+skipping candidates that have no transcript — i.e. ghosts) and performs the
+merge + injection at the session's first user prompt.
 
 Set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` in your environment to opt out of
 this fallback. **The env var only affects the fallback**; typed `/clear` and
@@ -367,7 +381,8 @@ turns are `0`, there is no current trim saving under the active keep-recent
 setting.
 
 Claude-side rewind UI itself is not driven by Throughline. The auto-handoff
-flow is `/clear` → new SessionStart → automatic injection of curated memory.
+flow is `/clear` → new session → automatic injection of curated memory at the
+session's first user prompt.
 Throughline does not invoke `/rewind` or any Claude Code internal command.
 
 Codex-primary setup has an installed Stop hook after global
@@ -643,7 +658,7 @@ Example output:
   does not delay Claude's reply from reaching you. L1 Haiku summarization
   (`claude -p` subprocess + inference, seconds to tens of seconds) would
   otherwise stall the user-facing response of every turn; since L1 is only
-  needed for the *next* session's SessionStart injection, there is no reason
+  needed for the *next* session's injection, there is no reason
   to block the current turn on it. Existing installs need
   `throughline uninstall && throughline install` to promote the flag (the
   dedup logic skips entries that match by command string).
@@ -779,8 +794,9 @@ Slash commands (invoked by the user in Claude Code):
 | `/sc-detail <time>` | Retrieve L2 body text and L3 tool I/O for a past turn       |
 
 > Since v0.4.1, both `/clear` and `/tl` typed in the prompt write a baton
-> identifying the current session, so the next `SessionStart` deterministically
-> inherits that exact predecessor. The `source='clear'` auto path remains as a
+> identifying the current session, so the next new session deterministically
+> inherits that exact predecessor (merge + injection happen at that session's
+> first user prompt — see ADR 0014). The `source='clear'` auto path remains as a
 > fallback for `/clear` triggered outside `UserPromptSubmit` (for example via
 > the VSCode extension menu); `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` only opts
 > out of that fallback.
@@ -889,7 +905,8 @@ Schema v8:
 - `skeletons` — L1 one-liners, keyed by `(session_id, origin_session_id, turn, role)`
 - `bodies` — L2 verbatim text (user + assistant), same key shape
 - `details` — L3 records with `kind` column (`tool_input` / `tool_output` / `system` / `image` / `thinking`) and `source_id` for idempotent re-processing
-- `handoff_batons` — one row per `project_path`, with `session_id` and `created_at`. Written by the `UserPromptSubmit` hook when the user types `/tl` or `/clear`. Consumed and deleted by the next `SessionStart` if within the 1-hour TTL. (v8 dropped the `memo_text` column when memo was retired in v0.4.0.)
+- `handoff_batons` — one row per `project_path`, with `session_id` and `created_at`. Written by the `UserPromptSubmit` hook when the user types `/tl` or `/clear`. Consumed and deleted at the next new session's **first user prompt**, if that session was born within the 1-hour TTL. (v8 dropped the `memo_text` column when memo was retired in v0.4.0.)
+- `pending_handoffs` — one row per newborn session (`session_id` PK, `project_path`, `source`, `auto_predecessor_id`, `created_at`). Registered by `SessionStart`, consumed exactly once by the session's first `UserPromptSubmit`. Rows belonging to ghost sessions are never consumed and stay behind harmlessly (a few hundred bytes each). Added in v9 (ADR 0014).
 - `injection_log` — audit trail of injection events
 
 All memory tables carry an `origin_session_id` so rebonded rows keep their
@@ -1041,7 +1058,7 @@ unchanged here.
 
 **Database got corrupted / want a clean slate**
 Delete `~/.throughline/throughline.db` (and the `-shm` / `-wal` companion files)
-and `~/.throughline/state/*.json`. A fresh database with schema v8 is created on
+and `~/.throughline/state/*.json`. A fresh database with schema v9 is created on
 the next hook fire.
 
 **New session didn't inherit memory from the previous one**

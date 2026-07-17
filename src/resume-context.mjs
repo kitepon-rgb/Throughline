@@ -83,7 +83,111 @@ function pickLatestExchange(recentBodies) {
 }
 
 /**
- * L1 + L2 注入テキストを組み立てる。L3 は本文ではなく
+ * 注入セクションを構造化して組み立てる（内部共通）。
+ * buildResumeContext (無制限) と buildBudgetedResumeContext (予算付き) が共有する。
+ *
+ * @returns {{
+ *   header: string,
+ *   anchorLines: string[],
+ *   l1Lines: string[],
+ *   l2Lines: { text: string, time: string }[],
+ * } | null}
+ */
+function buildResumeSections(db, { sessionId, isInheritance, excludeOriginId = null }) {
+  const record = buildHandoffRecord(db, {
+    sessionId,
+    isInheritance,
+    excludeOriginId,
+  });
+  if (!record) return null;
+
+  const turnCount = record.stats.preservedContextRows;
+  const header = isInheritance ? RESUME_HEADER_TEMPLATE(turnCount) : NORMAL_HEADER;
+
+  const l3ByTurn = groupL3ByTurn(record.references.l3);
+
+  // 現在地アンカー: 引き継ぎ時のみ、最新 user / assistant turn をヘッダ直下に再掲する。
+  // L2 末尾アンカーだけだと、長い L2 で注意が前半に固着して話の流れを取り違える事例があった。
+  const anchorLines = [];
+  if (isInheritance && record.memory.recentBodies.length > 0) {
+    const { latestUser, latestAssistant } = pickLatestExchange(record.memory.recentBodies);
+    if (latestUser) {
+      anchorLines.push(
+        `**最新ユーザー指示** [${latestUser.time}]: ${truncateForAnchor(latestUser.text)}`,
+      );
+    }
+    if (latestAssistant) {
+      anchorLines.push(
+        `**直前のアシスタント** [${latestAssistant.time}]: ${truncateForAnchor(latestAssistant.text)}`,
+      );
+    }
+  }
+
+  const l1Lines = [];
+  for (const r of record.memory.l1Summaries) {
+    if (!r.summary || r.summary === '(no content)') continue;
+    const summary = r.summary.replace(/\n+/g, ' ').trim();
+    const key = `${r.originSessionId}\x00${r.turnNumber}`;
+
+    // body 時刻が引けた行だけ詳細呼び出しを案内する。引けない場合は
+    // `[skeleton 時刻]` のままだと throughline detail が解決しないので suffix を出さない。
+    const displayTime = r.bodyTime ?? r.time;
+    const partCounts = l3ByTurn.get(key)?.partCounts ?? new Map();
+    const suffix = r.bodyTime != null
+      ? buildPartsSummary(partCounts, { includeBody: true })
+      : '';
+
+    l1Lines.push(`[${displayTime}] ${summary}${suffix}`);
+  }
+
+  // ターン内の最終 role 行 (通常 user→assistant 順なら assistant) にだけ suffix を出す。
+  // L3 (思考 / ツール / hook 出力 / 画像) は turn_number 単位でしか紐付いていないので
+  // 同じターンの user 行と assistant 行の両方に貼ると同じ内容が二度出て紛らわしい。
+  const l2Lines = [];
+  const lastIdxPerTurn = new Map();
+  for (let i = 0; i < record.memory.recentBodies.length; i += 1) {
+    const r = record.memory.recentBodies[i];
+    if (!r.text) continue;
+    const key = `${r.originSessionId}\x00${r.turnNumber}`;
+    lastIdxPerTurn.set(key, i);
+  }
+  for (let i = 0; i < record.memory.recentBodies.length; i += 1) {
+    const r = record.memory.recentBodies[i];
+    if (!r.text) continue;
+    const key = `${r.originSessionId}\x00${r.turnNumber}`;
+    const isLastOfTurn = lastIdxPerTurn.get(key) === i;
+    const partCounts = isLastOfTurn ? (l3ByTurn.get(key)?.partCounts ?? new Map()) : new Map();
+    const suffix = buildPartsSummary(partCounts);
+    l2Lines.push({ text: `[${r.time}] [${r.role}]: ${r.text}${suffix}`, time: r.time });
+  }
+
+  return { header, anchorLines, l1Lines, l2Lines };
+}
+
+function joinSections({ header, anchorLines, l1Lines, l2Lines }, { l1Note = null, l2Note = null } = {}) {
+  const lines = [header];
+  if (anchorLines.length > 0) {
+    lines.push('');
+    lines.push('### 現在地 (直前のやりとり)');
+    lines.push(...anchorLines);
+  }
+  if (l1Lines.length > 0 || l1Note) {
+    lines.push('');
+    lines.push('### それ以前の要約 (L1)');
+    if (l1Note) lines.push(l1Note);
+    lines.push(...l1Lines);
+  }
+  if (l2Lines.length > 0 || l2Note) {
+    lines.push('');
+    lines.push('### 直前の対話 (L2 / active work thread, 古い順)');
+    if (l2Note) lines.push(l2Note);
+    lines.push(...l2Lines.map((l) => l.text));
+  }
+  return lines.join('\n');
+}
+
+/**
+ * L1 + L2 注入テキストを組み立てる（サイズ無制限）。L3 は本文ではなく
  * 各 L1 / L2 行末尾の inline hint として付与する。
  *
  * @param {import('node:sqlite').DatabaseSync} db
@@ -99,90 +203,126 @@ export function buildResumeContext(
   db,
   { sessionId, isInheritance, excludeOriginId = null, inflightMemo: _ignoredMemo = null },
 ) {
-  const record = buildHandoffRecord(db, {
-    sessionId,
-    isInheritance,
-    excludeOriginId,
-  });
-  if (!record) return null;
+  const sections = buildResumeSections(db, { sessionId, isInheritance, excludeOriginId });
+  if (!sections) return null;
+  return joinSections(sections);
+}
 
-  const turnCount = record.stats.preservedContextRows;
-  const header = isInheritance ? RESUME_HEADER_TEMPLATE(turnCount) : NORMAL_HEADER;
-  const lines = [header];
+/**
+ * hook stdout 注入の予算上限（文字数）。
+ *
+ * 実測 (2026-07-17, Claude Code 2.1.211 / ADR 0014):
+ *   SessionStart / UserPromptSubmit の hook stdout は約 10,000 字を超えると
+ *   file 化され、モデル可視は `<persisted-output>`（ファイルパス + 先頭 2KB preview）
+ *   だけに劣化する。9,501 字は inline 通過、15,286 字は file 化を確認。
+ *   全 transcript 実測では >10k の注入 12 件が 12 件とも劣化していた
+ *   (v2.1.195 / 2026-06-28 以降)。安全側マージンとして 9,500 に設定。
+ */
+export const INJECTION_BUDGET_CHARS = 9_500;
 
-  const l3ByTurn = groupL3ByTurn(record.references.l3);
+// 予算超過時に注入へ入れる省略告知の予約分（この分を先に差し引いてから詰める）
+const OMISSION_NOTE_RESERVE = 200;
+// 最新 L2 行が単体で予算を超える場合に、切り詰めてでも入れる最小の残余
+const MIN_TRUNCATED_L2_CHARS = 400;
 
-  // 現在地アンカー: 引き継ぎ時のみ、最新 user / assistant turn をヘッダ直下に再掲する。
-  // L2 末尾アンカーだけだと、長い L2 で注意が前半に固着して話の流れを取り違える事例があった。
-  if (isInheritance && record.memory.recentBodies.length > 0) {
-    const { latestUser, latestAssistant } = pickLatestExchange(record.memory.recentBodies);
-    const anchorLines = [];
-    if (latestUser) {
-      anchorLines.push(
-        `**最新ユーザー指示** [${latestUser.time}]: ${truncateForAnchor(latestUser.text)}`,
-      );
-    }
-    if (latestAssistant) {
-      anchorLines.push(
-        `**直前のアシスタント** [${latestAssistant.time}]: ${truncateForAnchor(latestAssistant.text)}`,
-      );
-    }
-    if (anchorLines.length > 0) {
-      lines.push('');
-      lines.push('### 現在地 (直前のやりとり)');
-      lines.push(...anchorLines);
-    }
-  }
+/**
+ * 予算付き注入テキスト。優先順位:
+ *   1. ヘッダ + 現在地アンカー（常に全文）
+ *   2. L1 要約（新しい順に予算まで。落とした分は告知行）
+ *   3. L2 本文（新しい順に予算まで詰めて古い順に出力。落とした分は告知行 +
+ *      L1 / `throughline detail` への誘導）
+ * 予算内に一切 L2 が入らない場合でも、最新 L2 行だけは切り詰めて入れる
+ * （現在地の文脈をアンカー 600 字より厚く確保するため）。
+ *
+ * @returns {{
+ *   text: string,
+ *   totalChars: number,
+ *   droppedL1Rows: number,
+ *   droppedL2Rows: number,
+ *   truncatedNewestL2: boolean,
+ * } | null}
+ */
+export function buildBudgetedResumeContext(
+  db,
+  { sessionId, isInheritance, excludeOriginId = null, maxChars = INJECTION_BUDGET_CHARS },
+) {
+  const sections = buildResumeSections(db, { sessionId, isInheritance, excludeOriginId });
+  if (!sections) return null;
 
-  if (record.memory.l1Summaries.length > 0) {
-    const l1Lines = [];
-    for (const r of record.memory.l1Summaries) {
-      if (!r.summary || r.summary === '(no content)') continue;
-      const summary = r.summary.replace(/\n+/g, ' ').trim();
-      const key = `${r.originSessionId}\x00${r.turnNumber}`;
+  const lineCost = (s) => s.length + 1; // join('\n') 分
 
-      // body 時刻が引けた行だけ詳細呼び出しを案内する。引けない場合は
-      // `[skeleton 時刻]` のままだと throughline detail が解決しないので suffix を出さない。
-      const displayTime = r.bodyTime ?? r.time;
-      const partCounts = l3ByTurn.get(key)?.partCounts ?? new Map();
-      const suffix = r.bodyTime != null
-        ? buildPartsSummary(partCounts, { includeBody: true })
-        : '';
+  // 固定部 (ヘッダ + アンカー) のコスト。セクション見出し・空行も概算に含める
+  const fixedCost =
+    lineCost(sections.header) +
+    (sections.anchorLines.length > 0
+      ? lineCost('') + lineCost('### 現在地 (直前のやりとり)') +
+        sections.anchorLines.reduce((a, l) => a + lineCost(l), 0)
+      : 0) +
+    lineCost('') + lineCost('### それ以前の要約 (L1)') +
+    lineCost('') + lineCost('### 直前の対話 (L2 / active work thread, 古い順)');
 
-      l1Lines.push(`[${displayTime}] ${summary}${suffix}`);
-    }
-    if (l1Lines.length > 0) {
-      lines.push('');
-      lines.push('### それ以前の要約 (L1)');
-      lines.push(...l1Lines);
-    }
-  }
+  let remaining = maxChars - fixedCost - OMISSION_NOTE_RESERVE;
 
-  if (record.memory.recentBodies.length > 0) {
-    lines.push('');
-    lines.push('### 直前の対話 (L2 / active work thread, 古い順)');
-
-    // ターン内の最終 role 行 (通常 user→assistant 順なら assistant) にだけ suffix を出す。
-    // L3 (思考 / ツール / hook 出力 / 画像) は turn_number 単位でしか紐付いていないので
-    // 同じターンの user 行と assistant 行の両方に貼ると同じ内容が二度出て紛らわしい。
-    const lastIdxPerTurn = new Map();
-    for (let i = 0; i < record.memory.recentBodies.length; i += 1) {
-      const r = record.memory.recentBodies[i];
-      if (!r.text) continue;
-      const key = `${r.originSessionId}\x00${r.turnNumber}`;
-      lastIdxPerTurn.set(key, i);
-    }
-
-    for (let i = 0; i < record.memory.recentBodies.length; i += 1) {
-      const r = record.memory.recentBodies[i];
-      if (!r.text) continue;
-      const key = `${r.originSessionId}\x00${r.turnNumber}`;
-      const isLastOfTurn = lastIdxPerTurn.get(key) === i;
-      const partCounts = isLastOfTurn ? (l3ByTurn.get(key)?.partCounts ?? new Map()) : new Map();
-      const suffix = buildPartsSummary(partCounts);
-      lines.push(`[${r.time}] [${r.role}]: ${r.text}${suffix}`);
+  // L1: 新しい順 (配列末尾) に採用して古い順で出力
+  const keptL1 = [];
+  let droppedL1Rows = 0;
+  for (let i = sections.l1Lines.length - 1; i >= 0; i -= 1) {
+    const cost = lineCost(sections.l1Lines[i]);
+    if (remaining - cost >= 0) {
+      keptL1.unshift(sections.l1Lines[i]);
+      remaining -= cost;
+    } else {
+      droppedL1Rows = i + 1;
+      break;
     }
   }
 
-  return lines.join('\n');
+  // L2: 新しい順に採用して古い順で出力
+  const keptL2 = [];
+  let droppedL2Rows = 0;
+  let truncatedNewestL2 = false;
+  for (let i = sections.l2Lines.length - 1; i >= 0; i -= 1) {
+    const line = sections.l2Lines[i];
+    const cost = lineCost(line.text);
+    if (remaining - cost >= 0) {
+      keptL2.unshift(line);
+      remaining -= cost;
+      continue;
+    }
+    // 最新行が単体で入らない場合だけ、切り詰めて確保する
+    if (keptL2.length === 0 && remaining >= MIN_TRUNCATED_L2_CHARS) {
+      const marker = ` …(予算超過で切詰め; 全文: throughline detail ${line.time})`;
+      const keep = remaining - marker.length - 1;
+      keptL2.unshift({ ...line, text: line.text.slice(0, keep) + marker });
+      remaining = 0;
+      truncatedNewestL2 = true;
+      droppedL2Rows = i; // これより古い行は全部落ちる
+      break;
+    }
+    droppedL2Rows = i + 1;
+    break;
+  }
+
+  const l1Note =
+    droppedL1Rows > 0
+      ? `（注入予算 ${maxChars} 字超過のため古い L1 を ${droppedL1Rows} 行省略）`
+      : null;
+  const l2Note =
+    droppedL2Rows > 0
+      ? `（注入予算 ${maxChars} 字超過のため古い L2 を ${droppedL2Rows} 行省略 — ` +
+        '上の L1 要約と `throughline detail HH:MM:SS` で参照できます）'
+      : null;
+
+  const text = joinSections(
+    { header: sections.header, anchorLines: sections.anchorLines, l1Lines: keptL1, l2Lines: keptL2 },
+    { l1Note, l2Note },
+  );
+
+  return {
+    text,
+    totalChars: text.length,
+    droppedL1Rows,
+    droppedL2Rows,
+    truncatedNewestL2,
+  };
 }

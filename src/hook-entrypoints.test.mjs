@@ -184,7 +184,7 @@ test('prompt-submit: non-baton prompt does not write any baton', () => {
   }
 });
 
-test('session-start subprocess consumes baton and injects inherited resume context', () => {
+test('two-phase: session-start registers intent only; first prompt consumes baton and injects', () => {
   const home = makeTempHome();
   const project = makeTempProject();
   try {
@@ -211,6 +211,7 @@ test('session-start subprocess consumes baton and injects inherited resume conte
     ).run();
     db.close();
 
+    // 第一相: SessionStart は intent 登録のみ。merge も注入もせず、baton も残る。
     const started = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
       home,
       cwd: project,
@@ -220,17 +221,127 @@ test('session-start subprocess consumes baton and injects inherited resume conte
         source: 'startup',
       }),
     });
-
     assert.equal(started.status, 0, started.stderr);
-    assert.match(started.stdout, /old assistant body/);
+    assert.equal(started.stdout, '', 'SessionStart must not inject anything');
+
+    const mid = openDb(home);
+    assert.equal(
+      mid.prepare("SELECT merged_into FROM sessions WHERE session_id = 'old-session'").get()
+        .merged_into,
+      null,
+      'no merge at SessionStart',
+    );
+    assert.equal(mid.prepare('SELECT COUNT(*) AS c FROM handoff_batons').get().c, 1, 'baton kept');
+    assert.equal(
+      mid.prepare("SELECT COUNT(*) AS c FROM pending_handoffs WHERE session_id = 'new-session'").get().c,
+      1,
+      'pending intent registered',
+    );
+    mid.close();
+
+    // 第二相: 初回プロンプト (= 実体の証明) で consume + merge + 注入。
+    const firstPrompt = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'new-session',
+        cwd: project,
+        prompt: 'continue the work',
+      }),
+    });
+    assert.equal(firstPrompt.status, 0, firstPrompt.stderr);
+    assert.match(firstPrompt.stdout, /old assistant body/);
 
     const after = openDb(home);
-    const old = after
-      .prepare("SELECT merged_into FROM sessions WHERE session_id = 'old-session'")
+    assert.equal(
+      after.prepare("SELECT merged_into FROM sessions WHERE session_id = 'old-session'").get()
+        .merged_into,
+      'new-session',
+    );
+    assert.equal(after.prepare('SELECT COUNT(*) AS c FROM handoff_batons').get().c, 0);
+    assert.equal(after.prepare('SELECT COUNT(*) AS c FROM pending_handoffs').get().c, 0);
+    after.close();
+
+    // 2 回目のプロンプトでは再注入しない (pending 消費済み)
+    const secondPrompt = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        session_id: 'new-session',
+        cwd: project,
+        prompt: 'and then?',
+      }),
+    });
+    assert.equal(secondPrompt.status, 0, secondPrompt.stderr);
+    assert.equal(secondPrompt.stdout, '', 'no duplicate injection on later prompts');
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('two-phase GHOST regression: first-arriving promptless SessionStart cannot steal the baton', () => {
+  // 2026-07-17 incident (ADR 0014) の再現形:
+  // 同一 project で幽霊 SessionStart が実体より数百 ms 先に発火しても、
+  // プロンプトを発火しない限りバトンも記憶も奪えない。
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    const baton = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'predecessor', cwd: project, prompt: '/tl' }),
+    });
+    assert.equal(baton.status, 0, baton.stderr);
+
+    const db = openDb(home);
+    db.prepare(
+      `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+       VALUES ('predecessor', ?, 'active', 1, 1)`,
+    ).run(project);
+    db.prepare(
+      `INSERT INTO bodies
+         (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES ('predecessor', 'predecessor', 1, 'assistant', 'precious memory', 4, 2)`,
+    ).run();
+    db.close();
+
+    // 幽霊が先着 (488ms 差の再現 — 順序だけが本質)
+    const ghost = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'ghost-session', cwd: project, source: 'startup' }),
+    });
+    assert.equal(ghost.status, 0, ghost.stderr);
+
+    // 実体が後着
+    const real = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'real-session', cwd: project, source: 'startup' }),
+    });
+    assert.equal(real.status, 0, real.stderr);
+
+    // 幽霊はプロンプトを発火しない。実体の初回プロンプトが記憶を受け取る。
+    const firstPrompt = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'real-session', cwd: project, prompt: '続きをやろう' }),
+    });
+    assert.equal(firstPrompt.status, 0, firstPrompt.stderr);
+    assert.match(firstPrompt.stdout, /precious memory/, 'real session receives the memory');
+
+    const after = openDb(home);
+    assert.equal(
+      after.prepare("SELECT merged_into FROM sessions WHERE session_id = 'predecessor'").get()
+        .merged_into,
+      'real-session',
+      'memory merged into the REAL session, not the ghost',
+    );
+    const ghostBodies = after
+      .prepare("SELECT COUNT(*) AS c FROM bodies WHERE session_id = 'ghost-session'")
       .get();
-    const batons = after.prepare('SELECT COUNT(*) AS c FROM handoff_batons').get();
-    assert.equal(old.merged_into, 'new-session');
-    assert.equal(batons.c, 0);
+    assert.equal(ghostBodies.c, 0, 'ghost holds nothing');
     after.close();
   } finally {
     rmSync(project, { recursive: true, force: true });
@@ -238,7 +349,53 @@ test('session-start subprocess consumes baton and injects inherited resume conte
   }
 });
 
-test('session-start subprocess does not inject context when no baton exists', () => {
+test('two-phase: a running session does not steal a baton written after its birth', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  try {
+    // セッション B が誕生して初回プロンプトも済んでいる (pending 消費済み)
+    const startB = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'running-B', cwd: project, source: 'startup' }),
+    });
+    assert.equal(startB.status, 0, startB.stderr);
+    const promptB1 = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'running-B', cwd: project, prompt: 'work work' }),
+    });
+    assert.equal(promptB1.status, 0, promptB1.stderr);
+
+    // その後、別セッション A が /tl → 次の新規セッションへのバトンを書く
+    const tl = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'session-A', cwd: project, prompt: '/tl' }),
+    });
+    assert.equal(tl.status, 0, tl.stderr);
+
+    // B の 2 発目のプロンプトはバトンを奪えない (pending 無し = ハンドオフ判定なし)
+    const promptB2 = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'running-B', cwd: project, prompt: 'more work' }),
+    });
+    assert.equal(promptB2.status, 0, promptB2.stderr);
+    assert.equal(promptB2.stdout, '');
+
+    const db = openDb(home);
+    const rows = db.prepare('SELECT session_id FROM handoff_batons').all();
+    assert.equal(rows.length, 1, 'baton must remain for the true successor');
+    assert.equal(rows[0].session_id, 'session-A');
+    db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('session-start subprocess registers session row and stays silent without a baton', () => {
   const home = makeTempHome();
   const project = makeTempProject();
   try {
@@ -261,6 +418,10 @@ test('session-start subprocess does not inject context when no baton exists', ()
       .get();
     assert.equal(row.session_id, 'new-session');
     assert.equal(row.project_path, project);
+    const pending = db
+      .prepare("SELECT COUNT(*) AS c FROM pending_handoffs WHERE session_id = 'new-session'")
+      .get();
+    assert.equal(pending.c, 1, 'pending intent registered even without baton');
     db.close();
   } finally {
     rmSync(project, { recursive: true, force: true });
@@ -418,7 +579,7 @@ test('process-turn subprocess backfills all completed logical turns from a multi
   }
 });
 
-test('session-start backfills a derived predecessor transcript without a state file', {
+test('first prompt backfills a derived predecessor transcript without a state file', {
   skip: process.platform === 'win32' ? 'Windowsはstate file transcriptPath fallback契約' : undefined,
 }, () => {
   const home = makeTempHome();
@@ -460,6 +621,15 @@ test('session-start backfills a derived predecessor transcript without a state f
       input: JSON.stringify({ session_id: 'new-session', cwd: project, source: 'startup' }),
     });
     assert.equal(started.status, 0, started.stderr);
+
+    // 二相ハンドオフ: backfill + merge は初回プロンプトで行われる
+    const firstPrompt = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ session_id: 'new-session', cwd: project, prompt: 'continue' }),
+    });
+    assert.equal(firstPrompt.status, 0, firstPrompt.stderr);
+
     const after = openDb(home);
     assert.deepEqual(
       after
@@ -476,7 +646,7 @@ test('session-start backfills a derived predecessor transcript without a state f
       .split('\n')
       .filter((line) => line)
       .map((line) => JSON.parse(line));
-    assert.ok(backfillLog.some((entry) => entry.hook === 'session-start'));
+    assert.ok(backfillLog.some((entry) => entry.hook === 'prompt-submit'));
     assert.equal(existsSync(join(home, '.throughline', 'state', `${predecessorId}.json`)), false);
   } finally {
     rmSync(project, { recursive: true, force: true });

@@ -47,15 +47,17 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 正本は[ADR 0013](docs/adr/0013-observer-read-busy-writer-gate.md)／docs 14 Phase 4。修理済みcandidateの
 実Codex r11で親completed-turn 2件、Observer completed cycle 2件、65秒超継続、正常停止を受け入れた。
 
-**設計の核** (v0.4.0 以降、docs/02_clear_auto_handoff_plan.md)
+**設計の核** (v0.4.0 以降 + ADR 0014 二相化、docs/02_clear_auto_handoff_plan.md)
 
-- `/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
+- `/clear` 後も SQLite はそのまま残る。前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
+- **二相ハンドオフ (ADR 0014)**: Claude Code は同一 project に短時間で複数の SessionStart を発火させることがあり、一部は transcript を生成しない**幽霊セッション**になる。SessionStart 時点では実体と幽霊を判別できない（本物の transcript も hook より数百 ms 遅れて作られる）ため、**SessionStart は `pending_handoffs` への intent 登録のみ**を行い、**merge + 注入は最初の UserPromptSubmit（= 実体の証明。幽霊はプロンプトを発火しない）で実行**する。2026-07-17 に幽霊がバトンを先取りして実セッションが記憶ゼロで始まる incident が同日 2 回発生した（実測・機序は [ADR 0014](docs/adr/0014-two-phase-handoff-ghost-baton.md)）
 - **引き継ぎ発火条件は 2 経路 (baton path 優先)**:
-  1. **baton path**: 旧セッションで `/tl` または `/clear` を打つと UserPromptSubmit hook が `handoff_batons` テーブルに**そのセッションの** session_id を書き込み、次の新規セッションが TTL 1 時間以内に消費して merge。`source` 値関係なく発火、最も確定的な指名方法。multi-window で「最新更新セッション = clear されたセッション」が成立しないシナリオ (例: ウィンドウ A で `/clear`、ウィンドウ B が直前まで活動中) でも誤った前任を選ばない
-  2. **auto path (フォールバック)**: baton が無く、`/clear` 後の SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ `findLatestClaudePredecessor` heuristic で前任を選び merge + 注入。Claude Code 2.1.128 で `source='clear'` が reliable になったため成立 ([GitHub issue #49937](https://github.com/anthropics/claude-code/issues/49937) は解決済み)。`/clear` が UserPromptSubmit hook に届かない経路 (VSCode 拡張のメニュー由来など) のためのフォールバック。Desktop クライアントは `source="clear"` を送らないため auto path は VS Code 系のみで発火する（Desktop は `/tl` 運用。経緯と実測は [docs/12](docs/12_desktop_clear_handoff_plan.md)、upstream: [anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704)）。
-  3. consumeBaton が先発なので両者は構造上同時成立しない
+  1. **baton path**: 旧セッションで `/tl` または `/clear` を打つと UserPromptSubmit hook が `handoff_batons` テーブルに**そのセッションの** session_id を書き込み、次の新規セッションが初回プロンプト時に消費して merge。適格性は**セッション誕生時刻基準**で `0 ≤ (誕生 − baton書込) ≤ TTL 1h`。負 age（誕生後に書かれた baton）は消さずに残す＝走行中セッションが横取りしない。`source` 値関係なく発火、最も確定的な指名方法
+  2. **auto path (フォールバック)**: baton が無く SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ `findLatestClaudePredecessor`（**transcript 実在フィルタ付き** — 幽霊 twin を前任に選ばない）で前任を SessionStart 時点で解決・凍結し、初回プロンプト時に merge + 注入。Desktop クライアントは `source="clear"` を送らないため auto path は VS Code 系のみで発火する（Desktop は `/tl` 運用。経緯と実測は [docs/12](docs/12_desktop_clear_handoff_plan.md)、upstream: [anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704)）
+  3. baton 消費が auto 判定より先発なので両者は構造上同時成立しない
 - **注入内容**: L1 (古い turn の要約) + L2 (直近 20 turn の verbatim) + L3 references (`throughline detail <時刻>` の取り出しコマンド一覧)。memo / thinking は注入しない (= L2 全文に最後の assistant turn が含まれるので redundant)
-- **thinking の L3 保存**: assistant の extended thinking ブロックは `details` テーブルに `kind='thinking'` で全ターン保存される。`throughline detail <時刻>` で取り出せるが、SessionStart 注入には含めない
+- **注入予算 (ADR 0014)**: hook stdout は約 10k 字超で `<persisted-output>`（path + 先頭 2KB preview）に file 化されモデル可視が劣化する（実測 9,501 字 inline / 15,286 字 file 化）。注入は `buildBudgetedResumeContext`（上限 9,500 字）で行い、ヘッダ + 現在地アンカーは常に全文、L1 → L2 を新しい側から詰め、省略は注入文と decision log に明示する
+- **thinking の L3 保存**: assistant の extended thinking ブロックは `details` テーブルに `kind='thinking'` で全ターン保存される。`throughline detail <時刻>` で取り出せるが、注入には含めない
 - 各レコードは `origin_session_id` を保持するため、複数回の引き継ぎでも記憶がチェーン状に蓄積する（ホップ制限なし）
 - `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` は **使わない**（自動コンパクト依存の設計は放棄済み）
 - **フォールバック / 逃げ道のコードを書かない** — [docs/04_public_release_plan.md §0](docs/04_public_release_plan.md) 参照。silent try/catch、`exit(0)` でのエラー隠蔽は禁止
@@ -112,9 +114,9 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 
 | ファイル | サブコマンド | Hook event |
 |---|---|---|
-| [src/session-start.mjs](src/session-start.mjs) | `throughline session-start` | SessionStart |
+| [src/session-start.mjs](src/session-start.mjs)<br>二相ハンドオフ第一相: sessions 登録 + pending intent 登録のみ。merge / 注入はしない (ADR 0014) | `throughline session-start` | SessionStart |
 | [src/turn-processor.mjs](src/turn-processor.mjs)<br>全ターン走査バックフィル（`turn-backfill.mjs` 経由、Stop 空振りの永久穴を解消） | `throughline process-turn` | Stop |
-| [src/prompt-submit.mjs](src/prompt-submit.mjs) | `throughline prompt-submit` | UserPromptSubmit |
+| [src/prompt-submit.mjs](src/prompt-submit.mjs)<br>二相ハンドオフ第二相: 初回プロンプトで pending consume + merge + 予算内注入。加えて `/tl` / `/clear` baton 書き込み | `throughline prompt-submit` | UserPromptSubmit |
 
 上記 hook module は `run()` を export し、直接実行時または [bin/throughline.mjs](bin/throughline.mjs) から呼ばれた時だけ hook body を実行する。import だけでは stdin 待ち、DB 作成、state 書き込みをしない。
 
@@ -122,10 +124,13 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 
 | ファイル | 役割 |
 |---|---|
-| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` または `/clear` で書き、SessionStart で消費。schema v8 で memo_text 列廃止により `updateBatonMemo` も削除） |
+| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` または `/clear` で書き、newborn セッションの初回 UserPromptSubmit で消費。適格性はセッション誕生時刻 `bornAt` 基準で、負 age の baton は `future_baton` として残置。schema v8 で memo_text 列廃止により `updateBatonMemo` も削除） |
+| [src/pending-handoff.mjs](src/pending-handoff.mjs) | 二相ハンドオフの intent 管理 (schema v9 `pending_handoffs`)。`registerPendingHandoff` (SessionStart) / `consumePendingHandoff` (初回 UserPromptSubmit、BEGIN IMMEDIATE で 1 回限り) |
+| [src/handoff-executor.mjs](src/handoff-executor.mjs) | 二相ハンドオフ第二相の本体。pending consume → baton path 優先 → auto path の merge → 前任 transcript backfill → `buildBudgetedResumeContext` で予算内注入テキストを組み立てる |
+| [src/decision-log.mjs](src/decision-log.mjs) | inheritance-decision.log の共有 writer。`phase: 'session-start' \| 'prompt-submit'` の 2 種を記録（2026-07-17 incident の一次証拠となった実績のあるログ） |
 | [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と Codex projection が共有する安定した中間表現。DB 永続化はせず、schema v8 の既存テーブルから組み立てる。`codex:<thread_id>` session は `source.adapter = codex` として扱う |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
-| [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画。**v0.4.12 以降**: ヘッダーは「現在地参照案内」「直前の対話の自然な続きとして応答」「`Bash` ツールで `throughline detail HH:MM:SS` を実行」の 3 行。本文は **現在地アンカー (最新 user + 最新 assistant turn を再掲、各 600 字で truncate)** → L1 → L2 (末尾 anchor) の順。L2 が長くなると末尾 anchor だけでは注意が前半固着し話の流れを取り違える事例があった (`/clear` 直後に L2 先頭の古いターンを「現在の作業」と誤認するケース) ため、最新ターンをヘッダ直下にも再掲して二重に固定する。L3 は独立セクションを持たず、各 L1/L2 行末尾に `(詳細：…)` inline suffix として集約する。L1 行頭は `bodies.created_at` MIN 時刻 (元 body 時刻) で表示し detail 解決可能にする |
+| [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画。**v0.4.12 以降**: ヘッダーは「現在地参照案内」「直前の対話の自然な続きとして応答」「`Bash` ツールで `throughline detail HH:MM:SS` を実行」の 3 行。本文は **現在地アンカー (最新 user + 最新 assistant turn を再掲、各 600 字で truncate)** → L1 → L2 (末尾 anchor) の順。L2 が長くなると末尾 anchor だけでは注意が前半固着し話の流れを取り違える事例があった (`/clear` 直後に L2 先頭の古いターンを「現在の作業」と誤認するケース) ため、最新ターンをヘッダ直下にも再掲して二重に固定する。L3 は独立セクションを持たず、各 L1/L2 行末尾に `(詳細：…)` inline suffix として集約する。L1 行頭は `bodies.created_at` MIN 時刻 (元 body 時刻) で表示し detail 解決可能にする。**ADR 0014 以降**: 実注入は `buildBudgetedResumeContext`（上限 9,500 字。hook stdout の 10k file 化対策）で行い、ヘッダ + アンカー常時全文・L1 → L2 を新しい側から詰め・省略は注入文へ明示する |
 | [src/l3-summary.mjs](src/l3-summary.mjs) | resume-context / codex-handoff 共通の L3 inline suffix ヘルパー。`shortenMcpToolName` / `localizeL3Part` / `groupL3ByTurn` / `buildPartsSummary`。MCP ツール名は末尾関数名に短縮、`tool_output` / hook 出力 (`system`) は noise として suffix から除外、`tool_input` 名 (例: Bash) で turn 内 1 件に集約する |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`)。`host` 無しは旧 Claude state として normalize し、Codex state は `host: "codex"` / `sessionId: "codex:<thread_id>"` / `rolloutPath` を持つ。ファイル名は URL encode し、Windows でも `codex:` session id を保存できる。`usage` フィールド (tokens/model/contextWindowSize) は Stop 完了時の fallback snapshot。monitor はライブ transcript / rollout を優先し、取れない時だけ snapshot を使う。旧フォーマット (usage 無し) も読める |
 | [src/runtime-error-store.mjs](src/runtime-error-store.mjs) | Throughline 所有の local runtime error aggregate。canonical dotagents config の `collection.enabled === true` 時だけ固定 code/template を SHA-256 fingerprint で集約し、private atomic store、monotonic cursor/ack、resolve/reopen、unacked 保護 retention、bounded snapshot/diagnostics を提供する。network I/O、raw exception/stderr/stack/prompt/session/path/context の入力・保存は行わない |
@@ -202,7 +207,8 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の host mode 分岐、`codex-sidecar` 使用、disabled 時の Haiku 互換経路、Codex CLI backend、Codex CLI failure 非 fallback、再帰ガード |
 | [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |
 | [src/codex-resume.test.mjs](src/codex-resume.test.mjs) | `throughline codex-resume` の text / developer message item JSON / cwd latest Codex session 出力 |
-| [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `session-start` / `process-turn` subprocess 動作。`/tl` baton と `/clear` baton の書き込み、後勝ち上書き、非バトンプロンプトの no-op 確認を含む |
+| [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `session-start` / `process-turn` subprocess 動作。二相ハンドオフ（SessionStart は intent のみ / 初回プロンプトで merge + 注入）、幽霊先着でもバトンを奪えない incident 回帰、走行中セッションの future baton 非横取り、`/tl` / `/clear` baton 書き込みを含む |
+| [src/pending-handoff.test.mjs](src/pending-handoff.test.mjs) | `registerPendingHandoff` / `consumePendingHandoff` の登録・再登録 (resume)・1 回限り消費・他セッション非干渉 |
 | [src/trim-model.test.mjs](src/trim-model.test.mjs) | `buildTrimPlan` の captured turns / keep-recent / rollback candidate / host boundary / current-work memo preview |
 | [src/trim-cli.test.mjs](src/trim-cli.test.mjs) | `throughline trim --dry-run` JSON 出力、`--memo-stdin`、non-dry-run 明示拒否 |
 | [src/resume-context.test.mjs](src/resume-context.test.mjs) | `buildResumeContext` の注入順序（in-flight memo → thinking → L1 → L2 → footer）、空 context、current-origin 除外 |
@@ -273,14 +279,14 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - L2 → L1 要約は現行実装で唯一の subagent 的 external model call。`codex-sidecar` が configured の環境では `summarize-l1` preset を使い、使えない場合は従来通り Claude Haiku 経路を使う。`/tl` の in-flight memo はメイン Claude が slash command 手順で書くため sidecar 移行対象ではない
 - Claude CLI を実際に呼ぶテスト / smoke は、明示的に必要な場合だけ実行し、モデルは Haiku を使う。他モデルを使う必要がある場合は根拠を残してから実行する
 - 現行 install は Throughline 管理 Codex hook の shape を更新する。同じ `throughline codex-hook stop` command が既にあっても、絶対パス型 command / `timeoutSec` / `async` などを [src/cli/install.mjs](src/cli/install.mjs) の生成値に合わせる。
-- **UserPromptSubmit** は `/tl` または `/clear` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 2 役 (v0.3.18+, /clear バトンは v0.4.x+)。Claude への注入は一切しない（SessionStart 側との重複注入回避のため）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
+- **UserPromptSubmit** は二相ハンドオフ第二相 (pending intent 消費 + merge + 予算内注入) + `/tl` または `/clear` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 3 役 (ADR 0014)。注入がこの hook に移ったため、SessionStart 側の注入は廃止（旧「二重注入回避」制約は消滅）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **Claude PostToolUse** は登録しない（schema v4 で廃止）。Codex PostToolUse は別用途で、tool loop 中の rollout capture / monitor state write hook として登録する。current-session refresh instruction は注入しない。
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
 - dev 時に spike 系 hook（`spike/hook-logger.mjs` 等）が並行登録されている場合があるが、動作ログ採取用で実害なし
 
 ---
 
-## SQLite スキーマ (v7)
+## SQLite スキーマ (v9)
 
 `~/.throughline/throughline.db`（WAL モード）。schema migration の定義は [src/db.mjs](src/db.mjs) にあるので **スキーマを知りたい時は必ずそこを見る**。
 
@@ -292,7 +298,8 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - `details` (L3) — `session_id`, `origin_session_id`, `turn_number`, `tool_name`, `input_text`, `output_text`, `token_count`, `created_at`, `kind`, `source_id`
   - `kind`: `'tool_input' | 'tool_output' | 'system' | 'image' | 'thinking'`
   - `source_id`: `tool_use.id` / `attachment.uuid` / `${entry_uuid}:thinking:${idx}` 等の一意キー。`INSERT OR IGNORE` の冪等性を保証
-- `handoff_batons` (v8) — `project_path (PK)`, `session_id`, `created_at` — `/tl` で書き込み、SessionStart が TTL 1h 以内なら消費して merge。memo_text 列は v8 で drop (memo 廃止)
+- `handoff_batons` (v8) — `project_path (PK)`, `session_id`, `created_at` — `/tl` / `/clear` で書き込み、newborn セッションの初回 UserPromptSubmit が「誕生時刻基準 TTL 1h 以内」なら消費して merge。memo_text 列は v8 で drop (memo 廃止)
+- `pending_handoffs` (v9) — `session_id (PK)`, `project_path`, `source`, `auto_predecessor_id`, `created_at` — 二相ハンドオフの intent。SessionStart が登録し、初回 UserPromptSubmit が 1 回だけ消費。幽霊セッションの行は consume されず無害に残る (ADR 0014)
 - `injection_log` — 監査用（未活用）
 
 `judgments` テーブルは v4 で DROP 済み。`classifier.mjs` による抽出は精度が低く廃止。

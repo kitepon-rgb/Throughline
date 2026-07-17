@@ -67,33 +67,53 @@ source: [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks)
 
 ## 2. 採用する理想設計
 
-### 2.1 引継ぎ発火条件 (2 経路、v0.4.1 で baton primary に変更)
+### 2.1 引継ぎ発火条件 (2 経路 × 二相、ADR 0014 で二相化)
 
 | 経路 | 条件 | 起動 |
 |---|---|---|
-| **baton path (primary)** | `handoff_batons` テーブルに TTL (1 時間) 内 baton あり (= ユーザーが `/tl` または `/clear` を打った) | `source` 値関係なく確定的に引継ぎ |
-| **auto path (fallback)** | baton 不在 + `source='clear'` + env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でない | `findLatestClaudePredecessor` heuristic で引継ぎ |
+| **baton path (primary)** | `handoff_batons` テーブルに「セッション誕生時刻基準で TTL (1 時間) 内」の baton あり (= ユーザーが `/tl` または `/clear` を打った) | `source` 値関係なく確定的に引継ぎ |
+| **auto path (fallback)** | baton 不在 + `source='clear'` + env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でない | SessionStart 時点で凍結した前任 (transcript 実在フィルタ付き heuristic) へ引継ぎ |
+
+**二相化の理由 (ADR 0014)**: Claude Code は同一 project に短時間で複数の SessionStart を
+発火させることがあり、一部は transcript を生成しない幽霊になる。SessionStart 時点では
+実体と幽霊を判別できない (本物の transcript も hook より数百 ms 遅れて作られる) ため、
+merge・注入は「実体の証明」= 最初の UserPromptSubmit まで遅延する。
+2026-07-17 に幽霊がバトンを先取りして実セッションが記憶ゼロで始まる incident が
+同日 2 回発生した (詳細・実測は [ADR 0014](adr/0014-two-phase-handoff-ghost-baton.md))。
 
 判定ロジック (擬似コード):
 
 ```
 on UserPromptSubmit(prompt, session_id, project_path):
+  // ---- 第二相: 初回プロンプト = 実体の証明 ----
+  pending = consumePendingHandoff(session_id)   // atomic、1 セッション 1 回
+  if pending:
+    baton = consumeBaton(project_path, bornAt = pending.created_at)
+      // age = bornAt - baton.created_at。0 ≤ age ≤ TTL のみ消費。
+      // age < 0 (自分の誕生後に書かれた baton) は本来の後継のため残置
+    if baton.sessionId:
+      merge + inject(budgeted_memory_from(baton.sessionId))   // baton path
+    elif pending.auto_predecessor_id:
+      merge + inject(budgeted_memory_from(pending.auto_predecessor_id))  // auto path
+  // ---- 従来のバトン書き込み (第二相の後) ----
   if isBatonCommand(prompt) or isClearCommand(prompt):
-    writeBaton(project_path, session_id, now)  // typed /clear / /tl が確定的に baton を書く
+    writeBaton(project_path, session_id, now)
 
 on SessionStart(source, session_id, project_path):
-  baton = consumeBaton(project_path)  // atomic SELECT + DELETE, TTL 超過は sessionId=null で返る
-  if baton.sessionId:
-    inject(curated_memory_from(baton.sessionId))  // baton path (primary, env 関係なく発火)
-    return
+  // ---- 第一相: intent 登録のみ。merge も注入もしない ----
+  auto_predecessor = null
   if source == 'clear' and env.THROUGHLINE_DISABLE_AUTO_HANDOFF != '1':
-    predecessor = findLatestClaudePredecessor(project_path, session_id)
-    inject(curated_memory_from(predecessor))  // auto path (fallback)
-    return
-  // 何もしない
+    auto_predecessor = findLatestClaudePredecessor(project_path, session_id)
+      // transcript 実在フィルタ付き: 幽霊 twin (transcript 無し) を前任に選ばない
+  registerPendingHandoff(session_id, project_path, source, auto_predecessor)
 ```
 
-`consumeBaton` が先発なので「両方同時成立」は構造上発生しない (= baton ありなら baton 経路、無ければ source 判定)。typed `/clear` も UserPromptSubmit hook で baton を書くため、通常はほぼ常に baton path が走る。auto path は VSCode 拡張のメニュー由来 `/clear` のように UserPromptSubmit に届かない経路のためのフォールバック。
+baton 消費が auto 判定より先発なので「両方同時成立」は構造上発生しない。typed `/clear` も
+UserPromptSubmit hook で baton を書くため、通常はほぼ常に baton path が走る。auto path は
+VSCode 拡張のメニュー由来 `/clear` のように UserPromptSubmit に届かない経路のためのフォールバック。
+幽霊セッションはプロンプトを発火しないため第二相に到達できず、pending 行 (数百バイト) が
+無害に残るだけになる。TTL ベースの pending GC は置かない (長時間 idle 後の初回プロンプトから
+引継ぎを silent に奪う fallback になるため)。
 
 ### 2.2 注入内容: 現在地アンカー + L1 + L2 + L3 refs (baton/auto どちらの経路でも同一)
 
@@ -104,6 +124,12 @@ on SessionStart(source, session_id, project_path):
 - **L2 bodies** (直近 20 turn の verbatim)
 - **L3 references** (= `throughline detail <時刻>` の取り出しコマンド一覧、各 L1/L2 行末尾の inline suffix として集約)
 - Continuation Instruction (= 「これは過去ログではなく現在進行中の作業」と明示)
+
+**注入予算 (ADR 0014)**: hook stdout は約 10,000 字超で `<persisted-output>`
+(ファイルパス + 先頭 2KB preview) に file 化され、モデル可視が先頭 2KB に劣化する
+(実測: 9,501 字 inline 通過 / 15,286 字 file 化。v2.1.195 以降の 10k 超注入 12/12 が劣化)。
+注入は `buildBudgetedResumeContext` (上限 9,500 字) で行い、ヘッダ + アンカーは常に全文、
+L1 → L2 の順に新しい側から予算まで詰める。省略行数は注入文内と decision log に明示する。
 
 含めない (= 削除):
 - 中断直前の in-flight memo (memo セクション)

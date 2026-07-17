@@ -17,6 +17,7 @@ const REQUIRED_DATABASE_COLUMNS = {
   bodies: ['id', 'session_id', 'origin_session_id', 'turn_number', 'role', 'text', 'token_count', 'created_at'],
   details: ['id', 'session_id', 'turn_number', 'tool_name', 'input_text', 'output_text', 'token_count', 'created_at', 'origin_session_id', 'kind', 'source_id'],
   handoff_batons: ['project_path', 'session_id', 'created_at'],
+  pending_handoffs: ['session_id', 'project_path', 'source', 'auto_predecessor_id', 'created_at'],
 };
 const REQUIRED_DATABASE_INDEXES = ['uq_skeletons_turn_v3', 'uq_details_source'];
 const REQUIRED_INDEX_SHAPES = {

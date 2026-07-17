@@ -9,7 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-export const CURRENT_VERSION = 8;
+export const CURRENT_VERSION = 9;
 
 let _db = null;
 
@@ -213,6 +213,25 @@ function initSchema(db) {
     if (batonCols.some((c) => c.name === 'memo_text')) {
       db.exec('ALTER TABLE handoff_batons DROP COLUMN memo_text');
     }
+  }
+
+  // v8 → v9: pending_handoffs テーブル追加（二相ハンドオフ）。
+  // SessionStart は merge / 注入をせず intent をここに登録するだけ。
+  // 最初の UserPromptSubmit（= セッション実在の証明。幽霊 SessionStart は
+  // プロンプトを一度も発火しない）が原子的に consume して merge + 注入する。
+  // auto path (source='clear') の前任は SessionStart 時点で解決して凍結する。
+  // 幽霊の pending 行は誰にも consume されず無害に残る（行は数百バイト）。
+  // 経緯: 2026-07-17 の baton 幽霊奪取 incident（ADR 0014）。
+  if (version < 9) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pending_handoffs (
+        session_id          TEXT    PRIMARY KEY,
+        project_path        TEXT    NOT NULL,
+        source              TEXT,
+        auto_predecessor_id TEXT,
+        created_at          INTEGER NOT NULL
+      );
+    `);
   }
 
   if (version < CURRENT_VERSION) {
