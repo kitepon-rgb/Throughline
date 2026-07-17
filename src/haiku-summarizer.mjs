@@ -1,14 +1,20 @@
 /**
  * haiku-summarizer.mjs — L1 要約生成
  *
- * 基本方針:
- *   - Claude primary では、codex-sidecar diagnostics が configured なら Codex sidecar で
- *     L2→L1 要約する。
- *   - Claude primary では、codex-sidecar が disabled / unavailable なら現行の Claude
- *     Haiku 要約に戻す。
- *   - Claude primary では、どちらも失敗したら L2 全文を L1 に入れる（情報欠損ゼロ）。
+ * 基本方針 (モデル・比率の根拠は ADR 0015 の実測評価):
+ *   - Claude primary の backend 順序: codex-sidecar (configured 時)
+ *     → Codex CLI (既定 gpt-5.6-luna / effort low) → Claude Haiku
+ *     → L2 全文を L1 に入れる（情報欠損ゼロ）。各段の失敗理由は結果に記録する。
  *   - Codex primary では、Codex CLI backend を使い、失敗時は Haiku / raw L2 へ
  *     fallback せず explicit error にする。
+ *   - 要約の目標量は削減割合で決める（既定 1/5 = 0.2）。プロンプトへは割合から
+ *     換算した「約N文字」で渡す（LLM の長さ制御は割合指定より文字数指定が安定）。
+ *
+ * 設定 (env):
+ *   - THROUGHLINE_L1_MODEL:  Codex CLI 要約モデル (既定 'gpt-5.6-luna')
+ *   - THROUGHLINE_L1_EFFORT: Codex CLI reasoning effort (既定 'low')
+ *   - THROUGHLINE_L1_RATIO:  削減割合 (0 < r <= 1、既定 0.2 = 元の 1/5)。
+ *     不正値は黙って既定に落とさず explicit error にする。
  *
  * Claude Haiku 経路:
  *   Claude Max 契約前提。`claude -p --model claude-haiku-4-5-20251001`
@@ -47,6 +53,12 @@ import {
 import { spawnPortableSync } from './portable-spawn-sync.mjs';
 
 const MODEL = 'claude-haiku-4-5-20251001';
+// Codex CLI 要約の既定。gpt-5.6-luna@low@1/5 は 2026-07-17 の実測評価で選定
+// (8 実ソース × effort {none,low,medium} × 2 反復、要点拾い率 low=93% で
+//  medium と同点・none+4pt、レイテンシ median 12.4s。ADR 0015)。
+const L1_DEFAULT_CODEX_MODEL = 'gpt-5.6-luna';
+const L1_DEFAULT_CODEX_EFFORT = 'low';
+const L1_DEFAULT_RATIO = 0.2; // 元テキストの 1/5
 const MAX_RETRIES = 2;
 const TIMEOUT_MS = 30_000;
 const SIDECAR_TIMEOUT_MS = 10 * 60_000;
@@ -65,8 +77,33 @@ function ensureWorkdir() {
   }
 }
 
-function buildPrompt(l2Text) {
-  const targetChars = Math.max(20, Math.round(l2Text.length / 5));
+/**
+ * 削減割合を env から解決する。不正値は黙って既定へ落とさず explicit error
+ * （フォールバック禁止原則。設定ミスは沈黙劣化ではなく即座に見えるべき）。
+ */
+export function resolveL1Ratio(env = process.env) {
+  const raw = env.THROUGHLINE_L1_RATIO;
+  if (raw === undefined || raw === '') return L1_DEFAULT_RATIO;
+  const ratio = Number(raw);
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1) {
+    throw new Error(
+      `invalid THROUGHLINE_L1_RATIO: ${JSON.stringify(raw)} ` +
+        '(expected a fraction in (0, 1], e.g. 0.2 = compress to 1/5)',
+    );
+  }
+  return ratio;
+}
+
+function resolveL1CodexModel(env) {
+  return env.THROUGHLINE_L1_MODEL || L1_DEFAULT_CODEX_MODEL;
+}
+
+function resolveL1CodexEffort(env) {
+  return env.THROUGHLINE_L1_EFFORT || L1_DEFAULT_CODEX_EFFORT;
+}
+
+function buildPrompt(l2Text, ratio) {
+  const targetChars = Math.max(20, Math.round(l2Text.length * ratio));
   return (
     `次の日本語テキストを約${targetChars}文字に要約してください。` +
     `固有名詞・数値・因果関係を優先して残し、枝葉は落としてください。` +
@@ -74,9 +111,9 @@ function buildPrompt(l2Text) {
   );
 }
 
-function buildCodexPrompt(l2Text) {
+function buildCodexPrompt(l2Text, ratio) {
   return (
-    `${buildPrompt(l2Text)}\n\n` +
+    `${buildPrompt(l2Text, ratio)}\n\n` +
     'Output contract:\n' +
     '- Return only the summary text.\n' +
     '- Do not include Markdown fences, JSON, labels, or commentary.\n\n' +
@@ -228,7 +265,7 @@ function summarizeWithHaiku(l2Text, prompt, env) {
   return { summary: l2Text, fromFallback: true, source: 'raw_l2' };
 }
 
-function summarizeWithCodexCli(l2Text, { projectPath, env }) {
+function summarizeWithCodexCli(l2Text, { projectPath, env, ratio }) {
   if (!projectPath) {
     const err = new Error('Codex CLI summarizer requires projectPath');
     err.source = 'codex-cli';
@@ -244,8 +281,11 @@ function summarizeWithCodexCli(l2Text, { projectPath, env }) {
   }
 
   const command = env.THROUGHLINE_CODEX_CLI_BIN ?? 'codex';
-  const prompt = buildCodexPrompt(l2Text);
+  const prompt = buildCodexPrompt(l2Text, ratio);
   const childEnv = { ...env, [CODEX_SUMMARIZER_GUARD_ENV]: '1' };
+  // モデル・effort は明示指定する。--ignore-user-config は isolation のために
+  // 必要だが、これにより ~/.codex/config.toml のモデル選択も読まれないため、
+  // 明示しないと CLI 内蔵デフォルトで走ってしまう (ADR 0015 で実測確認)。
   const result = spawnPortableSync(
     command,
     [
@@ -256,6 +296,10 @@ function summarizeWithCodexCli(l2Text, { projectPath, env }) {
       '--skip-git-repo-check',
       '--sandbox',
       'read-only',
+      '-m',
+      resolveL1CodexModel(env),
+      '-c',
+      `model_reasoning_effort="${resolveL1CodexEffort(env)}"`,
       '-C',
       projectPath,
       prompt,
@@ -291,10 +335,27 @@ function summarizeWithCodexCli(l2Text, { projectPath, env }) {
 }
 
 /**
- * L2 本文を約 1/5 に要約する。
+ * claude-primary 用: Codex CLI 要約を試み、失敗は throw せず理由付きで返す。
+ * codex-primary の explicit error 契約 (summarizeWithCodexCli) はそのまま使い、
+ * ここでは「次の backend へ進む」ための宣言済み fallback として理由を保存する。
+ */
+function tryCodexCliSummary(l2Text, { projectPath, env, ratio }) {
+  try {
+    const result = summarizeWithCodexCli(l2Text, { projectPath, env, ratio });
+    return { summary: result.summary, reason: 'codex_cli_ok' };
+  } catch (err) {
+    return {
+      summary: null,
+      reason: err?.reason ? `codex_cli_${err.reason}` : 'codex_cli_failed',
+    };
+  }
+}
+
+/**
+ * L2 本文を削減割合 (既定 1/5、THROUGHLINE_L1_RATIO で変更可) で要約する。
  * @param {string} l2Text ターンの会話本文（user+assistant を適当な形式で結合した文字列）
  * @param {{ projectPath?: string, env?: NodeJS.ProcessEnv, hostMode?: 'claude-primary' | 'codex-primary' | 'unknown' }} [options]
- * @returns {{ summary: string, fromFallback: boolean, source?: string, sidecarReason?: string }}
+ * @returns {{ summary: string, fromFallback: boolean, source?: string, sidecarReason?: string, codexCliReason?: string }}
  */
 export function summarizeToL1(
   l2Text,
@@ -304,8 +365,10 @@ export function summarizeToL1(
     return { summary: '(no content)', fromFallback: true, source: 'empty' };
   }
 
+  const ratio = resolveL1Ratio(env);
+
   if (hostMode === 'codex-primary') {
-    return summarizeWithCodexCli(l2Text, { projectPath, env });
+    return summarizeWithCodexCli(l2Text, { projectPath, env, ratio });
   }
 
   if (hostMode !== 'claude-primary') {
@@ -320,7 +383,7 @@ export function summarizeToL1(
     return { summary: l2Text, fromFallback: true, source: 'recursion_guard' };
   }
 
-  const prompt = buildPrompt(l2Text);
+  const prompt = buildPrompt(l2Text, ratio);
   const sidecar = tryCodexSidecarSummary(l2Text, { projectPath, prompt, env });
   if (sidecar.summary) {
     return {
@@ -331,9 +394,23 @@ export function summarizeToL1(
     };
   }
 
+  // sidecar 不在時は Codex CLI (既定 gpt-5.6-luna@low)。Haiku より要点拾い率が
+  // 同等以上・レイテンシ半分以下・タイムアウト失敗なし (ADR 0015 実測)。
+  const codexCli = tryCodexCliSummary(l2Text, { projectPath, env, ratio });
+  if (codexCli.summary) {
+    return {
+      summary: codexCli.summary,
+      fromFallback: false,
+      source: 'codex-cli',
+      sidecarReason: sidecar.reason,
+      codexCliReason: codexCli.reason,
+    };
+  }
+
   const haiku = summarizeWithHaiku(l2Text, prompt, env);
   return {
     ...haiku,
     sidecarReason: sidecar.reason,
+    codexCliReason: codexCli.reason,
   };
 }

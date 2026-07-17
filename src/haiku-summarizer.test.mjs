@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { summarizeToL1 } from './haiku-summarizer.mjs';
+import { summarizeToL1, resolveL1Ratio } from './haiku-summarizer.mjs';
 
 function makeBin(dir, name, body) {
   const script = join(dir, `${name}.mjs`);
@@ -117,7 +117,7 @@ test('summarizeToL1: accepts stable SidecarResult summary without status field',
   }
 });
 
-test('summarizeToL1: when sidecar is disabled, keeps current Haiku-compatible path', () => {
+test('summarizeToL1: sidecar disabled + codex CLI failing falls back to Haiku path', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tl-l1-haiku-'));
   try {
     makeBin(
@@ -127,6 +127,13 @@ test('summarizeToL1: when sidecar is disabled, keeps current Haiku-compatible pa
 process.stdout.write('haiku summary\\n');
 `,
     );
+    const codex = makeBin(
+      dir,
+      'codex',
+      `process.stderr.write('codex unavailable\\n');
+process.exit(9);
+`,
+    );
 
     const result = summarizeToL1('long enough turn text', {
       hostMode: 'claude-primary',
@@ -134,6 +141,7 @@ process.stdout.write('haiku summary\\n');
       env: {
         ...envWithPrependedPath(dir),
         THROUGHLINE_CODEX_SIDECAR_DISABLED: '1',
+        THROUGHLINE_CODEX_CLI_BIN: codex,
       },
     });
 
@@ -141,12 +149,13 @@ process.stdout.write('haiku summary\\n');
     assert.equal(result.fromFallback, false);
     assert.equal(result.source, 'haiku');
     assert.equal(result.sidecarReason, 'sidecar_disabled');
+    assert.equal(result.codexCliReason, 'codex_cli_codex_cli_failed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('summarizeToL1: sidecar run failure keeps current Haiku-compatible path', () => {
+test('summarizeToL1: sidecar run failure falls to Codex CLI (gpt-5.6-luna@low) before Haiku', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tl-l1-sidecar-fail-'));
   try {
     const sidecar = makeBin(
@@ -160,29 +169,125 @@ test('summarizeToL1: sidecar run failure keeps current Haiku-compatible path', (
 }
 `,
     );
+    const argsFile = join(dir, 'codex-args.txt');
+    const codex = makeBin(
+      dir,
+      'codex',
+      `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(argsFile)}, process.argv.slice(2).join('\\n') + '\\n');
+for await (const _chunk of process.stdin) {}
+process.stdout.write('luna summary after sidecar failure\\n');
+`,
+    );
     makeBin(
       dir,
       'claude',
       `for await (const _chunk of process.stdin) {}
-process.stdout.write('haiku after sidecar failure\\n');
+process.stdout.write('haiku should not run\\n');
 `,
     );
 
     const result = summarizeToL1('long enough turn text', {
       hostMode: 'claude-primary',
-      projectPath: '/repo',
+      projectPath: dir,
       env: {
         ...envWithPrependedPath(dir),
         THROUGHLINE_CODEX_SIDECAR_BIN: sidecar,
+        THROUGHLINE_CODEX_CLI_BIN: codex,
       },
     });
 
-    assert.equal(result.summary, 'haiku after sidecar failure');
+    assert.equal(result.summary, 'luna summary after sidecar failure');
     assert.equal(result.fromFallback, false);
-    assert.equal(result.source, 'haiku');
+    assert.equal(result.source, 'codex-cli');
     assert.equal(result.sidecarReason, 'sidecar_run_failed');
+    assert.equal(result.codexCliReason, 'codex_cli_ok');
+
+    const argv = readFileSync(argsFile, 'utf8').trim().split('\n');
+    const modelIdx = argv.indexOf('-m');
+    assert.ok(modelIdx >= 0, 'explicit -m must be passed');
+    assert.equal(argv[modelIdx + 1], 'gpt-5.6-luna');
+    assert.ok(argv.includes('model_reasoning_effort="low"'), 'explicit effort must be passed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('summarizeToL1: THROUGHLINE_L1_MODEL / THROUGHLINE_L1_EFFORT override codex defaults', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tl-l1-model-override-'));
+  try {
+    const argsFile = join(dir, 'codex-args.txt');
+    const codex = makeBin(
+      dir,
+      'codex',
+      `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(argsFile)}, process.argv.slice(2).join('\\n') + '\\n');
+for await (const _chunk of process.stdin) {}
+process.stdout.write('override summary\\n');
+`,
+    );
+
+    const result = summarizeToL1('long enough turn text', {
+      hostMode: 'codex-primary',
+      projectPath: dir,
+      env: {
+        ...process.env,
+        THROUGHLINE_CODEX_CLI_BIN: codex,
+        THROUGHLINE_L1_MODEL: 'gpt-5.6-terra',
+        THROUGHLINE_L1_EFFORT: 'medium',
+      },
+    });
+
+    assert.equal(result.summary, 'override summary');
+    const argv = readFileSync(argsFile, 'utf8').trim().split('\n');
+    assert.equal(argv[argv.indexOf('-m') + 1], 'gpt-5.6-terra');
+    assert.ok(argv.includes('model_reasoning_effort="medium"'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('summarizeToL1: THROUGHLINE_L1_RATIO changes the target chars in the prompt', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tl-l1-ratio-'));
+  try {
+    const argsFile = join(dir, 'codex-args.txt');
+    const codex = makeBin(
+      dir,
+      'codex',
+      `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(argsFile)}, process.argv.slice(2).join('\\n') + '\\n');
+for await (const _chunk of process.stdin) {}
+process.stdout.write('ratio summary\\n');
+`,
+    );
+
+    const text = 'a'.repeat(1000);
+    summarizeToL1(text, {
+      hostMode: 'codex-primary',
+      projectPath: dir,
+      env: {
+        ...process.env,
+        THROUGHLINE_CODEX_CLI_BIN: codex,
+        THROUGHLINE_L1_RATIO: '0.1',
+      },
+    });
+
+    const argsText = readFileSync(argsFile, 'utf8');
+    assert.match(argsText, /約100文字に要約/, 'ratio 0.1 of 1000 chars = 100 target chars');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveL1Ratio: default 0.2, and invalid values are explicit errors (no silent default)', () => {
+  assert.equal(resolveL1Ratio({}), 0.2);
+  assert.equal(resolveL1Ratio({ THROUGHLINE_L1_RATIO: '0.1' }), 0.1);
+  for (const bad of ['abc', '0', '-0.2', '1.5', 'NaN']) {
+    assert.throws(
+      () => resolveL1Ratio({ THROUGHLINE_L1_RATIO: bad }),
+      /invalid THROUGHLINE_L1_RATIO/,
+      `must reject ${bad}`,
+    );
   }
 });
 
@@ -228,7 +333,7 @@ process.stdout.write('codex summary\\n');
     assert.equal(result.source, 'codex-cli');
     const argsText = readFileSync(argsFile, 'utf8').trim();
     const argv = argsText.split('\n');
-    assert.deepEqual(argv.slice(0, 8), [
+    assert.deepEqual(argv.slice(0, 12), [
       'exec',
       '--ephemeral',
       '--ignore-user-config',
@@ -236,9 +341,13 @@ process.stdout.write('codex summary\\n');
       '--skip-git-repo-check',
       '--sandbox',
       'read-only',
+      '-m',
+      'gpt-5.6-luna',
+      '-c',
+      'model_reasoning_effort="low"',
       '-C',
     ]);
-    assert.equal(argv[8], dir);
+    assert.equal(argv[12], dir);
     assert.match(argsText, /Output contract/);
     assert.equal(readFileSync(stdinFile, 'utf8'), 'long enough turn text');
   } finally {

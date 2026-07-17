@@ -152,12 +152,17 @@ injects it as plain text:
 - L3 stays in SQLite and is retrieved on demand via `/sc-detail <time>`
 
 L1 summaries are generated lazily: for sessions that stay under 20 turns, no
-external summarizer is invoked. In the current Claude-primary path, Throughline uses **Claude Haiku 4.5**
-via a subprocess (`claude -p --model claude-haiku-4-5-*`), reusing your Claude
-Max login — no API key required. When `codex-sidecar` is explicitly configured
-for the `summarize-l1` preset, Throughline can use that instead.
-For Codex-primary capture, the L1 backend is the Codex CLI; failures are explicit
-and do not fall back to Claude Haiku or raw L2.
+external summarizer is invoked. Summaries target a **compression ratio**
+(default 1/5 of the source turn, configurable via `THROUGHLINE_L1_RATIO`;
+invalid values are an explicit error, not a silent default). In the
+Claude-primary path the backend order is: `codex-sidecar` (when explicitly
+configured for the `summarize-l1` preset) → **Codex CLI** (default
+`gpt-5.6-luna` at reasoning effort `low`, chosen by measured evaluation —
+see ADR 0015; override via `THROUGHLINE_L1_MODEL` / `THROUGHLINE_L1_EFFORT`)
+→ **Claude Haiku 4.5** via a subprocess (`claude -p`), reusing your Claude
+Max login — no API key required. Each fallback step records its reason.
+For Codex-primary capture, the L1 backend is the Codex CLI only; failures are
+explicit and do not fall back to Claude Haiku or raw L2.
 
 All three layers (L1/L2/L3) have working write paths as of schema v5.
 `/sc-detail HH:MM:SS` returns user/assistant text (L2) plus a kind-grouped view
