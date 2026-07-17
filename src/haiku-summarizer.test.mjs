@@ -207,7 +207,7 @@ process.stdout.write('haiku should not run\\n');
     const modelIdx = argv.indexOf('-m');
     assert.ok(modelIdx >= 0, 'explicit -m must be passed');
     assert.equal(argv[modelIdx + 1], 'gpt-5.6-luna');
-    assert.ok(argv.includes('model_reasoning_effort="low"'), 'explicit effort must be passed');
+    assert.ok(argv.includes('model_reasoning_effort=low'), 'explicit effort must be passed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -241,7 +241,7 @@ process.stdout.write('override summary\\n');
     assert.equal(result.summary, 'override summary');
     const argv = readFileSync(argsFile, 'utf8').trim().split('\n');
     assert.equal(argv[argv.indexOf('-m') + 1], 'gpt-5.6-terra');
-    assert.ok(argv.includes('model_reasoning_effort="medium"'));
+    assert.ok(argv.includes('model_reasoning_effort=medium'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -344,7 +344,7 @@ process.stdout.write('codex summary\\n');
       '-m',
       'gpt-5.6-luna',
       '-c',
-      'model_reasoning_effort="low"',
+      'model_reasoning_effort=low',
       '-C',
     ]);
     assert.equal(argv[12], dir);

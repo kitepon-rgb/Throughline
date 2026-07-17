@@ -299,7 +299,7 @@ function summarizeWithCodexCli(l2Text, { projectPath, env, ratio }) {
       '-m',
       resolveL1CodexModel(env),
       '-c',
-      `model_reasoning_effort="${resolveL1CodexEffort(env)}"`,
+      `model_reasoning_effort=${resolveL1CodexEffort(env)}`,
       '-C',
       projectPath,
       prompt,
