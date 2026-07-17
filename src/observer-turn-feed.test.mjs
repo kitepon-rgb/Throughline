@@ -12,7 +12,9 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'tl-observer-feed-'));
   const project = join(root, 'project'); const other = join(root, 'other'); const home = join(root, 'codex');
   mkdirSync(project); mkdirSync(other); mkdirSync(home);
-  return { root, project, other, home, receiptOptions: { env: { HOME: root, USERPROFILE: root, XDG_STATE_HOME: join(root, 'state') } } };
+  // LOCALAPPDATA も state へ向け、win32 (LOCALAPPDATA layout) と POSIX (XDG layout) で
+  // receipt store の実パスを一致させる (テスト内の削除・検査パスを OS 非依存にする)
+  return { root, project, other, home, receiptOptions: { env: { HOME: root, USERPROFILE: root, XDG_STATE_HOME: join(root, 'state'), LOCALAPPDATA: join(root, 'state') } } };
 }
 function writeRollout(home, project, id, events) {
   const dir = join(home, 'sessions', '2026', '07', '15'); mkdirSync(dir, { recursive: true });
