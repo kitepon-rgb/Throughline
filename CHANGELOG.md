@@ -10,17 +10,64 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-17
+
+### Changed (breaking behavior)
+
+- **Two-phase handoff (ADR 0014).** Claude Code can fire multiple
+  `SessionStart` hooks for the same project within a few hundred ms, and some
+  of them never materialize into a real session (no transcript is ever
+  written). Such a "ghost" could consume the handoff baton first and silently
+  swallow the predecessor's memory while the real session started empty
+  (observed twice on 2026-07-17; upstream report:
+  anthropics/claude-code#78455). `SessionStart` now only registers a pending
+  intent (new schema v9 table `pending_handoffs`); the merge and the context
+  injection happen at the session's **first `UserPromptSubmit`** — a prompt is
+  proof the session is real, and a ghost never submits one. Baton eligibility
+  is measured against the consuming session's birth time (`0 <= birth −
+  baton_write <= 1h TTL`); a baton written after the session was born is left
+  in place for its true successor instead of being stolen by a running
+  session. The auto path (`source='clear'`) freezes its predecessor choice at
+  `SessionStart` and skips transcript-less (ghost) candidates.
+- **Injection is budgeted to 9,500 chars (ADR 0014).** Hook stdout larger than
+  ~10,000 chars is silently persisted to a file by Claude Code and the model
+  only sees the first 2KB (measured: 9,501 chars pass inline, 15,286 get
+  persisted; every >10k injection since v2.1.195 was degraded this way).
+  The resume context now always fits inline: header + current-position anchor
+  are kept in full, then L1 and L2 fill newest-first. Dropped L2 rows are
+  announced inside the injection with their `[time role]` references so the
+  model can retrieve any of them via `throughline detail`.
+- **L1 summarization backend and ratio are configurable (ADR 0015).** The
+  Claude-primary backend order is now `codex-sidecar` (when configured) →
+  Codex CLI (default `gpt-5.6-luna`, reasoning effort `low`, chosen by a
+  measured 83-run evaluation) → Claude Haiku → raw L2, with every fallback
+  step recording its reason. The compression target is a ratio (default 0.2 =
+  1/5 of the source turn). Overrides: `THROUGHLINE_L1_MODEL`,
+  `THROUGHLINE_L1_EFFORT`, `THROUGHLINE_L1_RATIO` (invalid ratio values are an
+  explicit error, not a silent default). The Codex CLI invocation now passes
+  an explicit `-m`; previously `--ignore-user-config` silently ran the CLI's
+  built-in default model.
+
 ### Added
 
-- Added the development-stage, JSON-only completed-turn Observer CLI boundary:
-  `throughline observer-read` returns opaque-cursor pages and `throughline
-  observer-wait` waits up to 3600 seconds for a cursor change. The completed
-  feed uses Throughline-owned Claude Stop receipts and Codex rollout
-  `task_complete` records; it does not expose or require direct DB/WAL/rollout
-  polling. Wait returns `changed`, `timeout`, `resync_required`, or
-  `ambiguous_parent`; read reports stale DB projection as `projection_pending`
-  without bodies. This is unreleased: the remaining regression and release
-  gates are not recorded as complete.
+- Schema v9: `pending_handoffs` table (session_id PK, project_path, source,
+  auto_predecessor_id, created_at). Rows belonging to ghost sessions are never
+  consumed and stay behind harmlessly.
+- The inheritance decision log now records both phases
+  (`phase: 'session-start' | 'prompt-submit'`) including injection size and
+  dropped-row counts.
+- First npm release to include the JSON-only completed-turn Observer CLI
+  boundary: `throughline observer-read` (opaque-cursor pages) and
+  `throughline observer-wait` (bounded wait up to 3600s). The completed feed
+  uses Throughline-owned Claude Stop receipts and Codex rollout
+  `task_complete` records; stale DB projection is reported as
+  `projection_pending` without bodies (ADR 0002–0013).
+
+### Fixed
+
+- Claude Stop waits for the transcript flush barrier before backfilling
+  (ADR 0012), and Observer reads wait out transient SQLite writer locks with a
+  bounded busy wait instead of failing hard (ADR 0013).
 
 ## [0.6.3] — 2026-07-14
 
