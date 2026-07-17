@@ -156,8 +156,13 @@ test('publishCapturedClaudeCompletionReceipt: L2 capture済みpairをL1/L3より
     assert.equal(first.sequence, 1);
     assert.deepEqual(second, first, 'Stop retry must return the original receipt');
     assert.equal(first.completed_at, 1234);
-    assert.equal(statSync(join(root, 'state')).mode & 0o777, 0o700);
-    assert.equal(statSync(storePath).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      // POSIX permission 契約。Windows の stat mode は 0o666 系で chmod 契約を
+      // 表現できない (receipt store の Windows private 化は runtime-error-store の
+      // ACL 方式に倣う Observer 側の未着手課題)。
+      assert.equal(statSync(join(root, 'state')).mode & 0o777, 0o700);
+      assert.equal(statSync(storePath).mode & 0o777, 0o600);
+    }
     const bytes = readFileSync(storePath, 'utf8');
     assert.doesNotMatch(bytes, /request|answer|\/repo/);
     assert.match(bytes, /"host":"claude"/);

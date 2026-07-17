@@ -201,8 +201,7 @@ export function readCompletedPairProjection({
     if (version !== AUDITOR_CONTEXT_DB_SCHEMA_VERSION) throw new AuditorContextError('E_AUDITOR_CONTEXT_SCHEMA', 'auditor context DB schema is unsupported');
     const session = db.prepare('SELECT session_id, project_path FROM sessions WHERE session_id = ?').get(sessionId);
     if (!session) return { status: 'pending', reason: 'session_not_found', turns: [] };
-    // TEMP DIAG (v0.7.0 release blocker調査 — 特定後に復元): オペランドを付ける
-    if (!isSameProjectOrDescendant(session.project_path, projectRoot)) throw new AuditorContextError('E_AUDITOR_CONTEXT_PROJECT', `auditor context DB project does not match [DIAG db=${JSON.stringify(session.project_path)} root=${JSON.stringify(projectRoot)}]`);
+    if (!isSameProjectOrDescendant(session.project_path, projectRoot)) throw new AuditorContextError('E_AUDITOR_CONTEXT_PROJECT', 'auditor context DB project does not match');
     const rows = db.prepare(
       `SELECT id, origin_session_id, turn_number, role, text, created_at FROM bodies
        WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY created_at ASC, id ASC`,
@@ -352,7 +351,17 @@ function emptyResult(status, reason, { sessionId, projectRoot, recentTurns, dbSc
 function canonicalProjectPath(value) {
   const raw = String(value ?? '');
   if (/^[A-Za-z]:[\\/]/.test(raw)) {
-    return raw.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    // Windows の 8.3 短縮名 (例: RUNNER~1) を実体の長い名前へ解決してから比較形へ
+    // 正規化する。GitHub Actions は TEMP が短縮名で来るため、realpath を挟まないと
+    // 同一ディレクトリの短縮形/長形が別 project と判定される (codex-thread-index の
+    // normalizePath と同型)。存在しないパスは lexical のまま (fixture の仮パスを壊さない)。
+    let resolved = raw;
+    try {
+      if (existsSync(raw)) resolved = realpathSync.native(raw);
+    } catch {
+      // Keep the lexical Windows path when it cannot be resolved.
+    }
+    return resolved.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
   }
   let normalized = isAbsolute(raw) ? raw : resolve(raw);
   try {
