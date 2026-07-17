@@ -20,7 +20,7 @@ function makeDb({ originSessionId = 'origin-1' } = {}) {
   const path = join(dir, 'throughline.db');
   const db = new DatabaseSync(path);
   db.exec(`
-    PRAGMA user_version = 8;
+    PRAGMA user_version = 9;
     CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
     CREATE TABLE bodies (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, origin_session_id TEXT NOT NULL, turn_number INTEGER NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);
     INSERT INTO sessions VALUES ('session-1', '/repo');

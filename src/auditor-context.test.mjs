@@ -15,7 +15,7 @@ import {
   readAuditorContext,
 } from './auditor-context.mjs';
 
-function withDb(fn, { version = 8 } = {}) {
+function withDb(fn, { version = 9 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tl-auditor-context-'));
   const path = join(dir, 'throughline.db');
   const db = new DatabaseSync(path);
@@ -342,7 +342,7 @@ test('readCompletedPairProjection: bounded wait内にwriter lockが解放され�
   const db = new DatabaseSync(path);
   db.exec(`
     PRAGMA journal_mode = DELETE;
-    PRAGMA user_version = 8;
+    PRAGMA user_version = 9;
     CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project_path TEXT NOT NULL);
     CREATE TABLE bodies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -10,7 +10,7 @@ import { hashAuditorBody, normalizeAuditorBody } from './body-digest.mjs';
 export { hashAuditorBody, normalizeAuditorBody } from './body-digest.mjs';
 
 export const AUDITOR_CONTEXT_SCHEMA = 'throughline.auditor_context.v1';
-export const AUDITOR_CONTEXT_DB_SCHEMA_VERSION = 8;
+export const AUDITOR_CONTEXT_DB_SCHEMA_VERSION = 9;
 export const DEFAULT_AUDITOR_RECENT_TURNS = 2;
 export const DEFAULT_AUDITOR_MAX_BODY_CHARS = 1200;
 export const DEFAULT_AUDITOR_MAX_TOTAL_CHARS = 4000;
