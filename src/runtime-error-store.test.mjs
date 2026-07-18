@@ -101,7 +101,7 @@ test('runtime error store: one Windows mutation spends ACL processes only on dis
 
   assert.equal(observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, options).status, 'recorded');
   assert.equal(calls.length, 4, 'directory apply, existing lock/store verify, and replacement store apply are distinct');
-  assert.ok(calls.every((call) => call.options.timeout === 3_000));
+  assert.ok(calls.every((call) => call.options.timeout === 15_000));
 });
 
 test('runtime error store: Windows temporary ACL failure leaves the previous atomic store intact', (t) => {

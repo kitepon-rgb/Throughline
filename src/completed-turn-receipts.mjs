@@ -20,7 +20,8 @@ export const COMPLETED_TURN_RECEIPT_SCHEMA_VERSION = '1.0';
 export const COMPLETED_TURN_RECEIPT_LIMIT = 256;
 
 const PRIVATE_DIRECTORY_CAPABILITY = Symbol('throughline.completed-turn-receipt-directory');
-const WINDOWS_ACL_TIMEOUT_MS = 3_000;
+// CI実測でPowerShellコールドスタートが3.0〜3.2秒に達しflakeしたため15秒 (run 29586852389 / 29628634501)
+const WINDOWS_ACL_TIMEOUT_MS = 15_000;
 
 export function defaultCompletedTurnReceiptStorePath(projectSha256, env = process.env) {
   if (!isSha256(projectSha256)) throw new TypeError('projectSha256 must be a SHA-256 digest');

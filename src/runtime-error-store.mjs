@@ -25,7 +25,8 @@ export const RUNTIME_ERROR_DIAGNOSTIC = '[throughline:runtime-errors] store_unav
 const DEFAULT_SNAPSHOT_LIMIT = 256;
 const BEST_EFFORT_TIMEOUT_MS = 750;
 const WINDOWS_BEST_EFFORT_TIMEOUT_MS = 5_000;
-const WINDOWS_ACL_TIMEOUT_MS = 3_000;
+// CI実測でPowerShellコールドスタートが3.0〜3.2秒に達しflakeしたため15秒 (run 29586852389 / 29628634501)
+const WINDOWS_ACL_TIMEOUT_MS = 15_000;
 const RESOLUTION_REASONS = new Set(['manual', 'recovered']);
 const PRIVATE_DIRECTORY_CAPABILITY = Symbol('throughline.private-directory');
 

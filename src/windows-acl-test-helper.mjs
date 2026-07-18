@@ -17,7 +17,7 @@ if($isDir){[System.IO.Directory]::SetAccessControl($target,$acl)}else{[System.IO
     '-NoProfile', '-NonInteractive', '-Command', script,
   ], {
     encoding: 'utf8',
-    timeout: 3_000,
+    timeout: 15_000,
     windowsHide: true,
     env: {
       ...process.env,
@@ -46,7 +46,7 @@ if($rule.IdentityReference.Value -ne $sid -or $rule.AccessControlType -ne 'Allow
     '-NoProfile', '-NonInteractive', '-Command', script,
   ], {
     encoding: 'utf8',
-    timeout: 3_000,
+    timeout: 15_000,
     windowsHide: true,
     env: {
       ...process.env,
