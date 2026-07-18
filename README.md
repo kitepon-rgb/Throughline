@@ -54,7 +54,7 @@ guarded `trim --execute --host codex` surface.
 |---|---|---|---|---|
 | **What it does** | retire tool I/O to SQLite, keep text in-context | wipe the whole window | LLM-summarize the whole window | recency-based summarize |
 | **Compression axis** | content **type** (text vs tool I/O) | none — full wipe | **recency** (uniform) | **recency** (uniform) |
-| **Memory after the boundary** | ✅ recent 20 turns verbatim + older as L1 + L3 on demand | ❌ zero | △ lossy single summary | △ lossy summary |
+| **Memory after the boundary** | ✅ recent turns verbatim (whole, budget-packed) + everything older via `recall` pull + L3 on demand | ❌ zero | △ lossy single summary | △ lossy summary |
 | **Tool I/O handling** | retired to L3, retrievable by `/sc-detail HH:MM:SS` | gone | folded into summary, unreadable | folded into summary |
 | **Coding-assistant fit** | high — tool I/O is the heavy 80% | low — you lose the thread | medium — but irreversible | medium |
 | **Auto-inheritance risk** | low (typed `/clear` / `/tl` names the predecessor) | n/a | n/a | high |
@@ -86,10 +86,10 @@ Without Throughline (50 turns, no /clear):
                        ≈ 125,000 tok total
 
 With Throughline (50 turns → /clear → resume):
-  recent 20 turns L2   ~10,000 tok  ██
-  older 30 turns L1     ~3,000 tok  ▌
-  tool I/O                  0 tok   (retired to SQLite, on-demand)
-                       ≈ 13,000 tok total — 90% lighter
+  resume injection      ~3,000 tok  ▌  (recent L2 turns, whole, ≤ 9,500 chars)
+  older memory          0–10,000 tok   (pulled only when needed: recall --l2 / --l1)
+  tool I/O                  0 tok      (retired to SQLite, on-demand via detail)
+                       ≈ 13,000 tok worst case — 90% lighter
 ```
 
 Throughline separates conversation content by **type, not time**: human-readable
@@ -117,10 +117,11 @@ flowchart LR
     T --> H["Stop hook"]
     H --> L2[("L2 · bodies<br/>verbatim text")]
     H --> L3[("L3 · details<br/>tool I/O · thinking")]
-    H -. "async<br/>Haiku" .-> L1[("L1 · skeletons<br/>one-liners")]
+    H -. "async<br/>summarizer" .-> L1[("L1 · skeletons<br/>one-liners")]
 
-    L2 -- "recent 20 turns" --> S["Next session's first prompt<br/>injection"]
-    L1 -- "older turns" --> S
+    L2 -- "recent turns, whole<br/>(9,500-char budget)" --> S["Next session's first prompt<br/>injection"]
+    L2 -. "rest of the window<br/>throughline recall --l2" .-> S
+    L1 -. "everything older<br/>throughline recall --l1" .-> S
     L3 -. "on demand · throughline detail" .-> S
 
     classDef l1 fill:#3aa0ff,stroke:#1a1f2e,color:#fff
@@ -133,22 +134,25 @@ flowchart LR
 
 | Layer | Name       | Where it lives        | Content                                                               | Cost per turn |
 | ----- | ---------- | --------------------- | --------------------------------------------------------------------- | ------------- |
-| **L1** | Skeleton  | injected when old     | one-line summary of the turn (current Claude-primary path: Claude Haiku, optional Codex sidecar) | ~10 tok       |
-| **L2** | Body      | injected when recent  | user text + assistant reply, verbatim                                 | full natural  |
+| **L1** | Skeleton  | pulled on demand (`recall --l1`) | one-line summary of the turn (default backend: Codex CLI `gpt-5.6-luna`, fallbacks per ADR 0015) | ~10 tok       |
+| **L2** | Body      | injected while the budget lasts; rest via `recall --l2` | user text + assistant reply, verbatim                                 | full natural  |
 | **L3** | Detail    | SQLite only           | tool I/O, system messages, images, **extended thinking** (on-demand)  | heavy, retired |
 
 The layers are **complementary and disjoint** — nothing is duplicated across
 them. Extended thinking blocks are stored at L3 (`kind='thinking'`) so the
 next session can see *what the previous Claude was thinking* at the moment it
-was interrupted, not just what it said aloud. On `SessionStart` the thinking
-of the **final turn** is injected inline above the L2 history; older thinking
-remains retrievable via `throughline detail <time>`.
+was interrupted, not just what it said aloud. Thinking is never injected —
+it stays retrievable via `throughline detail <time>`.
 
-On `SessionStart`, Throughline rebuilds the context from SQLite and
-injects it as plain text:
+At the **first user prompt** of the next session (two-phase handoff, ADR
+0014), Throughline rebuilds the context from SQLite and injects it as plain
+text (push/pull design, ADR 0016):
 
-- The **most recent 20 turns** are injected as full L2 (`bodies`) text
-- **Older turns** are injected as L1 (`skeletons`) one-liners
+- The **most recent turns** are injected as full L2 (`bodies`) text — packed
+  whole-turn, newest-first, as many as fit the ~9,500-char budget
+- **L1 (`skeletons`) one-liners are not injected** — a guidance section with
+  ready-to-run `throughline recall --l2|--l1` commands is injected instead,
+  so older memory is pulled only when needed
 - L3 stays in SQLite and is retrieved on demand via `/sc-detail <time>`
 
 L1 summaries are generated lazily: for sessions that stay under 20 turns, no
@@ -189,7 +193,7 @@ flowchart LR
     C -->|yes| P1["baton path<br/>(primary)<br/>merge that exact predecessor"]
     C -->|no, source='clear'| P2["auto path<br/>(fallback)<br/>predecessor frozen at SessionStart"]
     C -->|no, source!='clear'| P3["fresh session<br/>no merge"]
-    P1 --> INJ["inject L1 + L2 + L3 refs<br/>(budgeted ≤ 9,500 chars)"]
+    P1 --> INJ["inject L2 turns + recall guidance<br/>(budgeted ≤ 9,500 chars)"]
     P2 --> INJ
 
     classDef primary fill:#7c5cff,stroke:#1a1f2e,color:#fff
@@ -895,7 +899,9 @@ throughline auditor-context --session claude-session-id --project "$PWD" \
 - **Node.js >= 22.13** (for the stable, flag-free built-in `node:sqlite` module — no native build
   required, no `npm install` of SQLite bindings)
 - **Claude Code** with hooks support (`SessionStart`, `Stop`)
-- **Claude Max subscription** (for Haiku-based L1 summarization via `claude -p`)
+- **Codex CLI login** (default L1 summarization backend, `gpt-5.6-luna`) or a
+  **Claude Max subscription** (Haiku fallback via `claude -p`) — no API key
+  either way
 - Works on **Windows, macOS, Linux**
 
 Throughline has **zero runtime dependencies**. The published tarball is just

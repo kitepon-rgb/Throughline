@@ -29,10 +29,14 @@ throughline install     # hook / Codex skill / VS Code monitor task を登録
 <details>
 <summary><b>Codex も併用する場合</b> Codex hooks も登録される — クリックで詳細</summary>
 
-Codex では `UserPromptSubmit` / `PostToolUse` / `Stop` hook と `$throughline`
-skill も登録する。75% 自動発火は token-monitor 依存ではなく、当該 Codex
-セッションの rollout `token_count` を hook が読み、prompt 送信時または tool loop
-途中の閾値到達時に同じセッションへ `$throughline` 実行指示を注入する。
+global install は Codex の `UserPromptSubmit` / `PostToolUse` / `Stop` hook
+（絶対 node パス登録）と `$throughline` skill も登録する。これらの hook は
+rollout capture と monitor state 書き込みだけを行い、**使用量閾値での
+`$throughline` 自動注入はしない**（token-monitor は表示専用）。bare
+`$throughline` は app-server 経由で新規 Codex thread を開始し、Throughline DB
+の handoff memory を developer item として注入する。current-thread rollback
+診断が要る時だけ明示的に `trim --execute --host codex` を使う。既存の
+非 Throughline Codex hook は保持される。
 
 </details>
 
@@ -42,7 +46,7 @@ skill も登録する。75% 自動発火は token-monitor 依存ではなく、�
 |---|---|---|---|---|
 | **何をする** | ツール I/O を SQLite に退避、本文は残す | ウィンドウを全消去 | ウィンドウ全体を LLM 要約 | 新旧で要約 |
 | **圧縮の軸** | コンテンツの **種類** (テキスト vs ツール I/O) | 無し — 全消去 | **新旧** (一律) | **新旧** (一律) |
-| **境界後に残る記憶** | ✅ 直近 20 ターン本文 + それ以前 L1 + L3 オンデマンド | ❌ ゼロ | △ 一個の要約 (情報欠落) | △ 要約 (情報欠落) |
+| **境界後に残る記憶** | ✅ 直近ターン本文そのまま (予算内ターン原子詰め) + それ以前は `recall` で pull + L3 オンデマンド | ❌ ゼロ | △ 一個の要約 (情報欠落) | △ 要約 (情報欠落) |
 | **ツール I/O の扱い** | L3 に退避、`/sc-detail HH:MM:SS` で取り戻せる | 消える | 要約に溶けて読めない | 要約に溶ける |
 | **コーディング用途への適合** | 高 — ツール I/O こそ重い 80% | 低 — 文脈が切れる | 中 — ただし不可逆 | 中 |
 | **誤継承リスク** | 低 (typed `/clear` / `/tl` が前任を指名) | n/a | n/a | 高 |
@@ -73,10 +77,10 @@ Throughline 無し (50 ターン、/clear なし):
                               ≈ 125,000 tok 合計
 
 Throughline 有り (50 ターン → /clear → 再開):
-  直近 20 ターン L2            ~10,000 tok  ██
-  それ以前 30 ターン L1         ~3,000 tok  ▌
-  ツール I/O                       0 tok    (SQLite 退避、オンデマンド取得)
-                              ≈ 13,000 tok — 90% 軽量
+  再開注入                     ~3,000 tok  ▌  (直近 L2 ターン丸ごと、≤9,500 字)
+  それ以前の記憶            0〜10,000 tok     (必要な時だけ recall --l2 / --l1 で pull)
+  ツール I/O                       0 tok     (SQLite 退避、detail でオンデマンド取得)
+                              ≈ 最大 13,000 tok — 90% 軽量
 ```
 
 MemGPT や LangChain の SummaryBufferMemory が **新旧** で圧縮するのに対し、
@@ -94,7 +98,7 @@ Throughline は加えて、トランスクリプト JSONL から実測 API 使�
 
 ---
 
-## 3 層メモリーモデル (schema v7)
+## 3 層メモリーモデル (schema v9)
 
 ```mermaid
 flowchart LR
@@ -102,10 +106,11 @@ flowchart LR
     T --> H["Stop hook"]
     H --> L2[("L2 · bodies<br/>本文そのまま")]
     H --> L3[("L3 · details<br/>ツール I/O · 思考")]
-    H -. "非同期<br/>Haiku" .-> L1[("L1 · skeletons<br/>一行要約")]
+    H -. "非同期<br/>要約器" .-> L1[("L1 · skeletons<br/>一行要約")]
 
-    L2 -- "直近 20 ターン" --> S["次セッション<br/>SessionStart 注入"]
-    L1 -- "それ以前" --> S
+    L2 -- "直近ターン丸ごと<br/>(9,500 字予算)" --> S["次セッション<br/>初回プロンプト注入"]
+    L2 -. "窓の残り<br/>throughline recall --l2" .-> S
+    L1 -. "それ以前すべて<br/>throughline recall --l1" .-> S
     L3 -. "オンデマンド · throughline detail" .-> S
 
     classDef l1 fill:#3aa0ff,stroke:#1a1f2e,color:#fff
@@ -118,28 +123,35 @@ flowchart LR
 
 | 層 | 名称 | 保存先 | 内容 | ターンあたりコスト |
 | --- | --- | --- | --- | --- |
-| **L1** | スケルトン | 古いターンとして注入 | ターンの一行要約（既定は Claude Haiku、設定時は Codex sidecar も可） | 約 10 トークン |
-| **L2** | ボディ | 直近ターンとして注入 | ユーザー本文 + アシスタント返答そのまま | 自然なフルサイズ |
+| **L1** | スケルトン | `recall --l1` でオンデマンド pull | ターンの一行要約（既定 backend は Codex CLI `gpt-5.6-luna`、fallback は ADR 0015 参照） | 約 10 トークン |
+| **L2** | ボディ | 予算内は注入、残りは `recall --l2` | ユーザー本文 + アシスタント返答そのまま | 自然なフルサイズ |
 | **L3** | ディテール | SQLite のみ | ツール I/O、システムメッセージ、画像、**拡張思考** (オンデマンド) | 重い、退避済 |
 
 3 層は **互いに補完的かつ排他的** で、重複保存はありません。
 拡張思考ブロックは L3 (`kind='thinking'`) に格納されるので、次セッションは
 **前セッションの Claude が中断時に何を考えていたか** を、発話だけでなく
-内省レベルで参照できます。`SessionStart` では **最終ターンの思考** が L2 履歴の
-直上にインライン注入され、それ以前の思考は `throughline detail <時刻>` で取得できます。
+内省レベルで参照できます。思考は注入されず、`throughline detail <時刻>` で
+いつでも取得できます。
 
-`SessionStart` 時、Throughline は SQLite からコンテキストを再構築し、
-プレーンテキストとして注入します:
+次セッションの **初回ユーザープロンプト** 時（二相ハンドオフ、ADR 0014）、
+Throughline は SQLite からコンテキストを再構築し、プレーンテキストとして
+注入します（push/pull 設計、ADR 0016）:
 
-- **直近 20 ターン** は L2 (`bodies`) のフル本文として注入
-- **それ以前** は L1 (`skeletons`) の一行要約として注入
+- **直近ターン** を L2 (`bodies`) のフル本文として注入 — 新しい順に
+  ターン丸ごと（user + assistant 原子）、約 9,500 字の予算に入るだけ
+- **L1 (`skeletons`) の一行要約は注入しません** — 代わりに、そのまま実行
+  できる `throughline recall --l2|--l1` コマンド入りの案内セクションを注入し、
+  古い記憶は必要になった時だけ pull します
 - L3 は SQLite に残り、`/sc-detail <時刻>` でオンデマンド取得
 
 L1 要約は遅延実行で、20 ターン未満で終わるセッションでは外部要約器を呼ばず、
-短いタスクの要約コストはゼロです。既定では
-`claude -p --model claude-haiku-4-5-*` サブプロセスで **Claude Haiku 4.5** が生成します。
-Claude Max のログイン認証を流用するため API キー不要です。
-`codex-sidecar` が `summarize-l1` preset で明示設定されている場合は、そちらを使えます。
+短いタスクの要約コストはゼロです。要約は **削減割合**（既定 1/5、
+`THROUGHLINE_L1_RATIO` で変更可。不正値は明示エラー）を目標にします。
+Claude-primary 経路の backend 順は codex-sidecar（`summarize-l1` preset 明示
+設定時）→ **Codex CLI**（既定 `gpt-5.6-luna`@`low`、実測評価で選定 — ADR 0015。
+`THROUGHLINE_L1_MODEL` / `THROUGHLINE_L1_EFFORT` で変更可）→ **Claude Haiku 4.5**
+（`claude -p` サブプロセス、Claude Max のログイン認証流用）で、API キーは
+不要です。各段の失敗理由は記録されます。
 
 3 層 (L1/L2/L3) の書き込みパスは schema v5 から動作しています。
 `/sc-detail HH:MM:SS` はユーザー / アシスタント本文 (L2) と、そのターンで
@@ -158,13 +170,14 @@ flowchart LR
     U["ユーザーが入力<br/>/clear または /tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
     W --> B[("handoff_batons<br/>SQLite")]
     M["VS Code メニュー<br/>clear"] -->|UserPromptSubmit に届かない| X["baton 無し"]
-    NS["次の SessionStart"] --> C{"baton<br/>あり?"}
+    NS["次の SessionStart<br/>(intent 登録のみ)"] --> FP["初回ユーザープロンプト<br/>(実セッションの証明)"]
+    FP --> C{"baton<br/>あり?"}
     B -.-> C
     X -.-> C
     C -->|あり| P1["baton path<br/>(主経路)<br/>指名された前任を merge"]
-    C -->|無し / source='clear'| P2["auto path<br/>(補助)<br/>findLatestClaudePredecessor"]
+    C -->|無し / source='clear'| P2["auto path<br/>(補助)<br/>前任は SessionStart 時点で凍結"]
     C -->|無し / source!='clear'| P3["新規セッション<br/>merge 無し"]
-    P1 --> INJ["L1 + L2 + L3 references を注入"]
+    P1 --> INJ["L2 ターン + recall 案内を注入<br/>(予算 ≤ 9,500 字)"]
     P2 --> INJ
 
     classDef primary fill:#7c5cff,stroke:#1a1f2e,color:#fff
@@ -178,16 +191,26 @@ flowchart LR
 ### baton path (primary): typed `/clear` または `/tl`
 
 ユーザーが prompt に `/clear` または `/tl` を打つと、UserPromptSubmit hook が
-**そのセッションの** `session_id` を `handoff_batons` に書きます。次の
-SessionStart は 1 時間以内の baton を消費し、その前任を確定的に merge します。
+**そのセッションの** `session_id` を `handoff_batons` に書きます。次の新セッション
+は **初回ユーザープロンプト時** に baton を消費し（適格性: セッション誕生が baton
+書き込みから TTL 1 時間以内）、その前任を確定的に merge します。
 複数ウィンドウで「最新更新セッション」と「今 `/clear` したセッション」が違っても、
 指名された前任だけを引き継ぎます。
+
+なぜ SessionStart でなく初回プロンプトか: Claude Code は同一 project に数百 ms の
+間隔で複数の SessionStart を発火させることがあり、その一部は transcript を一切
+作らない**幽霊セッション**になります。SessionStart 時点では実体と幽霊を判別
+できないため、baton を SessionStart で消費すると幽霊が記憶を飲み込み、実セッション
+が空で始まる事故が起きます。幽霊はプロンプトを発火しないので、消費を初回
+プロンプトへ遅延させればこの事故は構造的に起きません（二相ハンドオフ、ADR 0014）。
 
 ### auto path (fallback): `source='clear'`
 
 baton が無く、SessionStart の `source='clear'` が届いた場合だけ、同 project の
-最新 Claude predecessor を選んで merge します。これは VS Code 拡張メニューなど、
-typed `/clear` が UserPromptSubmit hook に届かない経路のための補助です。
+最新 Claude predecessor を **SessionStart 時点で** 解決・凍結し（transcript の
+無い幽霊は候補から除外）、merge + 注入は初回プロンプト時に行います。これは
+VS Code 拡張メニューなど、typed `/clear` が UserPromptSubmit hook に届かない
+経路のための補助です。
 
 `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` はこの fallback path だけを OFF にします。
 typed `/clear` と `/tl` はユーザーの明示意思なので、この env に関係なく baton を
@@ -201,11 +224,18 @@ fallback:     baton 無し + source='clear' → latest predecessor を merge
 
 ### 注入されるもの
 
-両経路で同じ curated memory が注入されます:
+両経路で同じ curated memory が注入されます（push/pull 設計、ADR 0016）:
 
-- L1 サマリー (古い turn の一行要約)
-- L2 verbatim (直近 20 turn の本文)
-- L3 references (`throughline detail <時刻>` で引き出すコマンド一覧、本文は SQLite に残置)
+- **「現在地」アンカー** (v0.4.12〜) — 最新のユーザー指示と最新の assistant turn を
+  ヘッダ直下に再掲（各 600 字で切り詰め）
+- **pull 案内セクション**（無条件表示）— そのまま実行できる `throughline recall`
+  コマンド。session id・ISO ms 境界・件数は注入時に焼き込み済み
+- L2 verbatim — 約 9,500 字の注入予算に入るだけ、新しい turn からターン丸ごと
+  詰める（典型 7〜8 turn、軽い会話ならもっと多い）。**L1 サマリーは注入しません**
+  — 20 turn 窓の残りは `recall --l2` で全文、それより古い全 turn は `recall --l1`
+  で取得（要約済みは L1 行、未要約は `throughline detail` への誘導付きで明示）
+- L3 references (`throughline detail <時刻>` で引き出すコマンド、各 L2 行末尾に
+  inline 付記。本文は SQLite に残置)
 
 注入は **「中断されたタスクの再開」** として再フレーミングされます。L2 verbatim に
 最終 assistant turn (= 次に何をしようとしていたか) が含まれるため、別途 memo /
@@ -231,14 +261,14 @@ slash command / transcript / baton / resume behavior を置き換えるもので
 adapter / projection として追加されます。
 
 現時点で core Throughline が外部モデルを呼ぶのは L2→L1 要約だけです。
-`codex-sidecar` が `summarize-l1` preset で設定されている場合はその要約に
-Codex sidecar を使えます。使えない場合は、従来どおり Claude Haiku 経路を使います。
+backend 順は codex-sidecar（`summarize-l1` preset 明示設定時）→ Codex CLI
+（既定 `gpt-5.6-luna`）→ Claude Haiku です（ADR 0015）。
 
 Codex 側 trim (= same-thread context trim) は `throughline trim --execute --host codex`
 で発火します。Codex の bare `$throughline` skill もこの scripted rollback + DB
 memory inject を直接実行します。Claude 側は `/clear` での auto path 引継ぎが本線になったため、
 `/tl-trim` slash command は v0.4.0 で廃止されました。current-work framing は
-SessionStart 注入の Reading Contract / Continuation Instruction で同じ意図を
+再開注入の Reading Contract / Continuation Instruction で同じ意図を
 継承しています。
 
 </details>
@@ -285,6 +315,7 @@ Throughline state をまだ書いていない現在セッションも表示で�
 | `throughline monitor` | マルチセッション監視を起動 |
 | `throughline monitor --diag` | TTY/columns/env 診断ダンプ (描画バグ切り分け用) |
 | `throughline detail <時刻>` | あるターンの L2 本文と L3 ツール I/O を取得 (Claude が使う) |
+| `throughline recall --l2\|--l1 --session <id> --before <ISO> ...` | 注入の案内セクションが指す古い記憶を pull (read-only、正確なコマンドは注入に焼き込み済み) |
 | `throughline doctor` | Node バージョン、hook 登録状況、DB、PATH をチェック |
 | `throughline doctor --trim --host claude` | trim boundary と手動手順を診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
@@ -313,7 +344,8 @@ Throughline state をまだ書いていない現在セッションも表示で�
 
 - **Node.js 22.5 以上** (組み込み `node:sqlite` モジュール使用、ネイティブビルド不要)
 - **Claude Code** (`SessionStart`, `Stop`, `UserPromptSubmit` hooks 対応版)
-- **Claude Max サブスクリプション** (Haiku ベース L1 要約のため `claude -p` 経由)
+- **Codex CLI ログイン**（既定の L1 要約 backend、`gpt-5.6-luna`）または
+  **Claude Max サブスクリプション**（`claude -p` 経由の Haiku fallback）— どちらも API キー不要
 - 対応 OS: **Windows / macOS / Linux**
 
 ランタイム依存 **ゼロ**。npm パッケージは純 `.mjs` ファイルのみで構成されています。
