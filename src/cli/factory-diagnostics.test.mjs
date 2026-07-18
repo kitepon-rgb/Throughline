@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { CURRENT_VERSION } from '../db.mjs';
 import {
   collectFactoryDiagnostics,
   inspectFactoryDatabase,
@@ -19,7 +20,12 @@ test('factory-diagnostics CLI: JSON-only contract and schema fixture', () => {
     stdout: { write(value) { output.push(value); } },
     version: '0.6.1',
     inspectThread: () => ({ status: 'ready', rolloutAvailable: true }),
-    inspectDatabase: () => ({ status: 'ready', schemaVersion: 8, handoffMemory: true }),
+    inspectDatabase: () => ({
+      status: 'ready',
+      schemaVersion: CURRENT_VERSION,
+      supportedSchemaVersion: CURRENT_VERSION,
+      handoffMemory: true,
+    }),
     inspectHooks: () => ({
       status: 'ready',
       claudeStatus: 'ready',
@@ -32,6 +38,9 @@ test('factory-diagnostics CLI: JSON-only contract and schema fixture', () => {
   const parsed = JSON.parse(output[0]);
   assert.equal(parsed.schema, 'throughline.native_factory_diagnostics.v1');
   assert.equal(parsed.version, '0.6.1');
+  assert.equal(parsed.databaseSchema.schema, `throughline.database.v${CURRENT_VERSION}`);
+  assert.equal(parsed.databaseSchema.databaseSchemaVersion, CURRENT_VERSION);
+  assert.equal(parsed.databaseSchema.supportedDatabaseSchemaVersion, CURRENT_VERSION);
   assert.equal(parsed.readiness.restore.status, 'ready');
   assert.equal(parsed.evidence.restoreSmoke.status, 'unverified');
 });

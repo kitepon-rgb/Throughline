@@ -52,6 +52,11 @@ shasum `946f934baa0849a86e1379bf4ef80bb41d8da042`、tag / GitHub Release、隔�
 重複欠落なし）と `recall --l1`（全9ターン、要約済み7/未要約2の正直表示＋detail誘導）を
 新セッション側からそのまま実行して動作を確認した。
 
+**v0.8.1（未公開candidate）**: native `factory-diagnostics` のDB compatibility labelを
+DB migration正本 `CURRENT_VERSION` から導出するよう修正した。schema v9の数値表明9/9に対して
+`throughline.database.v8`を返していたdriftを解消し、label・実DB version・対応versionの一致を
+schema bump時にも要求する回帰testを追加した。publish、tag、実配布物受入れは未実施。
+
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
 assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切

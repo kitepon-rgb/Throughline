@@ -10,6 +10,16 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Native factory diagnostics now report the database compatibility label from
+  the canonical schema version.** Throughline schema v9 previously emitted the
+  stale `throughline.database.v8` label alongside numeric versions `9`/`9`, so
+  exact factory reporters correctly classified the installation as
+  incompatible. The label is now derived from the DB migration version and a
+  regression test requires the label, actual version, and supported version to
+  stay aligned on future schema bumps.
+
 ## [0.8.0] — 2026-07-18
 
 ### Changed (breaking behavior)

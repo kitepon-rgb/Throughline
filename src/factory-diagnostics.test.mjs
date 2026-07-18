@@ -2,9 +2,26 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DATABASE_SCHEMA,
   FACTORY_DIAGNOSTICS_SCHEMA,
   buildFactoryDiagnostics,
 } from './factory-diagnostics.mjs';
+import { CURRENT_VERSION } from './db.mjs';
+
+test('factory diagnostics: database label は DB 実体・対応 version と一致する', () => {
+  const result = buildFactoryDiagnostics({
+    database: {
+      status: 'ready',
+      schemaVersion: CURRENT_VERSION,
+      supportedSchemaVersion: CURRENT_VERSION,
+      handoffMemory: true,
+    },
+  });
+
+  assert.equal(DATABASE_SCHEMA, `throughline.database.v${CURRENT_VERSION}`);
+  assert.equal(result.databaseSchema.schema, `throughline.database.v${result.databaseSchema.databaseSchemaVersion}`);
+  assert.equal(result.databaseSchema.databaseSchemaVersion, result.databaseSchema.supportedDatabaseSchemaVersion);
+});
 
 test('factory diagnostics: 未設定の native factory は not_applicable を成功へ丸めない', () => {
   const result = buildFactoryDiagnostics({

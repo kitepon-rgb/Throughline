@@ -1,5 +1,7 @@
+import { CURRENT_VERSION } from './db.mjs';
+
 export const FACTORY_DIAGNOSTICS_SCHEMA = 'throughline.native_factory_diagnostics.v1';
-export const DATABASE_SCHEMA = 'throughline.database.v8';
+export const DATABASE_SCHEMA = `throughline.database.v${CURRENT_VERSION}`;
 
 const STATUSES = new Set(['ready', 'not_ready', 'not_applicable', 'unverified']);
 
