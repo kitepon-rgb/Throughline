@@ -46,9 +46,11 @@ Windows ACL PowerShell timeout の 3秒→15秒緩和（windows-latest でコー
 契約は不変）。公開commit `7633769`のCIは9/9 green（run `29629255464`）、npm `latest`、
 shasum `946f934baa0849a86e1379bf4ef80bb41d8da042`、tag / GitHub Release、隔離installで
 `--version`・`recall` のDB不在明示エラー（作成なし）を確認し、このMacのglobalをregistry
-0.8.0へ同期した。**新注入形式の実機E2E（`/tl`→新セッションで新形式注入の目視＋焼き込み
-案内コマンド実行）は未実施**——次の引き継ぎ機会（global が 0.8.0 になった今、次の
-handoff から新形式が発火する）で確認する。
+0.8.0へ同期した。**新注入形式の実機E2Eは2026-07-18に完了**：`/tl`→新セッション（baton path、
+47ターン引き継ぎ）で新形式注入（L1非注入・現在地アンカー・L2ターン原子詰め・案内セクション
+焼き込み）を目視確認し、焼き込まれた `recall --l2`（境界より古い11ターン全文、注入分と連続・
+重複欠落なし）と `recall --l1`（全9ターン、要約済み7/未要約2の正直表示＋detail誘導）を
+新セッション側からそのまま実行して動作を確認した。
 
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
