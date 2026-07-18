@@ -39,6 +39,17 @@ npm `latest`、shasum `4e3e08f72423fedaf8a287201d6eb5840abedb78`、tag / GitHub 
 同期した。実機受入れ（合言葉引き継ぎ・decision log二相刻印・自己バトン食い不在・luna経路）は
 ADR 0014/0015に記録。upstream報告は[anthropics/claude-code#78455](https://github.com/anthropics/claude-code/issues/78455)。
 
+**v0.8.0（2026-07-18公開）**: push/pull注入の再設計（[ADR 0016](docs/adr/0016-push-pull-recall-injection.md)：L2ターン原子詰め・
+L1非注入・案内セクション焼き込み）と read-only `throughline recall --l2|--l1` の初収録、
+Windows ACL PowerShell timeout の 3秒→15秒緩和（windows-latest でコールドスタート実測
+3.0〜3.2秒が3秒capに衝突し、docs-onlyコミット含む2 run連続でflakeした。explicit failure
+契約は不変）。公開commit `7633769`のCIは9/9 green（run `29629255464`）、npm `latest`、
+shasum `946f934baa0849a86e1379bf4ef80bb41d8da042`、tag / GitHub Release、隔離installで
+`--version`・`recall` のDB不在明示エラー（作成なし）を確認し、このMacのglobalをregistry
+0.8.0へ同期した。**新注入形式の実機E2E（`/tl`→新セッションで新形式注入の目視＋焼き込み
+案内コマンド実行）は未実施**——次の引き継ぎ機会（global が 0.8.0 になった今、次の
+handoff から新形式が発火する）で確認する。
+
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
 assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切
