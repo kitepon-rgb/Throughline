@@ -10,6 +10,42 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-07-18
+
+### Changed (breaking behavior)
+
+- **Injection is now push/pull, and L1 is no longer injected (ADR 0016).** The
+  budgeted resume context (9,500 chars) is rebuilt as: header +
+  current-position anchor + an always-shown retrieval-guide section as the
+  fixed part, then the **entire remaining budget is filled with L2 turns in
+  full**, newest-first, turn-atomically (a user+assistant pair goes in whole
+  or not at all — no fixed N, no fragment packing). L1 summaries are no longer
+  injected; older memory is pulled on demand instead. The guide section bakes
+  in the exact session id, ISO-millisecond boundary (strict less-than) and
+  turn counts at injection time, so the pull side never recomputes the window.
+
+### Added
+
+- **`throughline recall --l2|--l1` (ADR 0016).** Read-only pull commands the
+  injected guide section points at. `recall --l2 --session <id> --before
+  <ISO ms> --last <N>` returns the N turns of full L2 bodies older than the
+  boundary, in the same line grammar as the injection (including L3 inline
+  suffixes). `recall --l1 ... --skip <N>` lists every turn older than the
+  `--l2` range with its L1 summary, honestly marking unsummarized turns
+  ("全 M ターン / 要約済み K") and always pointing at `throughline detail
+  <time>` for full text. The DB is opened read-only; a missing DB is an
+  explicit error and is never created or migrated.
+
+### Fixed
+
+- **Windows ACL scripts get a 15s timeout (was 3s).** On windows-latest CI
+  runners a cold PowerShell start was measured at 3.0–3.2s, so the 3s
+  `spawnSync` cap killed the ACL apply/verify scripts of the completed-turn
+  receipt store and the runtime error store and surfaced as a flaky
+  "Windows owner-only ACL verification failed" (2 consecutive runs, including
+  a docs-only commit). The explicit hard-failure contract is unchanged; only
+  the cap was raised.
+
 ## [0.7.0] — 2026-07-17
 
 ### Changed (breaking behavior)
@@ -1063,7 +1099,10 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.3...v0.7.0
+[0.6.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.1...v0.6.2
 [0.3.22]: https://github.com/kitepon-rgb/Throughline/releases/tag/v0.3.22
 [0.3.21]: https://github.com/kitepon-rgb/Throughline/compare/v0.3.19...v0.3.21
