@@ -158,7 +158,13 @@ function buildResumeSections(db, { sessionId, isInheritance, excludeOriginId = n
     const isLastOfTurn = lastIdxPerTurn.get(key) === i;
     const partCounts = isLastOfTurn ? (l3ByTurn.get(key)?.partCounts ?? new Map()) : new Map();
     const suffix = buildPartsSummary(partCounts);
-    l2Lines.push({ text: `[${r.time}] [${r.role}]: ${r.text}${suffix}`, time: r.time, role: r.role });
+    l2Lines.push({
+      text: `[${r.time}] [${r.role}]: ${r.text}${suffix}`,
+      time: r.time,
+      role: r.role,
+      turnKey: key,
+      createdAt: r.createdAt,
+    });
   }
 
   return { header, anchorLines, l1Lines, l2Lines };
@@ -220,30 +226,119 @@ export function buildResumeContext(
  */
 export const INJECTION_BUDGET_CHARS = 9_500;
 
-// 予算超過時に注入へ入れる省略告知の予約分（この分を先に差し引いてから詰める）。
-// 告知には省略した L2 行の [時刻 role] 参照リストを含める — 窓内の L2 行にはまだ
-// L1 要約が無いことがあり、時刻が無いと `throughline detail` で取り出せなくなる
-// （= 「要約せず削る。ただし参照は必ず残す」コンセプトの担保）。
-const OMISSION_NOTE_RESERVE = 500;
-// l2Note 単体の上限 (RESERVE から l1Note ぶんの余裕を引いた値)
-const L2_NOTE_MAX_CHARS = 430;
-// 最新 L2 行が単体で予算を超える場合に、切り詰めてでも入れる最小の残余
+// 案内セクション（### さらに前の記憶）の予約分。ヘッダ・アンカーと同格の固定部として
+// 予算計算の最初に差し引き、どれだけ逼迫しても落とさない（無条件表示）。
+// 実文言はテンプレート固定 + 動的値（件数・時刻範囲・session id・ISO 境界）なので
+// この上限内に収まる（session id ~42 字 + ISO 24 字 + 本文 2 行で最大 ~520 字を実測見積もり）。
+const GUIDANCE_RESERVE = 600;
+// 最新 L2 ターンが単体で予算を超える場合に、切り詰めてでも入れる最小の残余
 const MIN_TRUNCATED_L2_CHARS = 400;
 
 /**
- * 予算付き注入テキスト。優先順位:
+ * 20 ターン窓の外側（それより古い側）のターン統計。
+ * 案内セクションの `recall --l1` 行（全 M ターン / 要約済み K / 時刻範囲）に使う。
+ */
+function loadOlderTurnStats(db, { sessionId, excludeOriginId, windowKeys }) {
+  const hasExclude = Boolean(excludeOriginId);
+  const turnQuery = hasExclude
+    ? `SELECT origin_session_id, turn_number, MIN(created_at) AS min_ca
+       FROM bodies
+       WHERE session_id = ? AND origin_session_id != ?
+       GROUP BY origin_session_id, turn_number`
+    : `SELECT origin_session_id, turn_number, MIN(created_at) AS min_ca
+       FROM bodies
+       WHERE session_id = ?
+       GROUP BY origin_session_id, turn_number`;
+  const allTurns = hasExclude
+    ? db.prepare(turnQuery).all(sessionId, excludeOriginId)
+    : db.prepare(turnQuery).all(sessionId);
+
+  const older = allTurns.filter(
+    (r) => !windowKeys.has(`${r.origin_session_id}\x00${r.turn_number}`),
+  );
+  if (older.length === 0) {
+    return { total: 0, summarized: 0, minMs: null, maxMs: null };
+  }
+
+  const skelQuery = hasExclude
+    ? `SELECT DISTINCT origin_session_id, turn_number FROM skeletons
+       WHERE session_id = ? AND origin_session_id != ?`
+    : `SELECT DISTINCT origin_session_id, turn_number FROM skeletons
+       WHERE session_id = ?`;
+  const skelKeys = new Set(
+    (hasExclude
+      ? db.prepare(skelQuery).all(sessionId, excludeOriginId)
+      : db.prepare(skelQuery).all(sessionId)
+    ).map((r) => `${r.origin_session_id}\x00${r.turn_number}`),
+  );
+
+  let minMs = Infinity;
+  let maxMs = -Infinity;
+  let summarized = 0;
+  for (const r of older) {
+    if (r.min_ca < minMs) minMs = r.min_ca;
+    if (r.min_ca > maxMs) maxMs = r.min_ca;
+    if (skelKeys.has(`${r.origin_session_id}\x00${r.turn_number}`)) summarized += 1;
+  }
+  return { total: older.length, summarized, minMs, maxMs };
+}
+
+function formatClock(unixMs) {
+  const d = new Date(unixMs);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+/**
+ * 案内セクション（無条件表示）。表示用の HH:MM:SS と機械用の境界（ISO 8601 ms / 件数 /
+ * session id）を分離し、機械用は全部コマンド引数へ焼き込む。recall 側は再計算しない。
+ */
+function buildGuidanceLines({ sessionId, boundaryMs, remainingTurns, remainingRange, older }) {
+  const lines = ['### さらに前の記憶（必要な時だけ取得）'];
+  const boundaryIso = boundaryMs != null ? new Date(boundaryMs).toISOString() : null;
+
+  if (remainingTurns > 0) {
+    lines.push(
+      `- これより前の続き${remainingTurns}ターン (${remainingRange}) の会話全文: ` +
+        `\`throughline recall --l2 --session ${sessionId} --before ${boundaryIso} --last ${remainingTurns}\` を実行`,
+    );
+  } else {
+    lines.push('- これより前の続き: なし（直近の会話は全て上の L2 セクションに注入済み）');
+  }
+
+  if (older.total > 0) {
+    const range = `${formatClock(older.minMs)}〜${formatClock(older.maxMs)}`;
+    lines.push(
+      `- それ以前の全${older.total}ターン（要約済み ${older.summarized} / 未要約 ${older.total - older.summarized}）の一覧 (${range}): ` +
+        `\`throughline recall --l1 --session ${sessionId} --before ${boundaryIso} --skip ${remainingTurns}\` を実行` +
+        '（気になるターンは `throughline detail <時刻>` で全文・ツール入出力まで掘れる）',
+    );
+  } else {
+    lines.push('- それ以前のターン: なし');
+  }
+  return lines;
+}
+
+/**
+ * 予算付き注入テキスト。構成 (オーナー裁定 2026-07-18):
  *   1. ヘッダ + 現在地アンカー（常に全文）
- *   2. L1 要約（新しい順に予算まで。落とした分は告知行）
- *   3. L2 本文（新しい順に予算まで詰めて古い順に出力。落とした分は告知行 +
- *      L1 / `throughline detail` への誘導）
- * 予算内に一切 L2 が入らない場合でも、最新 L2 行だけは切り詰めて入れる
- * （現在地の文脈をアンカー 600 字より厚く確保するため）。
+ *   2. 案内セクション（無条件表示。予約 GUIDANCE_RESERVE を先に差し引く）
+ *   3. L2 本文: 新しい順に**丸ごと入るターンだけ**詰めて古い順に出力
+ *      （ターン単位の原子。固定 N で予算を遊ばせず、断片も詰めない。
+ *       ターン境界の自然な端数は許容）
+ *   L1 は注入しない（窓の残りは recall --l2、それより古い側は recall --l1 が担う）。
+ *   最新ターンが単体で予算を超える場合だけ、切り詰めてでも入れる
+ *   （現在地の文脈をアンカー 600 字より厚く確保するため）。
  *
  * @returns {{
  *   text: string,
  *   totalChars: number,
- *   droppedL1Rows: number,
- *   droppedL2Rows: number,
+ *   injectedL2Turns: number,
+ *   remainingL2Turns: number,
+ *   olderTurns: number,
+ *   olderSummarized: number,
  *   truncatedNewestL2: boolean,
  * } | null}
  */
@@ -256,97 +351,115 @@ export function buildBudgetedResumeContext(
 
   const lineCost = (s) => s.length + 1; // join('\n') 分
 
-  // 固定部 (ヘッダ + アンカー) のコスト。セクション見出し・空行も概算に含める
+  // L2 行をターン単位のグループにまとめる（元の古い順を保つ）
+  const turns = [];
+  const turnIndex = new Map();
+  for (const line of sections.l2Lines) {
+    let group = turnIndex.get(line.turnKey);
+    if (!group) {
+      group = { turnKey: line.turnKey, lines: [], minCreatedAt: Infinity, maxCreatedAt: -Infinity };
+      turnIndex.set(line.turnKey, group);
+      turns.push(group);
+    }
+    group.lines.push(line);
+    if (line.createdAt < group.minCreatedAt) group.minCreatedAt = line.createdAt;
+    if (line.createdAt > group.maxCreatedAt) group.maxCreatedAt = line.createdAt;
+  }
+
+  // 固定部 (ヘッダ + アンカー + セクション見出し + 案内予約) のコスト
   const fixedCost =
     lineCost(sections.header) +
     (sections.anchorLines.length > 0
       ? lineCost('') + lineCost('### 現在地 (直前のやりとり)') +
         sections.anchorLines.reduce((a, l) => a + lineCost(l), 0)
       : 0) +
-    lineCost('') + lineCost('### それ以前の要約 (L1)') +
     lineCost('') + lineCost('### 直前の対話 (L2 / active work thread, 古い順)');
 
-  let remaining = maxChars - fixedCost - OMISSION_NOTE_RESERVE;
+  let remaining = maxChars - fixedCost - GUIDANCE_RESERVE;
 
-  // L1: 新しい順 (配列末尾) に採用して古い順で出力
-  const keptL1 = [];
-  let droppedL1Rows = 0;
-  for (let i = sections.l1Lines.length - 1; i >= 0; i -= 1) {
-    const cost = lineCost(sections.l1Lines[i]);
-    if (remaining - cost >= 0) {
-      keptL1.unshift(sections.l1Lines[i]);
-      remaining -= cost;
-    } else {
-      droppedL1Rows = i + 1;
-      break;
-    }
-  }
-
-  // L2: 新しい順に採用して古い順で出力
-  const keptL2 = [];
-  let droppedL2Rows = 0;
+  // L2: 新しい順にターンを丸ごと採用して古い順で出力
+  const keptTurns = [];
   let truncatedNewestL2 = false;
-  for (let i = sections.l2Lines.length - 1; i >= 0; i -= 1) {
-    const line = sections.l2Lines[i];
-    const cost = lineCost(line.text);
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const turn = turns[i];
+    const cost = turn.lines.reduce((a, l) => a + lineCost(l.text), 0);
     if (remaining - cost >= 0) {
-      keptL2.unshift(line);
+      keptTurns.unshift(turn);
       remaining -= cost;
       continue;
     }
-    // 最新行が単体で入らない場合だけ、切り詰めて確保する
-    if (keptL2.length === 0 && remaining >= MIN_TRUNCATED_L2_CHARS) {
-      const marker = ` …(予算超過で切詰め; 全文: throughline detail ${line.time})`;
+    // 最新ターンが単体で入らない場合だけ、最新行を切り詰めて確保する
+    if (keptTurns.length === 0 && remaining >= MIN_TRUNCATED_L2_CHARS) {
+      const newestLine = turn.lines[turn.lines.length - 1];
+      const marker = ` …(予算超過で切詰め; 全文: throughline detail ${newestLine.time})`;
       const keep = remaining - marker.length - 1;
-      keptL2.unshift({ ...line, text: line.text.slice(0, keep) + marker });
+      keptTurns.unshift({
+        ...turn,
+        lines: [{ ...newestLine, text: newestLine.text.slice(0, keep) + marker }],
+      });
       remaining = 0;
       truncatedNewestL2 = true;
-      droppedL2Rows = i; // これより古い行は全部落ちる
-      break;
     }
-    droppedL2Rows = i + 1;
-    break;
+    break; // ターン原子: 入らないターンが出たらそこで打ち切り (歯抜けを作らない)
   }
 
-  const l1Note =
-    droppedL1Rows > 0
-      ? `（注入予算 ${maxChars} 字超過のため古い L1 を ${droppedL1Rows} 行省略）`
-      : null;
+  const injectedL2Turns = keptTurns.length;
+  const remainingL2Turns = turns.length - injectedL2Turns;
 
-  // 省略 L2 行の取り出し手がかり: [時刻 role] を新しい側 (文脈に近い側) から
-  // L2_NOTE_MAX_CHARS に収まるだけ列挙し、残りは「ほか N 行」に畳む。
-  let l2Note = null;
-  if (droppedL2Rows > 0) {
-    const base =
-      `（注入予算 ${maxChars} 字超過のため古い L2 を ${droppedL2Rows} 行省略。` +
-      '各行の全文は `throughline detail 時刻` で取得可。省略分 (新しい順): ';
-    const closing = '）';
-    const dropped = sections.l2Lines.slice(0, droppedL2Rows);
-    const refs = [];
-    let used = base.length + closing.length;
-    for (let i = dropped.length - 1; i >= 0; i -= 1) {
-      const ref = `[${dropped[i].time} ${dropped[i].role}]`;
-      const foldTail = i > 0 ? ` ほか${i}行`.length : 0;
-      if (used + ref.length + 1 + foldTail > L2_NOTE_MAX_CHARS) {
-        refs.push(`ほか${i + 1}行`);
-        break;
-      }
-      refs.push(ref);
-      used += ref.length + 1;
-    }
-    l2Note = base + refs.join(' ') + closing;
+  // pull 境界: 実際に注入できた最古ターンの min(created_at)。strict less-than で
+  // 「それより古い側」が recall --l2 の担当になる。1 ターンも入らなかった場合は
+  // 最新ターンの max(created_at)+1 を境界にして窓全体を pull 側に渡す。
+  let boundaryMs = null;
+  if (injectedL2Turns > 0) {
+    boundaryMs = keptTurns[0].minCreatedAt;
+  } else if (turns.length > 0) {
+    boundaryMs = turns[turns.length - 1].maxCreatedAt + 1;
   }
 
-  const text = joinSections(
-    { header: sections.header, anchorLines: sections.anchorLines, l1Lines: keptL1, l2Lines: keptL2 },
-    { l1Note, l2Note },
-  );
+  let remainingRange = null;
+  if (remainingL2Turns > 0) {
+    const remainingTurnsList = turns.slice(0, remainingL2Turns);
+    remainingRange = `${formatClock(remainingTurnsList[0].minCreatedAt)}〜${formatClock(remainingTurnsList[remainingTurnsList.length - 1].maxCreatedAt)}`;
+  }
+
+  const older = loadOlderTurnStats(db, {
+    sessionId,
+    excludeOriginId,
+    windowKeys: new Set(turns.map((t) => t.turnKey)),
+  });
+
+  const guidanceLines = buildGuidanceLines({
+    sessionId,
+    boundaryMs,
+    remainingTurns: remainingL2Turns,
+    remainingRange,
+    older,
+  });
+
+  const lines = [sections.header];
+  if (sections.anchorLines.length > 0) {
+    lines.push('');
+    lines.push('### 現在地 (直前のやりとり)');
+    lines.push(...sections.anchorLines);
+  }
+  lines.push('');
+  lines.push(...guidanceLines);
+  if (keptTurns.length > 0) {
+    lines.push('');
+    lines.push('### 直前の対話 (L2 / active work thread, 古い順)');
+    for (const turn of keptTurns) {
+      lines.push(...turn.lines.map((l) => l.text));
+    }
+  }
+  const text = lines.join('\n');
 
   return {
     text,
     totalChars: text.length,
-    droppedL1Rows,
-    droppedL2Rows,
+    injectedL2Turns,
+    remainingL2Turns,
+    olderTurns: older.total,
+    olderSummarized: older.summarized,
     truncatedNewestL2,
   };
 }

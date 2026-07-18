@@ -40,6 +40,23 @@ v2.1.195 より前に 10k 超を emit した実績が手元に無いため、「
 ヘッダ + アンカー常時全文、L1 → L2 を新しい側から詰め、省略は注入文へ明示）。
 詳細は [ADR 0014](../../docs/adr/0014-two-phase-handoff-ghost-baton.md)。
 
+## 追記: 10k 判定は per context string — multi-hook で突破可能（2026-07-18 実測、不採用）
+
+同一イベントに複数 hook を登録した場合の挙動を実測した（Claude Code 2.1.211、
+一時 project + 3〜5 本の UserPromptSubmit tracer hook + `claude -p` Haiku）:
+
+- 各 hook stdout は**独立の `hook_success` attachment** になり、10k 判定も per string。
+  3 本 × 9,000 字 = 27,000 字、5 本 × 9,000 字 = 45,000 字が全部モデル可視 inline
+- 1 本だけ 12k にすると**その 1 本だけ**が `<persisted-output>` 化し、隣の 9k は無傷
+- hooks reference の「10,000 characters per context string」「複数 hook の
+  additionalContext は all of the values が届く」の文言と整合
+- **罠**: attachment の並び順は登録順と一致しない（hook 並列実行のため非決定）。
+  multi-part 注入に使うなら各 part に自己記述ヘッダが必須
+
+Throughline では「hook の構造的想定（1 本 = 1 context string）に無い使い方」として
+**不採用**（オーナー裁定 2026-07-18）。注入は 9,500 字 push + `throughline recall` pull の
+二段構成にした（[ADR 0016](../../docs/adr/0016-push-pull-recall-injection.md)）。
+
 ## 検証手順（再現用）
 
 1. 一時 project に `.claude/settings.json` で UserPromptSubmit hook を登録し、

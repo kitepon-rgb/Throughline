@@ -140,8 +140,10 @@ export function executeFirstPromptHandoff(db, { sessionId, projectPath, now = Da
       injectionText = budgeted.text;
       injectionStats = {
         total_chars: budgeted.totalChars,
-        dropped_l1_rows: budgeted.droppedL1Rows,
-        dropped_l2_rows: budgeted.droppedL2Rows,
+        injected_l2_turns: budgeted.injectedL2Turns,
+        remaining_l2_turns: budgeted.remainingL2Turns,
+        older_turns: budgeted.olderTurns,
+        older_summarized: budgeted.olderSummarized,
         truncated_newest_l2: budgeted.truncatedNewestL2,
       };
     }

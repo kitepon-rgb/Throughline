@@ -634,32 +634,95 @@ test('INJECTION_BUDGET_CHARS stays under the measured 10k persisted-output limit
   assert.ok(INJECTION_BUDGET_CHARS <= 9_501, '実測 inline 通過上限 9,501 字以下であること');
 });
 
-test('budgeted: under budget output matches the unbudgeted renderer, nothing dropped', () => {
+test('budgeted: under budget keeps all L2 turns, no L1 section, guidance always present', () => {
   const db = makeDb();
   insertBody(db, { session: 'new', origin: 'old', turn: 1, role: 'user', text: 'short question', createdAt: 1000 });
   insertBody(db, { session: 'new', origin: 'old', turn: 1, role: 'assistant', text: 'short answer', createdAt: 1100 });
 
-  const full = buildResumeContext(db, { sessionId: 'new', isInheritance: true });
   const budgeted = buildBudgetedResumeContext(db, { sessionId: 'new', isInheritance: true });
 
   assert.ok(budgeted);
-  assert.equal(budgeted.text, full);
-  assert.equal(budgeted.droppedL1Rows, 0);
-  assert.equal(budgeted.droppedL2Rows, 0);
+  assert.equal(budgeted.injectedL2Turns, 1);
+  assert.equal(budgeted.remainingL2Turns, 0);
+  assert.equal(budgeted.olderTurns, 0);
   assert.equal(budgeted.truncatedNewestL2, false);
   assert.ok(budgeted.totalChars <= INJECTION_BUDGET_CHARS);
+  // 案内セクションは無条件表示 (データ無し側も「なし」と明示)
+  assert.ok(budgeted.text.includes('### さらに前の記憶（必要な時だけ取得）'));
+  assert.match(budgeted.text, /これより前の続き: なし/);
+  assert.match(budgeted.text, /それ以前のターン: なし/);
+  // L1 セクションは注入しない
+  assert.ok(!budgeted.text.includes('### それ以前の要約 (L1)'));
 });
 
-test('budgeted: drops oldest L2 rows first, keeps newest, and stays within maxChars', () => {
+test('budgeted: packs whole turns newest-first, bakes --before/--last/--session into guidance', () => {
   const db = makeDb();
-  // 各 ~800 字 × 10 行 = 本文だけで ~8,000 字 → maxChars 4000 で古い行が落ちる
+  // 各 ~800 字 × 10 ターン = 本文だけで ~8,000 字 → maxChars 5000 で古いターンが落ちる
   for (let turn = 1; turn <= 10; turn += 1) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn,
+      role: 'user',
+      text: `q-${String(turn).padStart(2, '0')} question`,
+      createdAt: 1000 + turn * 100,
+    });
     insertBody(db, {
       session: 'new',
       origin: 'old',
       turn,
       role: 'assistant',
       text: `turn-${String(turn).padStart(2, '0')} ` + 'x'.repeat(800),
+      createdAt: 1050 + turn * 100,
+    });
+  }
+
+  const budgeted = buildBudgetedResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+    maxChars: 5000,
+  });
+
+  assert.ok(budgeted);
+  assert.ok(budgeted.totalChars <= 5000, `totalChars ${budgeted.totalChars} must fit budget`);
+  assert.ok(budgeted.injectedL2Turns > 0, 'newest turns must be injected');
+  assert.ok(budgeted.remainingL2Turns > 0, 'some old turns must be left for pull');
+  assert.equal(budgeted.injectedL2Turns + budgeted.remainingL2Turns, 10);
+  assert.ok(budgeted.text.includes('turn-10'), 'newest L2 turn must survive');
+  assert.ok(!budgeted.text.includes('turn-01 '), 'oldest L2 turn must be left for pull');
+
+  // ターン原子性: 注入されたターンは user 行と assistant 行が揃っている
+  const oldestInjectedTurn = 10 - budgeted.injectedL2Turns + 1;
+  const tag = String(oldestInjectedTurn).padStart(2, '0');
+  assert.ok(budgeted.text.includes(`q-${tag} question`), 'user row of injected turn must be present');
+  assert.ok(budgeted.text.includes(`turn-${tag} `), 'assistant row of injected turn must be present');
+
+  // 案内: --before は実注入最古ターンの min(created_at) の ISO ms、--last は残り件数
+  const boundaryMs = 1000 + oldestInjectedTurn * 100; // 最古注入ターンの user 行時刻
+  const iso = new Date(boundaryMs).toISOString().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.match(
+    budgeted.text,
+    new RegExp(
+      `これより前の続き${budgeted.remainingL2Turns}ターン .*` +
+        '`throughline recall --l2 --session new ' +
+        `--before ${iso} --last ${budgeted.remainingL2Turns}\``,
+    ),
+    'guidance must bake session, ISO ms boundary, and remaining count',
+  );
+  // 全 10 ターンとも窓内なので、窓より古い側は正直に「なし」と明示される
+  assert.match(budgeted.text, /それ以前のターン: なし/);
+});
+
+test('budgeted: --l1 guidance bakes the same boundary and the --l2 skip count', () => {
+  const db = makeDb();
+  // 窓 (20) + 窓外 5 ターン。予算を絞って窓内にも pull 残りを作る
+  for (let turn = 1; turn <= 25; turn += 1) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn,
+      role: 'assistant',
+      text: `turn-${String(turn).padStart(2, '0')} ` + 'x'.repeat(700),
       createdAt: 1000 + turn * 100,
     });
   }
@@ -671,22 +734,25 @@ test('budgeted: drops oldest L2 rows first, keeps newest, and stays within maxCh
   });
 
   assert.ok(budgeted);
-  assert.ok(budgeted.totalChars <= 4000, `totalChars ${budgeted.totalChars} must fit budget`);
-  assert.ok(budgeted.droppedL2Rows > 0, 'some old L2 rows must be dropped');
-  assert.ok(budgeted.text.includes('turn-10'), 'newest L2 row must survive');
-  assert.ok(!budgeted.text.includes('turn-01 '), 'oldest L2 row must be dropped');
-  assert.match(budgeted.text, /古い L2 を \d+ 行省略/, 'omission must be announced, not silent');
-  // 「削るときは取り出すための参照を必ず残す」: 落とした行の [時刻 role] リストが
-  // 告知に載っていること (窓内の行にはまだ L1 が無く、時刻が無いと detail で引けない)
+  assert.ok(budgeted.remainingL2Turns > 0);
+  assert.equal(budgeted.olderTurns, 5);
+  const oldestInjectedTurn = 25 - budgeted.injectedL2Turns + 1;
+  const boundaryMs = 1000 + oldestInjectedTurn * 100;
+  const iso = new Date(boundaryMs).toISOString().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   assert.match(
     budgeted.text,
-    /省略分 \(新しい順\): (\[\d{2}:\d{2}:\d{2} assistant\][ ]?)+/,
-    'dropped rows must be listed with [time role] refs for throughline detail',
+    new RegExp(`--l2 --session new --before ${iso} --last ${budgeted.remainingL2Turns}`),
+  );
+  assert.match(
+    budgeted.text,
+    new RegExp(`--l1 --session new --before ${iso} --skip ${budgeted.remainingL2Turns}`),
+    '--l1 guidance must bake the same boundary and skip count',
   );
 });
 
-test('budgeted: very many dropped rows fold into ほかN行 keeping the note bounded', () => {
+test('budgeted: window turns beyond budget never fall into a blank band (guidance covers them)', () => {
   const db = makeDb();
+  // 40 ターン: 窓は最新 20 ターン、そこからさらに予算落ちが出る構成
   for (let turn = 1; turn <= 40; turn += 1) {
     insertBody(db, {
       session: 'new',
@@ -706,7 +772,35 @@ test('budgeted: very many dropped rows fold into ほかN行 keeping the note bou
 
   assert.ok(budgeted);
   assert.ok(budgeted.totalChars <= 4000);
-  assert.match(budgeted.text, /ほか\d+行/, 'overflow refs must fold into a count');
+  // 窓 20 ターンのうち注入できなかった分は全部 recall --l2 の担当として案内される
+  assert.equal(budgeted.injectedL2Turns + budgeted.remainingL2Turns, 20);
+  // 窓より古い 20 ターンは --l1 側 (未要約でも件数として見える)
+  assert.equal(budgeted.olderTurns, 20);
+  assert.match(budgeted.text, /それ以前の全20ターン（要約済み 0 \/ 未要約 20）/);
+});
+
+test('budgeted: older summarized/unsummarized counts are honest in the guidance', () => {
+  const db = makeDb();
+  for (let turn = 1; turn <= 25; turn += 1) {
+    insertBody(db, {
+      session: 'new',
+      origin: 'old',
+      turn,
+      role: 'assistant',
+      text: `turn-${turn}`,
+      createdAt: 1000 + turn * 1000,
+    });
+  }
+  // 窓 (最新 20 ターン = turn 6..25) より古い turn 1..5 のうち 2 件だけ要約済み
+  insertSkeleton(db, { session: 'new', origin: 'old', turn: 1, role: 'assistant', summary: 's1', createdAt: 90_000 });
+  insertSkeleton(db, { session: 'new', origin: 'old', turn: 2, role: 'assistant', summary: 's2', createdAt: 90_001 });
+
+  const budgeted = buildBudgetedResumeContext(db, { sessionId: 'new', isInheritance: true });
+
+  assert.ok(budgeted);
+  assert.equal(budgeted.olderTurns, 5);
+  assert.equal(budgeted.olderSummarized, 2);
+  assert.match(budgeted.text, /それ以前の全5ターン（要約済み 2 \/ 未要約 3）/);
 });
 
 test('budgeted: a single oversized newest L2 row is truncated with a detail pointer', () => {

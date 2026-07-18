@@ -245,15 +245,23 @@ this fallback. **The env var only affects the fallback**; typed `/clear` and
 
 ### What gets injected
 
-Both paths inject the **same** curated memory:
+Both paths inject the **same** curated memory (push/pull design, ADR 0016):
 
 - A **"現在地 (latest exchange)"** anchor (added in v0.4.12) re-surfaces the
   most recent user directive and the most recent assistant turn directly under
   the header, each truncated to 600 characters
-- L1 summaries (older turns, one-line)
-- L2 verbatim (most recent 20 turns, full text)
+- A **pull guidance section** (always present) with ready-to-run
+  `throughline recall` commands — session id, an ISO-ms boundary, and turn
+  counts are baked in at injection time
+- L2 verbatim: as many of the most recent turns as fit the ~9,500-char
+  injection budget, packed whole-turn (typically 7–8 turns; more for light
+  conversations). **L1 summaries are not injected** — the rest of the
+  20-turn window is retrieved verbatim via `throughline recall --l2`, and
+  everything older via `throughline recall --l1` (summarized turns show
+  their L1 line; unsummarized ones are listed explicitly with a
+  `throughline detail` pointer)
 - L3 references (`throughline detail <time>` retrieval commands, attached
-  inline to each L1/L2 row; bodies stay in SQLite)
+  inline to each L2 row; bodies stay in SQLite)
 
 The injection is reframed as **"resuming an interrupted task"** rather than
 "reading past logs". The L2 verbatim already contains the last assistant
@@ -754,6 +762,7 @@ aggregate は collection が既定OFFで、canonical dotagents config の
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
 | `throughline monitor --diag`                   | Dump TTY/columns/env diagnostics (for debugging monitor render bugs) |
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |
+| `throughline recall --l2\|--l1 --session <id> --before <ISO> ...` | Pull older memory referenced by the injection's guidance section (read-only; the exact command is baked into each injection) |
 | `throughline observer-read --project <absolute-directory> --json` | Read one completed-turn Observer page through the JSON-only public boundary |
 | `throughline observer-wait --project <absolute-directory> --after-cursor <opaque> [--timeout-seconds 3600] --json` | Wait up to 3600 seconds for a completed-turn Observer cursor change |
 | `throughline doctor`                           | Check Node version, hook registration, DB writability, PATH  |

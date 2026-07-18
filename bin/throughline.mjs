@@ -9,6 +9,7 @@
  *   throughline process-turn  # Stop hook (Claude Code から呼ばれる)
  *   throughline session-start # SessionStart hook (Claude Code から呼ばれる)
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
+ *   throughline recall --l2|--l1 # 注入案内から辿る pull 用 read-only 記憶取得
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
@@ -66,6 +67,11 @@ switch (cmd) {
   case 'detail':
     (await import('../src/sc-detail.mjs')).run(rest);
     break;
+  case 'recall': {
+    const exitCode = (await import('../src/cli/recall.mjs')).run(rest);
+    process.exitCode = exitCode;
+    break;
+  }
   case 'handoff-preview':
     await (await import('../src/cli/handoff-preview.mjs')).run(rest);
     break;

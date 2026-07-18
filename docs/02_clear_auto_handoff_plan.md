@@ -17,6 +17,14 @@ A 案 (= /clear で自動引継ぎ + /tl は逃げ道として残す + /tl-trim 
 > `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` は **fallback path のみに作用** する
 > ようになった (typed `/clear` / `/tl` には効かない)。
 
+> **2026-07-18 (ADR 0016) update**: 注入の中身を push/pull 二段に再設計した。
+> push (9,500 字) はヘッダ + 現在地アンカー + 案内セクション + **L2 をターン原子で
+> 入るだけ全文**（L1 は注入しない）。窓 20 ターンの残りは `throughline recall --l2`、
+> それより古い全ターンは `recall --l1`（要約 or 未要約明示）で pull する。範囲・境界
+> (ISO ms)・件数・session は注入時に案内コマンドへ焼き込み、recall 側は窓を再計算
+> しない。正典は [ADR 0016](adr/0016-push-pull-recall-injection.md)。本書内の
+> 「L1 + L2 を注入する」旧記述はこの update で読み替えること。
+
 ---
 
 ## 1. 確定した事実 (実機検証済み)
