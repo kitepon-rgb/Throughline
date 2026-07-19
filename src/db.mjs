@@ -9,6 +9,7 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
+const DB_BUSY_TIMEOUT_MS = 5_000;
 export const CURRENT_VERSION = 9;
 
 let _db = null;
@@ -248,11 +249,19 @@ export function getDb() {
 
   mkdirSync(DB_DIR, { recursive: true });
 
-  _db = new DatabaseSync(DB_PATH);
-  _db.exec('PRAGMA journal_mode = WAL');
-  _db.exec('PRAGMA foreign_keys = ON');
-
-  initSchema(_db);
-
-  return _db;
+  const db = new DatabaseSync(DB_PATH);
+  try {
+    db.exec(`PRAGMA busy_timeout = ${DB_BUSY_TIMEOUT_MS}`);
+    const journalMode = db.prepare('PRAGMA journal_mode').get().journal_mode;
+    if (String(journalMode).toLowerCase() !== 'wal') {
+      db.exec('PRAGMA journal_mode = WAL');
+    }
+    db.exec('PRAGMA foreign_keys = ON');
+    initSchema(db);
+    _db = db;
+    return _db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 }

@@ -19,6 +19,10 @@ shipped to npm but were not individually tagged on GitHub.
   `codex://threads/<thread-id>` deep link instead of spawning a Terminal
   `codex resume` session. `--open-host desktop` is available explicitly;
   VS Code and CLI opening behavior is unchanged.
+- Concurrent CLI and Codex hook processes now configure a bounded SQLite busy
+  timeout and avoid reapplying WAL mode when it is already active. A transient
+  writer or WAL recovery lock no longer makes DB initialization fail
+  immediately, and a failed initialization is never retained as the singleton.
 
 ## [0.8.2] — 2026-07-20
 

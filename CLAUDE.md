@@ -59,8 +59,10 @@ npm `latest`、tag / GitHub Releaseまで完了済み。
 
 **v0.8.3（公開candidate）**: Codex Desktop起点のfresh-thread handoffを環境から識別し、
 `codex://threads/<thread-id>` deep linkで新taskをDesktop内に開く。`--open-host desktop`を追加し、
-VS Code／CLIの既存経路は維持する。focused 12/12、related 28/28はgreen。GitHub CI、npm publish、
-tag / GitHub Release、registry由来global installは本release gateで確認する。
+VS Code／CLIの既存経路は維持する。CLIとCodex hookの並行起動ではSQLite busy timeoutを5秒に固定し、
+既にWALならjournal modeを再設定しない。実Desktopでthread作成・developer item注入・deep-link open・
+rollout永続化を確認し、focused 15/15、full 707件（706 pass / 1 skip）はgreen。GitHub CI、
+npm publish、tag / GitHub Release、registry由来global installは本release gateで確認する。
 
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
