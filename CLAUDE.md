@@ -57,12 +57,12 @@ labelをDB migration正本 `CURRENT_VERSION` から導出し、Windows native Co
 quoted Node executableへPowerShell call operator `&`を付けた。v0.8.2は公開commit `15427bf`、
 npm `latest`、tag / GitHub Releaseまで完了済み。
 
-**v0.8.3（公開candidate）**: Codex Desktop起点のfresh-thread handoffを環境から識別し、
+**v0.8.3（2026-07-20公開）**: Codex Desktop起点のfresh-thread handoffを環境から識別し、
 `codex://threads/<thread-id>` deep linkで新taskをDesktop内に開く。`--open-host desktop`を追加し、
 VS Code／CLIの既存経路は維持する。CLIとCodex hookの並行起動ではSQLite busy timeoutを5秒に固定し、
-既にWALならjournal modeを再設定しない。実Desktopでthread作成・developer item注入・deep-link open・
-rollout永続化を確認し、focused 15/15、full 707件（706 pass / 1 skip）はgreen。GitHub CI、
-npm publish、tag / GitHub Release、registry由来global installは本release gateで確認する。
+既にWALならjournal modeを再設定しない。公開commitは `8e8db4d`、GitHub CI run `29704886111` は
+9/9 green。npm `latest` は0.8.3、shasumは `cf4f71fa4cba2158bb1224d38b7f55cc459ab9e5`。
+tag / GitHub Releaseとregistry由来global install（`throughline --version` = 0.8.3）まで確認済み。
 
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
