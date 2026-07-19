@@ -49,7 +49,7 @@ test('CLI help exposes guided Codex handoff and guarded execute semantics', () =
   }
   assert.match(result.stdout, /Fresh-thread Codex handoff start plan/);
   assert.match(result.stdout, /Use --execute to/);
-  assert.match(result.stdout, /--open-host auto\|vscode\|cli\|none/);
+  assert.match(result.stdout, /--open-host auto\|desktop\|vscode\|cli\|none/);
   assert.match(result.stdout, /throughline trim --execute/);
   assert.match(result.stdout, /injectable DB memory/);
   assert.match(result.stdout, /matching/);

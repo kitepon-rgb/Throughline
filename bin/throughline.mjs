@@ -248,7 +248,7 @@ Usage:
                               render command, optional --print-prompt, and
                               --memo-stdin replay guidance. Use --execute to
                               create a new app-server thread, inject handoff
-                              memory, and open it with --open-host auto|vscode|cli|none
+                              memory, and open it with --open-host auto|desktop|vscode|cli|none
   throughline codex-visibility-smoke
                               Experimental: inject Codex active-work memory and
                               start a marker-check model turn. Requires

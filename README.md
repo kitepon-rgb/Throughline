@@ -304,7 +304,7 @@ throughline codex-summarize --session codex:<thread-id> --json
 throughline codex-resume --session codex:<thread-id>
 throughline codex-resume --session codex:<thread-id> --format handoff
 throughline codex-handoff-start --session codex:<thread-id>
-throughline codex-handoff-start --session codex:<thread-id> --execute --open-host vscode
+throughline codex-handoff-start --session codex:<thread-id> --execute --open-host desktop
 throughline codex-handoff-smoke --session codex:<thread-id>
 throughline codex-handoff-model-smoke --session codex:<thread-id> --dry-run --json
 THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE=1 \
@@ -567,7 +567,9 @@ live model smoke, and can include the prompt with `--print-prompt`. With
 `--memo-stdin`, it also propagates `--memo-stdin` into the replay commands and
 reminds you to pipe the same memo when using them separately. Add `--execute`
 to create a new Codex app-server thread, inject the handoff memory as a
-developer item, and open it with `--open-host auto|vscode|cli|none`. The
+developer item, and open it with `--open-host auto|desktop|vscode|cli|none`. `auto`
+opens the new task in Codex Desktop when invoked there, while preserving the
+existing VS Code and CLI routes. The
 individual commands remain available: validate the fresh-thread handoff with
 `throughline codex-handoff-smoke --session codex:<thread-id>`, optionally audit
 the model-smoke boundary with
@@ -785,7 +787,7 @@ aggregate は collection が既定OFFで、canonical dotagents config の
 | `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |
 | `throughline codex-resume --session codex:<id>` | Render Codex active-work context from a captured Codex session |
 | `throughline codex-resume --session codex:<id> --format handoff` | Render a concise fresh-thread handoff prompt without mutating the current thread |
-| `throughline codex-handoff-start --session codex:<id>` | Guided start plan for moving handoff memory into a new Codex thread; add `--execute` to create the thread through app-server, inject developer memory, and open it with `--open-host auto\|vscode\|cli\|none`; use `--print-prompt` to include the prompt and `--memo-stdin` to carry a current-work memo |
+| `throughline codex-handoff-start --session codex:<id>` | Guided start plan for moving handoff memory into a new Codex thread; add `--execute` to create the thread through app-server, inject developer memory, and open it with `--open-host auto\|desktop\|vscode\|cli\|none`; `auto` keeps Codex Desktop handoffs in the Desktop app; use `--print-prompt` to include the prompt and `--memo-stdin` to carry a current-work memo |
 | `throughline codex-handoff-smoke --session codex:<id>` | Read-only validation that the fresh-thread handoff prompt is pasteable before starting a new thread |
 | `throughline codex-handoff-model-smoke --session codex:<id>` | Experimental marker smoke for the handoff prompt. `--dry-run` checks readiness / command boundary without starting Codex exec; `--memo-stdin` carries a current-work memo; live `codex exec --ephemeral --sandbox read-only` requires explicit env opt-in |
 | `throughline codex-visibility-smoke --session codex:<id>` | Experimental Codex app-server marker smoke; injects memory and starts a model turn |

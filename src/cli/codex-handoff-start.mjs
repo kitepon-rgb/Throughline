@@ -79,8 +79,8 @@ function parseArgs(args) {
       out.execute = true;
     } else if (arg === '--open-host') {
       const value = args[++i];
-      if (!['auto', 'vscode', 'cli', 'none'].includes(value)) {
-        throw new Error('--open-host must be auto, vscode, cli, or none');
+      if (!['auto', 'desktop', 'vscode', 'cli', 'none'].includes(value)) {
+        throw new Error('--open-host must be auto, desktop, vscode, cli, or none');
       }
       out.openHost = value;
     } else if (arg === '--codex-app-server-bin') {
@@ -247,6 +247,7 @@ function renderTextResult(result) {
   }
   if (result.open) {
     lines.push(`  open status:       ${result.open.status}`);
+    lines.push(`  desktop url:       ${result.open.desktopUrl}`);
     lines.push(`  vscode url:        ${result.open.vscodeUrl}`);
     lines.push(`  resume command:    ${result.open.resumeCommand}`);
   }
@@ -268,21 +269,34 @@ function renderTextResult(result) {
   return lines.join('\n');
 }
 
-function resolveOpenHost(host) {
+function isCodexDesktopEnvironment(env) {
+  const originator = env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE?.trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+  return originator === 'codex desktop' || env.__CFBundleIdentifier === 'com.openai.codex';
+}
+
+function resolveOpenHost(host, env = process.env) {
   if (host !== 'auto') return host;
+  if (isCodexDesktopEnvironment(env)) return 'desktop';
   if (
-    process.env.VSCODE_IPC_HOOK_CLI ||
-    process.env.VSCODE_IPC_HOOK ||
-    process.env.TERM_PROGRAM === 'vscode' ||
-    process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE === 'codex_vscode'
+    env.VSCODE_IPC_HOOK_CLI ||
+    env.VSCODE_IPC_HOOK ||
+    env.TERM_PROGRAM === 'vscode' ||
+    env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE === 'codex_vscode'
   ) {
     return 'vscode';
   }
   return 'cli';
 }
 
+function buildCodexDesktopUrl(threadId) {
+  return `codex://threads/${encodeURIComponent(threadId)}`;
+}
+
 function openStartedCodexThread({ threadId, host, cwd }) {
   const resolvedHost = resolveOpenHost(host);
+  const desktopUrl = buildCodexDesktopUrl(threadId);
   const vscodeUrl = `vscode://openai.chatgpt/local/${encodeURIComponent(threadId)}`;
   const resumeCommand = `codex resume ${threadId} --no-alt-screen`;
   if (resolvedHost === 'none') {
@@ -290,23 +304,26 @@ function openStartedCodexThread({ threadId, host, cwd }) {
       status: 'skipped',
       reason: 'open_host_none',
       host: resolvedHost,
+      desktopUrl,
       vscodeUrl,
       resumeCommand,
     };
   }
 
-  if (resolvedHost === 'vscode') {
+  if (resolvedHost === 'desktop' || resolvedHost === 'vscode') {
+    const url = resolvedHost === 'desktop' ? desktopUrl : vscodeUrl;
     const result =
       process.platform === 'darwin'
-        ? spawnSync('open', [vscodeUrl], { encoding: 'utf8' })
+        ? spawnSync('open', [url], { encoding: 'utf8' })
         : process.platform === 'win32'
-          ? spawnSync('cmd.exe', ['/c', 'start', '', vscodeUrl], { encoding: 'utf8' })
-          : spawnSync('xdg-open', [vscodeUrl], { encoding: 'utf8' });
+          ? spawnSync('cmd.exe', ['/c', 'start', '', url], { encoding: 'utf8' })
+          : spawnSync('xdg-open', [url], { encoding: 'utf8' });
     if (result.status !== 0) {
       return {
         status: 'failed',
-        reason: 'vscode_deep_link_open_failed',
+        reason: `${resolvedHost}_deep_link_open_failed`,
         host: resolvedHost,
+        desktopUrl,
         vscodeUrl,
         resumeCommand,
         error: (result.stderr || result.stdout || '').trim(),
@@ -314,8 +331,9 @@ function openStartedCodexThread({ threadId, host, cwd }) {
     }
     return {
       status: 'opened',
-      reason: 'vscode_deep_link_opened',
+      reason: `${resolvedHost}_deep_link_opened`,
       host: resolvedHost,
+      desktopUrl,
       vscodeUrl,
       resumeCommand,
     };
@@ -337,6 +355,7 @@ end tell
           status: 'failed',
           reason: 'terminal_open_failed',
           host: resolvedHost,
+          desktopUrl,
           vscodeUrl,
           resumeCommand,
           error: (result.stderr || result.stdout || '').trim(),
@@ -346,6 +365,7 @@ end tell
         status: 'opened',
         reason: 'terminal_resume_opened',
         host: resolvedHost,
+        desktopUrl,
         vscodeUrl,
         resumeCommand,
       };
@@ -354,6 +374,7 @@ end tell
       status: 'manual',
       reason: 'cli_auto_open_unsupported_on_platform',
       host: resolvedHost,
+      desktopUrl,
       vscodeUrl,
       resumeCommand,
     };
@@ -363,6 +384,7 @@ end tell
     status: 'failed',
     reason: 'unsupported_open_host',
     host: resolvedHost,
+    desktopUrl,
     vscodeUrl,
     resumeCommand,
   };
@@ -460,6 +482,9 @@ export async function run(args) {
 }
 
 export const _internal = {
+  buildCodexDesktopUrl,
+  isCodexDesktopEnvironment,
   parseArgs,
   renderTextResult,
+  resolveOpenHost,
 };

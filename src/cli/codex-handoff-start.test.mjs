@@ -5,8 +5,42 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { _internal } from './codex-handoff-start.mjs';
 
 const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+
+test('codex-handoff-start recognizes desktop as an explicit open host', () => {
+  assert.equal(_internal.parseArgs(['--open-host', 'desktop']).openHost, 'desktop');
+});
+
+test('codex-handoff-start auto-selects Codex Desktop before inherited VS Code signals', () => {
+  assert.equal(
+    _internal.resolveOpenHost('auto', {
+      CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop',
+      VSCODE_IPC_HOOK_CLI: '/tmp/stale-vscode.sock',
+    }),
+    'desktop',
+  );
+  assert.equal(
+    _internal.resolveOpenHost('auto', { __CFBundleIdentifier: 'com.openai.codex' }),
+    'desktop',
+  );
+});
+
+test('codex-handoff-start keeps VS Code and CLI auto-open behavior', () => {
+  assert.equal(
+    _internal.resolveOpenHost('auto', { CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'codex_vscode' }),
+    'vscode',
+  );
+  assert.equal(_internal.resolveOpenHost('auto', {}), 'cli');
+});
+
+test('codex-handoff-start builds the Codex Desktop local thread deep link', () => {
+  assert.equal(
+    _internal.buildCodexDesktopUrl('019f78e8-77ec-7d73-aee4-fb8e3869200a'),
+    'codex://threads/019f78e8-77ec-7d73-aee4-fb8e3869200a',
+  );
+});
 
 function makeTempHome() {
   return mkdtempSync(join(tmpdir(), 'tl-codex-handoff-start-home-'));
@@ -256,6 +290,10 @@ test('codex-handoff-start execute creates a new app-server thread and can skip o
     assert.equal(payload.newThread.injectSent, true);
     assert.equal(payload.newThread.turnStatus, 'not-started');
     assert.equal(payload.open.status, 'skipped');
+    assert.equal(
+      payload.open.desktopUrl,
+      'codex://threads/019e2000-0000-7000-8000-000000000001',
+    );
     assert.equal(payload.open.vscodeUrl, 'vscode://openai.chatgpt/local/019e2000-0000-7000-8000-000000000001');
     assert.match(payload.open.resumeCommand, /codex resume 019e2000-0000-7000-8000-000000000001/);
 
