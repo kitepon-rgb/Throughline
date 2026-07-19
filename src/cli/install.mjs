@@ -101,22 +101,30 @@ export function resolveCodexHookNodePath({
 export function buildCodexStopHookCommand({
   nodePath = resolveCodexHookNodePath(),
   cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
+  platform = process.platform,
 } = {}) {
-  return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook stop`;
+  return buildCodexHookCommand('stop', { nodePath, cliScriptPath, platform });
 }
 
 export function buildCodexUserPromptSubmitHookCommand({
   nodePath = resolveCodexHookNodePath(),
   cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
+  platform = process.platform,
 } = {}) {
-  return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook user-prompt-submit`;
+  return buildCodexHookCommand('user-prompt-submit', { nodePath, cliScriptPath, platform });
 }
 
 export function buildCodexPostToolUseHookCommand({
   nodePath = resolveCodexHookNodePath(),
   cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
+  platform = process.platform,
 } = {}) {
-  return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook post-tool-use`;
+  return buildCodexHookCommand('post-tool-use', { nodePath, cliScriptPath, platform });
+}
+
+function buildCodexHookCommand(event, { nodePath, cliScriptPath, platform }) {
+  const prefix = platform === 'win32' ? '& ' : '';
+  return `${prefix}${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} codex-hook ${event}`;
 }
 
 export function isThroughlineCodexHookCommand(command) {

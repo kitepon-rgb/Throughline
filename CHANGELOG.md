@@ -10,6 +10,16 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-07-20
+
+### Fixed
+
+- Windows native Codex hook commands now prefix quoted Node executables with the
+  PowerShell call operator `&`. POSIX command strings are unchanged, and the
+  existing managed-hook detector continues to recognize the canonical commands.
+
+## [0.8.1] — 2026-07-19
+
 ### Fixed
 
 - **Native factory diagnostics now report the database compatibility label from

@@ -8,6 +8,7 @@ import {
   buildCodexPostToolUseHookCommand,
   buildCodexStopHookCommand,
   buildCodexUserPromptSubmitHookCommand,
+  isThroughlineCodexHookCommand,
   resolveCodexHookNodePath,
   run,
   resolveThroughlineOnPath,
@@ -139,6 +140,27 @@ test('global install registers Codex session hooks and enables hooks features', 
     unsilence();
     home.restore();
   }
+});
+
+test('Codex hook builders use the PowerShell call operator on Windows only', () => {
+  const options = {
+    nodePath: String.raw`C:\Program Files\nodejs\node.exe`,
+    cliScriptPath: String.raw`C:\Users\Kite\App Data\Roaming\npm\node_modules\throughline\bin\throughline.mjs`,
+  };
+  assert.equal(
+    buildCodexStopHookCommand({ ...options, platform: 'win32' }),
+    String.raw`& "C:\Program Files\nodejs\node.exe" "C:\Users\Kite\App Data\Roaming\npm\node_modules\throughline\bin\throughline.mjs" codex-hook stop`,
+  );
+  assert.equal(
+    buildCodexUserPromptSubmitHookCommand({ ...options, platform: 'win32' }),
+    String.raw`& "C:\Program Files\nodejs\node.exe" "C:\Users\Kite\App Data\Roaming\npm\node_modules\throughline\bin\throughline.mjs" codex-hook user-prompt-submit`,
+  );
+  assert.equal(
+    buildCodexPostToolUseHookCommand({ ...options, platform: 'win32' }),
+    String.raw`& "C:\Program Files\nodejs\node.exe" "C:\Users\Kite\App Data\Roaming\npm\node_modules\throughline\bin\throughline.mjs" codex-hook post-tool-use`,
+  );
+  assert.equal(buildCodexStopHookCommand({ ...options, platform: 'linux' }).startsWith('& '), false);
+  assert.equal(isThroughlineCodexHookCommand(buildCodexStopHookCommand({ ...options, platform: 'win32' })), true);
 });
 
 test('global install copies Throughline Codex skill to ~/.codex/skills/', async () => {
