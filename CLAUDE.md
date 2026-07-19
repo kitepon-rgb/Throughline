@@ -52,10 +52,15 @@ shasum `946f934baa0849a86e1379bf4ef80bb41d8da042`、tag / GitHub Release、隔�
 重複欠落なし）と `recall --l1`（全9ターン、要約済み7/未要約2の正直表示＋detail誘導）を
 新セッション側からそのまま実行して動作を確認した。
 
-**v0.8.1（未公開candidate）**: native `factory-diagnostics` のDB compatibility labelを
-DB migration正本 `CURRENT_VERSION` から導出するよう修正した。schema v9の数値表明9/9に対して
-`throughline.database.v8`を返していたdriftを解消し、label・実DB version・対応versionの一致を
-schema bump時にも要求する回帰testを追加した。publish、tag、実配布物受入れは未実施。
+**v0.8.1／v0.8.2（2026-07-19〜20公開）**: native `factory-diagnostics` のDB compatibility
+labelをDB migration正本 `CURRENT_VERSION` から導出し、Windows native Codex hook commandの
+quoted Node executableへPowerShell call operator `&`を付けた。v0.8.2は公開commit `15427bf`、
+npm `latest`、tag / GitHub Releaseまで完了済み。
+
+**v0.8.3（公開candidate）**: Codex Desktop起点のfresh-thread handoffを環境から識別し、
+`codex://threads/<thread-id>` deep linkで新taskをDesktop内に開く。`--open-host desktop`を追加し、
+VS Code／CLIの既存経路は維持する。focused 12/12、related 28/28はgreen。GitHub CI、npm publish、
+tag / GitHub Release、registry由来global installは本release gateで確認する。
 
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・

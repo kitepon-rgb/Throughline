@@ -10,6 +10,16 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-07-20
+
+### Fixed
+
+- Codex fresh-thread handoffs now detect when they were launched from Codex
+  Desktop and open the new local task with the app's
+  `codex://threads/<thread-id>` deep link instead of spawning a Terminal
+  `codex resume` session. `--open-host desktop` is available explicitly;
+  VS Code and CLI opening behavior is unchanged.
+
 ## [0.8.2] — 2026-07-20
 
 ### Fixed
@@ -1119,7 +1129,10 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.2...v0.6.3
