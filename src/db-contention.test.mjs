@@ -41,7 +41,7 @@ test('getDb configures a bounded SQLite busy timeout for concurrent hook process
       process.stdout.write(String(db.prepare('PRAGMA busy_timeout').get().timeout));
       db.close();
     `], {
-      env: { ...process.env, HOME: home },
+      env: { ...process.env, HOME: home, USERPROFILE: home },
       encoding: 'utf8',
     });
     assert.equal(result.status, 0, result.stderr);
@@ -53,7 +53,7 @@ test('getDb configures a bounded SQLite busy timeout for concurrent hook process
 
 test('getDb reuses an existing WAL database while another process owns the writer lock', async () => {
   const home = mkdtempSync(join(tmpdir(), 'throughline-db-contention-'));
-  const env = { ...process.env, HOME: home };
+  const env = { ...process.env, HOME: home, USERPROFILE: home };
   const initialize = spawn(process.execPath, ['--input-type=module', '-e', `
     import { getDb } from ${JSON.stringify(DB_MODULE_URL)};
     getDb().close();
