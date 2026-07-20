@@ -10,6 +10,15 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.6] — 2026-07-20
+
+### Fixed
+
+- Republish the v0.8.5 runtime from a clean worktree after the v0.8.5 npm
+  tarball accidentally included one unrelated, uncommitted in-progress
+  document written concurrently after the release dry-run. Runtime behavior
+  and the database migration contract are unchanged.
+
 ## [0.8.5] — 2026-07-20
 
 ### Added
@@ -1154,7 +1163,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.5...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.6...HEAD
+[0.8.6]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.2...v0.8.3
