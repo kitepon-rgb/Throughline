@@ -74,6 +74,12 @@ focused testで固定した。Claude-facing hook、`/tl`、baton、resume契約�
 （`throughline --version` = 0.8.4）、配置skillのrepo／公開package一致、`doctor --codex` exit 0まで確認済み。
 判断と検証証拠は [ADR 0017](docs/adr/0017-codex-handoff-host-boundary.md) に固定する。
 
+**v0.8.5（2026-07-20 release準備）**: `throughline migrate --json` を追加し、package更新直後に
+既存DBだけを製品所有のproduction migrationで現行schemaへ移行できるようにした。DB不在は作成せず
+`not_applicable`、現行は`already_current`、future schemaとmigration failureは非0で明示する。
+`factory-diagnostics`はread-onlyのまま維持する。設計判断は
+[ADR 0018](docs/adr/0018-product-owned-database-migration.md) を正とする。
+
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
 assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切

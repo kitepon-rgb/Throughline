@@ -10,6 +10,16 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.5] — 2026-07-20
+
+### Added
+
+- `throughline migrate --json` now provides the product-owned database
+  migration entry point used after package updates. It migrates only an
+  existing Throughline database, reports a versioned bounded result, leaves a
+  missing database absent, and rejects future schemas or migration failures
+  with a non-zero exit status.
+
 ## [0.8.4] — 2026-07-20
 
 ### Fixed
@@ -1144,7 +1154,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.4...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.5...HEAD
+[0.8.5]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.1...v0.8.2

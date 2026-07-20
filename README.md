@@ -779,6 +779,7 @@ aggregate は collection が既定OFFで、canonical dotagents config の
 | `throughline doctor --trim --host claude\|codex` | Diagnose trim host boundaries, manual procedure, and Codex host primitive blockage |
 | `throughline doctor --codex`                   | Diagnose Codex primary entry state, captured DB sessions, context-refresh memory contract, new-thread handoff readiness, safe continuation status, and host primitive audit |
 | `throughline factory-diagnostics --json`       | Versioned read-only native factory readiness JSON for database schema/migration, connector hooks, and representative capture/restore/handoff; does not emit bodies, secrets, absolute paths, or raw state |
+| `throughline migrate --json`                   | Migrate only an existing Throughline database to the current schema and emit a versioned bounded result; a missing database is not created, while future schemas and migration failures exit non-zero |
 | `throughline runtime-errors snapshot --json`   | Read the bounded product-owned runtime error aggregate. Collection occurs only when canonical dotagents config explicitly sets `collection.enabled: true`; this command performs no network I/O |
 | `throughline runtime-errors diagnostics --json` | Read bounded collection/store status without exposing the state path or raw errors |
 | `throughline runtime-errors ack <cursor> --json` | Explicitly acknowledge records through a monotonic cursor; unacknowledged records are never compacted |
