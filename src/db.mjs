@@ -3,7 +3,7 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -237,6 +237,74 @@ function initSchema(db) {
 
   if (version < CURRENT_VERSION) {
     db.exec(`PRAGMA user_version = ${CURRENT_VERSION}`);
+  }
+}
+
+/**
+ * 既存の Throughline DB だけを現在 schema へ移行する。
+ * 通常の getDb() と異なり、DB や親ディレクトリを作成しない。
+ *
+ * @returns {{ status: 'not_applicable' | 'already_current' | 'migrated', beforeSchemaVersion: number | null, afterSchemaVersion: number | null, supportedSchemaVersion: number }}
+ */
+export function migrateDefaultDb() {
+  if (!existsSync(DB_PATH)) {
+    return {
+      status: 'not_applicable',
+      beforeSchemaVersion: null,
+      afterSchemaVersion: null,
+      supportedSchemaVersion: CURRENT_VERSION,
+    };
+  }
+
+  let db;
+  try {
+    db = new DatabaseSync(DB_PATH);
+    db.exec(`PRAGMA busy_timeout = ${DB_BUSY_TIMEOUT_MS}`);
+    db.exec('PRAGMA foreign_keys = ON');
+
+    const beforeSchemaVersion = Number(db.prepare('PRAGMA user_version').get().user_version ?? 0);
+    if (beforeSchemaVersion > CURRENT_VERSION) {
+      throw new DatabaseMigrationError('future_schema', beforeSchemaVersion, beforeSchemaVersion);
+    }
+
+    if (beforeSchemaVersion === CURRENT_VERSION) {
+      return {
+        status: 'already_current',
+        beforeSchemaVersion,
+        afterSchemaVersion: beforeSchemaVersion,
+        supportedSchemaVersion: CURRENT_VERSION,
+      };
+    }
+
+    const journalMode = db.prepare('PRAGMA journal_mode').get().journal_mode;
+    if (String(journalMode).toLowerCase() !== 'wal') {
+      db.exec('PRAGMA journal_mode = WAL');
+    }
+    initSchema(db);
+    const afterSchemaVersion = Number(db.prepare('PRAGMA user_version').get().user_version ?? 0);
+    if (afterSchemaVersion !== CURRENT_VERSION) {
+      throw new DatabaseMigrationError('version_mismatch', beforeSchemaVersion, afterSchemaVersion);
+    }
+    return {
+      status: 'migrated',
+      beforeSchemaVersion,
+      afterSchemaVersion,
+      supportedSchemaVersion: CURRENT_VERSION,
+    };
+  } catch (error) {
+    if (error instanceof DatabaseMigrationError) throw error;
+    throw new DatabaseMigrationError('migration_failed', null, null);
+  } finally {
+    db?.close();
+  }
+}
+
+export class DatabaseMigrationError extends Error {
+  constructor(code, beforeSchemaVersion, afterSchemaVersion) {
+    super(code);
+    this.code = code;
+    this.beforeSchemaVersion = beforeSchemaVersion;
+    this.afterSchemaVersion = afterSchemaVersion;
   }
 }
 

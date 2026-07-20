@@ -13,6 +13,7 @@
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
+ *   throughline migrate --json # Migrate the existing Throughline database only
  *   throughline runtime-errors snapshot --json # Product-owned runtime error aggregates
  *   throughline codex-capture # Capture active Codex rollout turns into Throughline DB
  *   throughline codex-hook user-prompt-submit # Codex current-session auto-refresh prompt hook
@@ -92,6 +93,11 @@ switch (cmd) {
   }
   case 'factory-diagnostics': {
     const exitCode = (await import('../src/cli/factory-diagnostics.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
+  case 'migrate': {
+    const exitCode = (await import('../src/cli/migrate.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
     break;
   }
@@ -207,6 +213,8 @@ Usage:
   throughline factory-diagnostics --json
                               Read-only native factory readiness JSON. Never emits
                               session/prompt bodies, secrets, absolute paths, or raw state
+  throughline migrate --json  Migrate the existing Throughline database only.
+                              Does not create a missing database and emits a versioned JSON result
   throughline runtime-errors snapshot --json
                               Read bounded local runtime error aggregates. Also supports
                               diagnostics, ack <cursor>, resolve <fingerprint>, and compact
