@@ -25,6 +25,17 @@ not ask for confirmation. Execute the handoff-start command directly. If it
 fails, report the error plainly instead of silently falling back to another
 memory source or current-thread rollback.
 
+Choose the open host from the current Codex application surface, not from
+environment variables inherited by the shell or a persistent PTY. Pass it
+explicitly whenever the surface is known:
+
+- Codex Desktop: `--open-host desktop`
+- Codex in VS Code: `--open-host vscode`
+- Codex CLI: `--open-host cli`
+
+Use `--open-host auto` only when the Codex surface is genuinely unknown. In
+that case, report both the requested and resolved hosts from the CLI result.
+
 ## Common Requests
 
 ### Bare "$throughline" / "use Throughline"
@@ -32,8 +43,12 @@ memory source or current-thread rollback.
 Run:
 
 ```bash
-throughline codex-handoff-start --execute
+throughline codex-handoff-start --execute --open-host desktop
 ```
+
+The example above is for Codex Desktop. Replace `desktop` with `vscode` or
+`cli` when that is the current Codex surface. Do not copy the host identity
+from the shell or PTY that happens to execute the command.
 
 This is the Codex new-thread continuation flow. It does not mutate the current
 Codex thread. Report the new thread id, open status, and any manual resume
@@ -80,7 +95,7 @@ If the user wants to continue in a fresh Codex thread instead of mutating the
 current thread, use:
 
 ```bash
-throughline codex-handoff-start --session codex:<current-thread-id> --execute
+throughline codex-handoff-start --session codex:<current-thread-id> --execute --open-host <current-codex-surface>
 ```
 
 If the user gave a current-work memo, pipe it with `--memo-stdin`. This starts a
@@ -106,7 +121,7 @@ memory, unless they explicitly ask to mutate the current Codex thread.
 Execute:
 
 ```bash
-throughline codex-handoff-start --execute
+throughline codex-handoff-start --execute --open-host <current-codex-surface>
 ```
 
 Report only the essential outcome, especially the new thread id and open status.
@@ -120,7 +135,7 @@ throughline trim --dry-run --host codex
 Safe new-thread continuation:
 
 ```bash
-throughline codex-handoff-start --session codex:<current-thread-id> --execute --json
+throughline codex-handoff-start --session codex:<current-thread-id> --execute --open-host <current-codex-surface> --json
 ```
 
 Report the context reduction estimate from the dry-run when present:

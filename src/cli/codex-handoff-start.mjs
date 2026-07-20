@@ -190,6 +190,8 @@ function buildGuidance({ sessionId, parsed, handoffSmoke, handoffPrompt }) {
     ]),
   };
   const ready = handoffSmoke.status === 'ready';
+  const requestedOpenHost = parsed.openHost;
+  const resolvedOpenHost = resolveOpenHost(requestedOpenHost);
   return {
     status: ready ? 'ready' : 'not-ready',
     reason: ready ? 'fresh_thread_handoff_start_ready' : 'handoff_smoke_not_ready',
@@ -198,6 +200,8 @@ function buildGuidance({ sessionId, parsed, handoffSmoke, handoffPrompt }) {
     startThreadManually: !parsed.execute,
     execute: parsed.execute,
     openHost: parsed.openHost,
+    requestedOpenHost,
+    resolvedOpenHost,
     handoffSmoke,
     modelPromptChars: modelPrompt.length,
     estimatedModelPromptTokens: estimateTokens(modelPrompt),
@@ -234,7 +238,8 @@ function renderTextResult(result) {
   lines.push(`  session:           ${result.sessionId}`);
   lines.push(`  mutates thread:    ${result.mutatesCurrentThread ? 'yes' : 'no'}`);
   lines.push(`  execute:           ${result.execute ? 'yes' : 'no'}`);
-  lines.push(`  open host:         ${result.openHost}`);
+  lines.push(`  open requested:    ${result.requestedOpenHost ?? result.openHost}`);
+  lines.push(`  open resolved:     ${result.resolvedOpenHost ?? result.open?.host ?? result.openHost}`);
   lines.push(`  handoff smoke:     ${result.handoffSmoke.status}`);
   lines.push(`  prompt chars:      ${result.handoffSmoke.promptChars}/${result.handoffSmoke.maxPromptChars}`);
   lines.push(`  model prompt:      ${result.modelPromptChars}`);
@@ -304,6 +309,8 @@ function openStartedCodexThread({ threadId, host, cwd }) {
       status: 'skipped',
       reason: 'open_host_none',
       host: resolvedHost,
+      requestedHost: host,
+      resolvedHost,
       desktopUrl,
       vscodeUrl,
       resumeCommand,
@@ -323,6 +330,8 @@ function openStartedCodexThread({ threadId, host, cwd }) {
         status: 'failed',
         reason: `${resolvedHost}_deep_link_open_failed`,
         host: resolvedHost,
+        requestedHost: host,
+        resolvedHost,
         desktopUrl,
         vscodeUrl,
         resumeCommand,
@@ -333,6 +342,8 @@ function openStartedCodexThread({ threadId, host, cwd }) {
       status: 'opened',
       reason: `${resolvedHost}_deep_link_opened`,
       host: resolvedHost,
+      requestedHost: host,
+      resolvedHost,
       desktopUrl,
       vscodeUrl,
       resumeCommand,
@@ -355,6 +366,8 @@ end tell
           status: 'failed',
           reason: 'terminal_open_failed',
           host: resolvedHost,
+          requestedHost: host,
+          resolvedHost,
           desktopUrl,
           vscodeUrl,
           resumeCommand,
@@ -365,6 +378,8 @@ end tell
         status: 'opened',
         reason: 'terminal_resume_opened',
         host: resolvedHost,
+        requestedHost: host,
+        resolvedHost,
         desktopUrl,
         vscodeUrl,
         resumeCommand,
@@ -374,6 +389,8 @@ end tell
       status: 'manual',
       reason: 'cli_auto_open_unsupported_on_platform',
       host: resolvedHost,
+      requestedHost: host,
+      resolvedHost,
       desktopUrl,
       vscodeUrl,
       resumeCommand,
@@ -384,6 +401,8 @@ end tell
     status: 'failed',
     reason: 'unsupported_open_host',
     host: resolvedHost,
+    requestedHost: host,
+    resolvedHost,
     desktopUrl,
     vscodeUrl,
     resumeCommand,

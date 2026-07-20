@@ -27,6 +27,21 @@ test('codex-handoff-start auto-selects Codex Desktop before inherited VS Code si
   );
 });
 
+test('codex-handoff-start does not mistake a stale VS Code PTY for Desktop without a Desktop signal', () => {
+  assert.equal(
+    _internal.resolveOpenHost('auto', {
+      VSCODE_IPC_HOOK_CLI: '/tmp/stale-vscode.sock',
+    }),
+    'vscode',
+  );
+  assert.equal(
+    _internal.resolveOpenHost('desktop', {
+      VSCODE_IPC_HOOK_CLI: '/tmp/stale-vscode.sock',
+    }),
+    'desktop',
+  );
+});
+
 test('codex-handoff-start keeps VS Code and CLI auto-open behavior', () => {
   assert.equal(
     _internal.resolveOpenHost('auto', { CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'codex_vscode' }),
@@ -149,6 +164,9 @@ test('codex-handoff-start prints guided ready JSON for latest Codex session', as
     assert.equal(payload.sessionId, 'codex:thread-handoff-start');
     assert.equal(payload.mutatesCurrentThread, false);
     assert.equal(payload.startThreadManually, true);
+    assert.equal(payload.openHost, 'auto');
+    assert.equal(payload.requestedOpenHost, 'auto');
+    assert.ok(['desktop', 'vscode', 'cli'].includes(payload.resolvedOpenHost));
     assert.equal(payload.memoStdin, false);
     assert.equal(payload.memoReplayNote, null);
     assert.equal(payload.handoffSmoke.status, 'ready');
@@ -178,6 +196,8 @@ test('codex-handoff-start can print the exact fresh-thread prompt', async () => 
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /throughline codex handoff start/);
     assert.match(result.stdout, /status:\s+ready/);
+    assert.match(result.stdout, /open requested:\s+auto/);
+    assert.match(result.stdout, /open resolved:\s+(desktop|vscode|cli)/);
     assert.match(result.stdout, /commands:/);
     assert.match(result.stdout, /## Throughline: New Codex Thread Handoff/);
     assert.match(result.stdout, /latest handoff start body/);
@@ -284,12 +304,18 @@ test('codex-handoff-start execute creates a new app-server thread and can skip o
     assert.equal(payload.status, 'started');
     assert.equal(payload.reason, 'new_thread_handoff_started');
     assert.equal(payload.execute, true);
+    assert.equal(payload.openHost, 'none');
+    assert.equal(payload.requestedOpenHost, 'none');
+    assert.equal(payload.resolvedOpenHost, 'none');
     assert.equal(payload.startThreadManually, false);
     assert.equal(payload.newThread.threadId, '019e2000-0000-7000-8000-000000000001');
     assert.equal(payload.newThread.delivery, 'developer-item');
     assert.equal(payload.newThread.injectSent, true);
     assert.equal(payload.newThread.turnStatus, 'not-started');
     assert.equal(payload.open.status, 'skipped');
+    assert.equal(payload.open.host, 'none');
+    assert.equal(payload.open.requestedHost, 'none');
+    assert.equal(payload.open.resolvedHost, 'none');
     assert.equal(
       payload.open.desktopUrl,
       'codex://threads/019e2000-0000-7000-8000-000000000001',

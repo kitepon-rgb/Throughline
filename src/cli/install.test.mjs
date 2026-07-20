@@ -181,6 +181,10 @@ test('global install copies Throughline Codex skill to ~/.codex/skills/', async 
     assert.match(skillBody, /name: throughline/);
     assert.match(skillBody, /Bare "\$throughline"/);
     assert.match(skillBody, /throughline codex-handoff-start --execute/);
+    assert.match(skillBody, /--open-host desktop/);
+    assert.match(skillBody, /--open-host vscode/);
+    assert.match(skillBody, /--open-host cli/);
+    assert.match(skillBody, /not from[\s\S]*persistent PTY/);
     assert.match(skillBody, /do not run doctor \/ dry-run \/ preflight first/);
     assert.match(metadataBody, /start a new Codex thread with Throughline handoff memory/);
     assert.doesNotMatch(metadataBody, /scripted current-thread rollback/);

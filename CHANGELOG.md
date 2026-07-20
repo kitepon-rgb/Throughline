@@ -10,6 +10,17 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.4] — 2026-07-20
+
+### Fixed
+
+- The installed Codex skill now selects Desktop, VS Code, or CLI from the
+  current Codex surface and passes an explicit `--open-host` value. A command
+  launched through an older persistent PTY can no longer silently redirect a
+  Desktop handoff to the PTY's inherited VS Code or Terminal host.
+- `codex-handoff-start` now reports both requested and resolved open hosts in
+  JSON and text output while retaining the existing `openHost` field.
+
 ## [0.8.3] — 2026-07-20
 
 ### Fixed
@@ -1133,7 +1144,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.4...HEAD
+[0.8.4]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.0...v0.8.1

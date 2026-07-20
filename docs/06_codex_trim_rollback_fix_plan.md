@@ -25,8 +25,9 @@ count を返す場合は、その差分で rollback `numTurns` を補正しま�
 一時的に下がっても同一 thread で戻る挙動を確認したため、Codex automatic
 current-thread refresh は無効化します。`UserPromptSubmit` / `PostToolUse` / `Stop`
 hooks は capture / monitor state write のみ行い、`codex_auto_refresh_disabled` で
-quiet にします。bare `$throughline` は `codex-handoff-start --execute` による
-app-server 新スレッド handoff とします。
+quiet にします。bare `$throughline` は
+`codex-handoff-start --execute --open-host <current-codex-surface>` による
+app-server 新スレッド handoff とし、surfaceはCodex UI contextから明示します。
 
 最初のインシデント仮説に対する重要な訂正:
 
