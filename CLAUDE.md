@@ -64,11 +64,15 @@ VS Code／CLIの既存経路は維持する。CLIとCodex hookの並行起動で
 9/9 green。npm `latest` は0.8.3、shasumは `cf4f71fa4cba2158bb1224d38b7f55cc459ab9e5`。
 tag / GitHub Releaseとregistry由来global install（`throughline --version` = 0.8.3）まで確認済み。
 
-**v0.8.4（release candidate）**: Codexの `$throughline` skillは、現在のCodex UI surfaceを
+**v0.8.4（2026-07-20公開）**: Codexの `$throughline` skillは、現在のCodex UI surfaceを
 shell／永続PTYの継承環境から推測せず、Desktop／VS Code／CLIに対応する`--open-host`を明示する。
 `codex-handoff-start`は既存`openHost`を維持しつつrequested / resolved hostをJSONとtextで報告する。
 古いVS Code由来PTYからCodex Desktop handoffを実行した事故形と、配布skillの明示host契約を
-focused testで固定した。Claude-facing hook、`/tl`、baton、resume契約は変更しない。
+focused testで固定した。Claude-facing hook、`/tl`、baton、resume契約は変更しない。公開commitは
+`5b840b6`、GitHub CI run `29721583754` は9/9 green。npm `latest` は0.8.4、shasumは
+`1f2c39a22e45f3e02e8739ee5fd6ceefc6a71034`。tag / GitHub Releaseとregistry由来global install
+（`throughline --version` = 0.8.4）、配置skillのrepo／公開package一致、`doctor --codex` exit 0まで確認済み。
+判断と検証証拠は [ADR 0017](docs/adr/0017-codex-handoff-host-boundary.md) に固定する。
 
 **Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・

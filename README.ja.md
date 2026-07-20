@@ -34,7 +34,10 @@ global install は Codex の `UserPromptSubmit` / `PostToolUse` / `Stop` hook
 rollout capture と monitor state 書き込みだけを行い、**使用量閾値での
 `$throughline` 自動注入はしない**（token-monitor は表示専用）。bare
 `$throughline` は app-server 経由で新規 Codex thread を開始し、Throughline DB
-の handoff memory を developer item として注入する。current-thread rollback
+の handoff memory を developer item として注入する。このとき現在のCodex UI surfaceから
+Desktop／VS Code／CLIを選び、対応する`--open-host`を明示する。shellや永続PTYから継承した
+環境変数はsurface判定に使わない。`auto`はsurfaceが本当に不明な直接CLI利用時だけの互換経路。
+current-thread rollback
 診断が要る時だけ明示的に `trim --execute --host codex` を使う。既存の
 非 Throughline Codex hook は保持される。
 
