@@ -10,6 +10,20 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.7] — 2026-07-20
+
+### Fixed
+
+- Windows CI no longer calls the completed-turn receipt ACL PowerShell path
+  hundreds of times just to construct 256-record boundary fixtures. Boundary
+  behavior still crosses the limit through the public API, while dedicated
+  tests preserve native owner-only ACL verification and atomic failure safety.
+- Completed-turn receipt mutations now spend ACL subprocesses only on distinct
+  state transitions: three for a new Windows store and four for a replacement.
+- CI keeps the full 3-OS by 3-Node matrix, cancels only older runs for the same
+  event and ref, and gives the unit-test step an eight-minute regression guard
+  around a five-minute Windows SLO.
+
 ## [0.8.6] — 2026-07-20
 
 ### Fixed
@@ -1163,7 +1177,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.6...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.7...HEAD
+[0.8.7]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.3...v0.8.4

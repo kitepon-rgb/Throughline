@@ -19,6 +19,7 @@
 | [11_codex_monitor_implementation_plan.md](11_codex_monitor_implementation_plan.md) | Codex monitor 対応の実装記録 |
 | [13_native_factory_diagnostics_plan.md](13_native_factory_diagnostics_plan.md) | native factory read-only readiness 診断の実装記録 |
 | [14_observer_completed_turn_feed_plan.md](14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only read / wait CLIのactive計画。CLI・opaque cursor・pagination・最大3600秒waitは実装済み、公開／full regression gateは継続中 |
+| [15_windows_ci_release_latency_plan.md](15_windows_ci_release_latency_plan.md) | Windows CI 18分の原因、ACL安全網を維持した短縮、release gateの受入条件 |
 | [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) | local runtime error aggregate store の契約と実装 TODO |
 
 ## Supporting Records
@@ -35,6 +36,7 @@
 - [ADR 0001](adr/0001-claude-primary-codex-adapter.md): Claude primaryを維持し、Codexをadapterとして追加する。
 - [ADR 0002](adr/0002-observer-claude-completion-receipt.md): Claude completed turnはThroughline所有のStop receiptで固定する。
 - [ADR 0003](adr/0003-observer-completed-chain-cursor.md): Observer cursorをhost固有のcompleted pair chainとprefix検証へ束縛する。
+- [ADR 0020](adr/0020-windows-ci-release-latency.md): Windows ACL契約を維持し、境界fixtureと実ACL検証を分離する。
 
 Observerの公開境界は`throughline observer-read`／`throughline observer-wait`のJSON-only CLIである。
 ThroughlineはClaude Stop receiptとCodex rolloutの`task_complete`だけからcompleted cursorを構築し、

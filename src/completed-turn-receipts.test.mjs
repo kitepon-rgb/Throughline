@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import childProcess from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -10,6 +11,8 @@ import {
   readCompletedTurnReceiptSnapshot,
   writeCompletedTurnReceipt,
 } from './completed-turn-receipts.mjs';
+import { seedCompletedTurnReceiptStore } from './completed-turn-receipts-test-fixture.mjs';
+import { verifyWindowsPrivateAcl } from './windows-acl-test-helper.mjs';
 
 function sandbox() {
   const root = mkdtempSync(join(tmpdir(), 'throughline-completed-receipts-'));
@@ -101,9 +104,8 @@ test('completed turn receipt: rejects symlinked store paths', { skip: process.pl
 test('completed turn receipt: bounded store drops only oldest receipts', () => {
   const box = sandbox();
   try {
-    for (let index = 1; index <= COMPLETED_TURN_RECEIPT_LIMIT + 1; index++) {
-      writeCompletedTurnReceipt({ ...input(index), targetSessionId: `target-${index}` }, { storePath: box.storePath });
-    }
+    seedCompletedTurnReceiptStore({ projectPath: '/repo', receiptOptions: { storePath: box.storePath } });
+    writeCompletedTurnReceipt({ ...input(COMPLETED_TURN_RECEIPT_LIMIT + 1), targetSessionId: 'target-final' }, { storePath: box.storePath });
     const stored = JSON.parse(readFileSync(box.storePath, 'utf8'));
     assert.equal(stored.receipts.length, COMPLETED_TURN_RECEIPT_LIMIT);
     assert.equal(stored.history_floor, 2);
@@ -119,13 +121,79 @@ test('completed turn receipt: noisy project cannot evict another project anchor'
   const env = { HOME: box.root, USERPROFILE: box.root, XDG_STATE_HOME: join(box.root, 'state-home') };
   try {
     const quiet = writeCompletedTurnReceipt({ ...input(), projectPath: '/quiet-project' }, { env });
-    for (let index = 1; index <= COMPLETED_TURN_RECEIPT_LIMIT + 1; index++) {
-      writeCompletedTurnReceipt({ ...input(index), projectPath: '/noisy-project', targetSessionId: `target-${index}` }, { env });
-    }
+    seedCompletedTurnReceiptStore({ projectPath: '/noisy-project', receiptOptions: { env } });
+    writeCompletedTurnReceipt({
+      ...input(COMPLETED_TURN_RECEIPT_LIMIT + 1),
+      projectPath: '/noisy-project', targetSessionId: 'target-final',
+    }, { env });
     const quietStorePath = defaultCompletedTurnReceiptStorePath(quiet.project_sha256, env);
     const quietStore = JSON.parse(readFileSync(quietStorePath, 'utf8'));
     assert.equal(quietStore.receipts.length, 1);
     assert.equal(quietStore.receipts[0].sequence, 1);
+  } finally {
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test('completed turn receipt: one Windows mutation spends ACL processes only on distinct state transitions', (t) => {
+  const box = sandbox();
+  const env = { OS: 'Windows_NT', HOME: box.root, USERPROFILE: box.root };
+  const calls = [];
+  t.mock.method(childProcess, 'spawnSync', (command, args, options) => {
+    calls.push({ command, args, options });
+    return { status: 0, signal: null, error: undefined };
+  });
+  const options = { env, storePath: box.storePath };
+
+  try {
+    writeCompletedTurnReceipt(input(1), options);
+    assert.equal(calls.length, 3, 'new directory, lock, and store each require one apply+verify process');
+    assert.ok(calls.every((call) => call.command === 'powershell.exe'));
+    calls.length = 0;
+
+    writeCompletedTurnReceipt(input(2), options);
+    assert.equal(calls.length, 4, 'directory apply, existing lock/store verify, and replacement store apply are distinct');
+    assert.ok(calls.every((call) => call.options.timeout === 15_000));
+  } finally {
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test('completed turn receipt: Windows temporary ACL failure leaves the previous atomic store intact', (t) => {
+  const box = sandbox();
+  const env = { OS: 'Windows_NT', HOME: box.root, USERPROFILE: box.root };
+  let calls = 0;
+  let failAt = Number.POSITIVE_INFINITY;
+  t.mock.method(childProcess, 'spawnSync', () => {
+    calls += 1;
+    return { status: calls === failAt ? 1 : 0, signal: null, error: undefined };
+  });
+  const options = { env, storePath: box.storePath };
+
+  try {
+    writeCompletedTurnReceipt(input(1), options);
+    const before = readFileSync(box.storePath, 'utf8');
+    failAt = calls + 4;
+    assert.throws(() => writeCompletedTurnReceipt(input(2), options), /ACL verification failed/);
+    assert.equal(readFileSync(box.storePath, 'utf8'), before);
+  } finally {
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test('completed turn receipt: atomic private store has owner-only modes', () => {
+  const box = sandbox();
+  try {
+    writeCompletedTurnReceipt(input(), { storePath: box.storePath });
+    if (process.platform === 'win32') {
+      verifyWindowsPrivateAcl(dirname(box.storePath), true);
+      verifyWindowsPrivateAcl(`${box.storePath}.lock.sqlite`);
+      verifyWindowsPrivateAcl(box.storePath);
+    } else {
+      assert.equal(statSync(dirname(box.storePath)).mode & 0o777, 0o700);
+      assert.equal(statSync(`${box.storePath}.lock.sqlite`).mode & 0o777, 0o600);
+      assert.equal(statSync(box.storePath).mode & 0o777, 0o600);
+    }
   } finally {
     rmSync(box.root, { recursive: true, force: true });
   }

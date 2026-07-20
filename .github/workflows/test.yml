@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: test (${{ matrix.os }} · node ${{ matrix.node-version }})
@@ -32,6 +36,7 @@ jobs:
           npm --version
 
       - name: Run unit tests
+        timeout-minutes: 8
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             npm test -- --test-concurrency=1

@@ -6,6 +6,7 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { decodeObserverCursor, encodeObserverCursor, readObserverTurnPage, resolveObserverTurnFeed } from './observer-turn-feed.mjs';
 import { writeCompletedTurnReceipt } from './completed-turn-receipts.mjs';
+import { seedCompletedTurnReceiptStore } from './completed-turn-receipts-test-fixture.mjs';
 import { hashAuditorBody } from './body-digest.mjs';
 
 function fixture() {
@@ -123,7 +124,8 @@ test('observer feed: Claude history floor, host/thread switch, cross-host tie, a
   const box = fixture();
   try {
     const options = box.receiptOptions;
-    for (let i = 1; i <= 257; i++) writeCompletedTurnReceipt({ projectPath: box.project, targetSessionId: 'claude-session', originSessionId: `o${i}`, userBody: `u${i}`, assistantBody: `a${i}`, completedAt: i }, options);
+    seedCompletedTurnReceiptStore({ projectPath: box.project, receiptOptions: options, targetSessionId: 'claude-session' });
+    writeCompletedTurnReceipt({ projectPath: box.project, targetSessionId: 'claude-session', originSessionId: 'o257', userBody: 'u257', assistantBody: 'a257', completedAt: 257 }, options);
     const latest = resolveObserverTurnFeed({ projectPath: box.project, receiptOptions: options, codexHome: box.home });
     const decoded = decodeObserverCursor(latest.throughCursor);
     const beforeFloor = encodeObserverCursor({ ...decoded, history_floor: 1 });

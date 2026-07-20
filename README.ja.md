@@ -363,6 +363,7 @@ Throughline state をまだ書いていない現在セッションも表示で�
 - [`docs/09_rollback_context_trim_insight.md`](docs/09_rollback_context_trim_insight.md) — rollback / trim 設計 insight。復元 memory を current work として読ませる制約も記録
 - [`docs/07_codex_trim_implementation_plan.md`](docs/07_codex_trim_implementation_plan.md) — Claude/Codex 両対応と rollback trim の統合 TODO 計画
 - [`docs/04_public_release_plan.md`](docs/04_public_release_plan.md) — 公開配布化プラン、§ 0 フォールバック禁止ルール、バージョン別実装ステータス
+- [`docs/15_windows_ci_release_latency_plan.md`](docs/15_windows_ci_release_latency_plan.md) — Windows CI性能gateとACL契約を維持するrelease工程
 - [`CHANGELOG.md`](CHANGELOG.md) — リリース履歴
 - [`docs/archive/`](docs/archive/) — 破棄済み旧設計 (CONCEPT 初期案、session-linking 実験記録など)
 

@@ -142,7 +142,11 @@ function writeStore(store, normalized, options, privateDirectory) {
       chmodSync(temporary, 0o600);
     }
     renameSync(temporary, path);
-    assertPrivateFile(lstatSync(path), options.env, path);
+    // The temporary file ACL is applied and read back before rename. Rename
+    // preserves that ACL, so only the new final path shape needs an immediate
+    // in-process check; native integration tests verify the external ACL.
+    if (isWindows(options.env)) assertPrivateFileShape(lstatSync(path));
+    else assertPrivateFile(lstatSync(path), options.env, path);
   } finally {
     rmSync(temporary, { force: true });
   }
@@ -164,7 +168,8 @@ function withStoreLock(normalized, options, operation) {
     if (isWindows(options.env)) applyAndVerifyWindowsAcl(lockPath, false);
     else chmodSync(lockPath, 0o600);
   }
-  assertPrivateFile(lstatSync(lockPath), options.env, lockPath);
+  if (created && isWindows(options.env)) assertPrivateFileShape(lstatSync(lockPath));
+  else assertPrivateFile(lstatSync(lockPath), options.env, lockPath);
   const database = new DatabaseSync(lockPath);
   let active = false;
   try {
@@ -186,7 +191,8 @@ function ensurePrivateDirectory(directory, env) {
   assertPrivateDirectoryShape(info);
   if (isWindows(env)) applyAndVerifyWindowsAcl(directory, true);
   else chmodSync(directory, 0o700);
-  assertPrivateDirectory(directory, env);
+  if (isWindows(env)) assertPrivateDirectoryShape(lstatSync(directory));
+  else assertPrivateDirectory(directory, env);
 }
 
 function privateDirectoryCapability(directory, env) {

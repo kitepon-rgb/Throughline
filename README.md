@@ -1148,6 +1148,8 @@ the first generation to pick up the auto-start task.
 - [`docs/04_public_release_plan.md`](docs/04_public_release_plan.md) — public
   release plan, implementation status by version, § 0 fallback rule, and
   remaining tasks.
+- [`docs/15_windows_ci_release_latency_plan.md`](docs/15_windows_ci_release_latency_plan.md) —
+  Windows CI performance gate and the ACL-preserving release workflow.
 - [`docs/archive/`](docs/archive/) — superseded design documents kept for
   historical reference (original CONCEPT, session-linking experiments,
   pre-publish action list).
