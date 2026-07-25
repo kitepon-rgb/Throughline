@@ -81,14 +81,14 @@ focused testで固定した。Claude-facing hook、`/tl`、baton、resume契約�
 [ADR 0018](docs/adr/0018-product-owned-database-migration.md) を正とする。0.8.5はrelease dry-run後に
 別作業の未コミット文書が混入したためdeprecateし、同一runtimeをclean worktreeから0.8.6として再公開した。
 
-**v0.8.7（2026-07-20 release準備）**: Windows completed-turn receiptの256件境界testは
+**v0.8.7（2026-07-20公開）**: Windows completed-turn receiptの256件境界testは
 正規fixtureから最後の1 mutationだけ公開APIを通し、
 本体ACL処理は初回3回・継続4回のdistinct transitionへ限定した。temporary ACL失敗時の旧store保持と
 directory／lock／final storeのnative owner-only ACLは専用testで維持する。CIは9 matrixを維持し、
 event／ref単位concurrency、unit test 5分SLO／8分timeoutとする。判断は
 [ADR 0020](docs/adr/0020-windows-ci-release-latency.md) を正とする。
 
-**Observer completed-turn feed（2026-07-15開発中）**: Claude private receiptとCodex
+**Observer completed-turn feed（2026-07-16実装・受入完了）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
 assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切
 返さず、schema/project/I/O異常はhard failure、本文bound時もturn recordとdigestを保持する。
