@@ -14,12 +14,14 @@
 > **Cut ~90% of Claude Code's context usage while keeping nearly all the memory.**
 > Throughline separates conversation by **type, not time** — humans-readable text stays, machine-generated tool output retires to SQLite. Same decisions, same context, 90% lighter.
 
-## Factory role
+Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https://kitepon.dev/en).
 
-Throughline is one of the ten self-owned core products managed by the
-[dotagents development factory](https://github.com/kitepon-rgb/dotagents).
+## Ownership boundary
+
 This repository owns the database, migrations, capture contracts, release, and
-diagnostics; dotagents owns cross-product installation and host integration.
+diagnostics. Cross-product installation and host integration are handled by
+[dotagents](https://github.com/kitepon-rgb/dotagents), the internal development
+toolchain behind kitepon.dev's products.
 MarkItDown is a separately managed third-party CLI.
 
 ## In 30 seconds

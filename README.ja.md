@@ -14,11 +14,15 @@
 > **Claude Code のコンテキスト消費を約 90% 削減しつつ、記憶はほぼそのまま残す。**
 > 「時間の新旧」ではなく **「コンテンツの種類」** で会話を分離する。人間が読みたいテキストは残し、機械が出力したツール I/O は SQLite に退避する。同じ判断、同じ文脈、9 割軽量。
 
-## 開発工場での位置づけ
+[kitepon.dev](https://kitepon.dev/)を運営する[クオ（@QLyun35332）](https://x.com/QLyun35332)が
+開発・メンテナンスしています。
 
-Throughlineは[dotagents開発工場](https://github.com/kitepon-rgb/dotagents)が管理する
-自作コア10製品の一つです。本repoはdatabase、migration、capture契約、release、diagnosticsを所有し、
-dotagentsは製品横断の導入とhost統合を所有します。MarkItDownは別区分の第三者CLIです。
+## 所有境界
+
+本repositoryはdatabase、migration、capture契約、release、diagnosticsを所有します。
+製品横断の導入とhost統合は、kitepon.devの製品開発を支える内部基盤
+[dotagents](https://github.com/kitepon-rgb/dotagents)が担当します。
+MarkItDownは別区分の第三者CLIです。
 
 ## 30 秒で始める
 
