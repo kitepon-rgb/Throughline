@@ -9,12 +9,16 @@
     "context-compression",
     "llm"
   ],
-  "author": "kitepon",
+  "author": {
+    "name": "Quo / クオ at kitepon.dev",
+    "url": "https://x.com/QLyun35332"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kitepon-rgb/Throughline.git"
   },
+  "homepage": "https://github.com/kitepon-rgb/Throughline#readme",
   "bin": {
     "throughline": "bin/throughline.mjs"
   },
