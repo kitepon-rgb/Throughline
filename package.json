@@ -11,12 +11,15 @@
   ],
   "author": {
     "name": "Quo / クオ at kitepon.dev",
-    "url": "https://x.com/QLyun35332"
+    "url": "https://kitepon.dev/"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kitepon-rgb/Throughline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kitepon-rgb/Throughline/issues"
   },
   "homepage": "https://github.com/kitepon-rgb/Throughline#readme",
   "bin": {
