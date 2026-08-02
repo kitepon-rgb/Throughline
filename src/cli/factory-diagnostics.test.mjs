@@ -166,11 +166,11 @@ test('factory-diagnostics hook inspection rejects corrupt and false-ready shapes
       expectedPromptCommand: 'prompt',
       expectedPostToolUseCommand: 'post',
       expectedStopCommand: 'stop',
-      managedPromptHooks: [{ type: 'command', command: 'prompt', timeoutSec: 30, async: true }],
+      managedPromptHooks: [{ type: 'command', command: 'prompt', timeout: 30, async: true }],
       legacyManagedPromptHooks: [],
-      managedPostToolUseHooks: [{ type: 'command', command: 'post', timeoutSec: 30, async: false }],
+      managedPostToolUseHooks: [{ type: 'command', command: 'post', timeout: 30, async: false }],
       legacyManagedPostToolUseHooks: [],
-      managedStopHooks: [{ type: 'command', command: 'stop', timeoutSec: 300, async: false }],
+      managedStopHooks: [{ type: 'command', command: 'stop', timeout: 300, async: false }],
       legacyManagedStopHooks: [],
     }),
   });
@@ -178,6 +178,31 @@ test('factory-diagnostics hook inspection rejects corrupt and false-ready shapes
 });
 
 test('factory-diagnostics hook inspection summarizes every canonical ready event as ready', () => {
+  const result = inspectFactoryHooks({
+    readHooks: () => ({
+      configExists: true,
+      configReadable: true,
+      hooksExists: true,
+      hooksReadable: true,
+      featureEnabled: true,
+      expectedPromptCommand: 'prompt',
+      expectedPostToolUseCommand: 'post',
+      expectedStopCommand: 'stop',
+      managedPromptHooks: [{ type: 'command', command: 'prompt', timeout: 30, async: false }],
+      legacyManagedPromptHooks: [],
+      managedPostToolUseHooks: [{ type: 'command', command: 'post', timeout: 30, async: false }],
+      legacyManagedPostToolUseHooks: [],
+      managedStopHooks: [{ type: 'command', command: 'stop', timeout: 300, async: false }],
+      legacyManagedStopHooks: [],
+    }),
+  });
+
+  assert.deepEqual(result.events, { userPromptSubmit: 'ready', postToolUse: 'ready', stop: 'ready' });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.reason, 'hooks_inspected');
+});
+
+test('factory-diagnostics hook inspection rejects legacy timeoutSec keys', () => {
   const result = inspectFactoryHooks({
     readHooks: () => ({
       configExists: true,
@@ -197,9 +222,8 @@ test('factory-diagnostics hook inspection summarizes every canonical ready event
     }),
   });
 
-  assert.deepEqual(result.events, { userPromptSubmit: 'ready', postToolUse: 'ready', stop: 'ready' });
-  assert.equal(result.status, 'ready');
-  assert.equal(result.reason, 'hooks_inspected');
+  assert.deepEqual(result.events, { userPromptSubmit: 'not_ready', postToolUse: 'not_ready', stop: 'not_ready' });
+  assert.equal(result.status, 'not_ready');
 });
 
 function createFactorySchema(db) {

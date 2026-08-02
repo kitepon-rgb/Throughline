@@ -10,6 +10,20 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.8] — 2026-08-02
+
+### Fixed
+
+- Codex hook installation now writes the supported `timeout` field in seconds
+  for UserPromptSubmit, PostToolUse, and Stop. The previously emitted
+  `timeoutSec` field was ignored by Codex, leaving all three hooks at the
+  600-second default.
+- Reinstall canonicalizes existing Throughline-managed hooks by command
+  identity, replacing legacy `timeoutSec` entries while preserving unrelated
+  Codex hooks. Doctor reports the effective `timeout` field and explicitly
+  flags the legacy key for reinstall; factory diagnostics no longer classify
+  the ignored key as ready.
+
 ## [0.8.7] — 2026-07-20
 
 ### Fixed
@@ -1177,7 +1191,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.7...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.8...HEAD
+[0.8.8]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.4...v0.8.5

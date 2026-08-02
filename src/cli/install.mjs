@@ -170,7 +170,7 @@ function createCodexHooks() {
         {
           type: 'command',
           command: buildCodexUserPromptSubmitHookCommand(),
-          timeoutSec: 30,
+          timeout: 30,
           async: false,
           statusMessage: null,
         },
@@ -181,7 +181,7 @@ function createCodexHooks() {
         {
           type: 'command',
           command: buildCodexPostToolUseHookCommand(),
-          timeoutSec: 30,
+          timeout: 30,
           async: false,
           statusMessage: null,
         },
@@ -192,7 +192,7 @@ function createCodexHooks() {
         {
           type: 'command',
           command: buildCodexStopHookCommand(),
-          timeoutSec: 300,
+          timeout: 300,
           async: false,
           statusMessage: null,
         },

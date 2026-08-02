@@ -19,7 +19,41 @@ const {
   runTrimDiagnosis,
   buildCodexContextRefreshDiagnosis,
   readCodexHostPrimitiveDiagnosis,
+  describeCodexHookRegistration,
+  printCodexHookDetails,
 } = _internal;
+
+test('Codex hook diagnosis requires reinstall for legacy timeoutSec key', () => {
+  const legacy = { type: 'command', command: 'canonical', timeoutSec: 300, async: false };
+  assert.equal(
+    describeCodexHookRegistration([legacy], [], 300),
+    'legacy timeout key needs reinstall',
+  );
+  assert.equal(
+    describeCodexHookRegistration([{ type: 'command', command: 'canonical', timeout: 300, async: false }], [], 300),
+    'registered',
+  );
+});
+
+test('Codex hook diagnosis prints timeout and exposes ignored legacy key', () => {
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(line);
+  try {
+    printCodexHookDetails({
+      command: 'canonical',
+      timeout: 300,
+      timeoutSec: 30,
+      async: false,
+      throughlineDoctorTrusted: true,
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const output = lines.join('\n');
+  assert.match(output, /timeout:\s+300/);
+  assert.match(output, /legacy timeoutSec:\s+30 \(ignored by Codex; reinstall required\)/);
+});
 
 // ─── parseArgs ──────────────────────────────────────────────────────
 
@@ -345,7 +379,7 @@ test('readCodexHookDiagnosis detects Codex prompt and Stop hooks', () => {
                   {
                     type: 'command',
                     command: '/usr/bin/node /pkg/bin/throughline.mjs codex-hook user-prompt-submit',
-                    timeoutSec: 30,
+                    timeout: 30,
                     async: false,
                   },
                 ],
@@ -357,7 +391,7 @@ test('readCodexHookDiagnosis detects Codex prompt and Stop hooks', () => {
                   {
                     type: 'command',
                     command: '/usr/bin/node /pkg/bin/throughline.mjs codex-hook post-tool-use',
-                    timeoutSec: 30,
+                    timeout: 30,
                     async: false,
                   },
                 ],
@@ -369,7 +403,7 @@ test('readCodexHookDiagnosis detects Codex prompt and Stop hooks', () => {
                   {
                     type: 'command',
                     command: 'throughline codex-hook stop',
-                    timeoutSec: 300,
+                    timeout: 300,
                     async: true,
                   },
                 ],

@@ -480,6 +480,31 @@ function summarizeHookTrust(hooks, { hooksFeatureEnabled, codexHooksFeatureEnabl
   };
 }
 
+function hasLegacyCodexHookTimeout(hook) {
+  return Object.hasOwn(hook, 'timeoutSec');
+}
+
+function describeCodexHookRegistration(hooks, legacyCommandHooks, expectedTimeout) {
+  if (hooks.length === 0) return 'not registered';
+  if (legacyCommandHooks.length > 0) return 'legacy command needs reinstall';
+  if (hooks.some(hasLegacyCodexHookTimeout)) return 'legacy timeout key needs reinstall';
+  if (hooks.length !== 1) return 'configuration needs reinstall';
+  const hook = hooks[0];
+  return hook.type === 'command' && hook.timeout === expectedTimeout && hook.async === false
+    ? 'registered'
+    : 'configuration needs reinstall';
+}
+
+function printCodexHookDetails(hook) {
+  console.log(`    command:             ${hook.command}`);
+  console.log(`    async:               ${hook.async === false ? 'false' : String(hook.async)}`);
+  console.log(`    timeout:             ${hook.timeout ?? '(default: 600)'}`);
+  if (hasLegacyCodexHookTimeout(hook)) {
+    console.log(`    legacy timeoutSec:   ${hook.timeoutSec} (ignored by Codex; reinstall required)`);
+  }
+  console.log(`    trusted:             ${hook.throughlineDoctorTrusted ? 'yes' : 'no'}`);
+}
+
 function readCodexHookDiagnosis(codexHome) {
   const hooksPath = join(codexHome, 'hooks.json');
   const configPath = join(codexHome, 'config.toml');
@@ -599,47 +624,29 @@ function runCodexDiagnosis({
   console.log(`  CODEX_HOME:            ${codexHome}`);
   console.log(`  Codex hooks feature:   ${hookDiagnosis.featureEnabled ? 'enabled' : 'not enabled'}`);
   console.log(`  Codex hook trust:      ${hookDiagnosis.managedHookTrust.status}`);
-  console.log(`  Codex UserPrompt hook: ${
-    hookDiagnosis.managedPromptHooks.length === 0
-      ? 'not registered'
-      : hookDiagnosis.legacyManagedPromptHooks.length > 0
-        ? 'legacy command needs reinstall'
-        : 'registered'
-  }`);
+  console.log(`  Codex UserPrompt hook: ${describeCodexHookRegistration(
+    hookDiagnosis.managedPromptHooks,
+    hookDiagnosis.legacyManagedPromptHooks,
+    30,
+  )}`);
   if (hookDiagnosis.managedPromptHooks.length > 0) {
-    const h = hookDiagnosis.managedPromptHooks[0];
-    console.log(`    command:             ${h.command}`);
-    console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
-    console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
-    console.log(`    trusted:             ${h.throughlineDoctorTrusted ? 'yes' : 'no'}`);
+    printCodexHookDetails(hookDiagnosis.managedPromptHooks[0]);
   }
-  console.log(`  Codex PostTool hook:   ${
-    hookDiagnosis.managedPostToolUseHooks.length === 0
-      ? 'not registered'
-      : hookDiagnosis.legacyManagedPostToolUseHooks.length > 0
-        ? 'legacy command needs reinstall'
-        : 'registered'
-  }`);
+  console.log(`  Codex PostTool hook:   ${describeCodexHookRegistration(
+    hookDiagnosis.managedPostToolUseHooks,
+    hookDiagnosis.legacyManagedPostToolUseHooks,
+    30,
+  )}`);
   if (hookDiagnosis.managedPostToolUseHooks.length > 0) {
-    const h = hookDiagnosis.managedPostToolUseHooks[0];
-    console.log(`    command:             ${h.command}`);
-    console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
-    console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
-    console.log(`    trusted:             ${h.throughlineDoctorTrusted ? 'yes' : 'no'}`);
+    printCodexHookDetails(hookDiagnosis.managedPostToolUseHooks[0]);
   }
-  console.log(`  Codex Stop hook:       ${
-    hookDiagnosis.managedStopHooks.length === 0
-      ? 'not registered'
-      : hookDiagnosis.legacyManagedStopHooks.length > 0
-        ? 'legacy command needs reinstall'
-        : 'registered'
-  }`);
+  console.log(`  Codex Stop hook:       ${describeCodexHookRegistration(
+    hookDiagnosis.managedStopHooks,
+    hookDiagnosis.legacyManagedStopHooks,
+    300,
+  )}`);
   if (hookDiagnosis.managedStopHooks.length > 0) {
-    const h = hookDiagnosis.managedStopHooks[0];
-    console.log(`    command:             ${h.command}`);
-    console.log(`    async:               ${h.async === false ? 'false' : String(h.async)}`);
-    console.log(`    timeoutSec:          ${h.timeoutSec ?? '(default)'}`);
-    console.log(`    trusted:             ${h.throughlineDoctorTrusted ? 'yes' : 'no'}`);
+    printCodexHookDetails(hookDiagnosis.managedStopHooks[0]);
   }
   console.log(`  VSCode monitor task:   ${monitorTaskDiagnosis.status}`);
   if (monitorTaskDiagnosis.path) {
@@ -1024,6 +1031,8 @@ export const _internal = {
   buildCodexContextRefreshDiagnosis,
   readCodexHostPrimitiveDiagnosis,
   readCodexHookDiagnosis,
+  describeCodexHookRegistration,
+  printCodexHookDetails,
   readVsCodeMonitorTaskDiagnosis,
   isPidAlive,
   findLatestJsonlInSameDir,

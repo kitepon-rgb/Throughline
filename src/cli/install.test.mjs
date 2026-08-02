@@ -120,19 +120,21 @@ test('global install registers Codex session hooks and enables hooks features', 
       .find(h => h.command === expectedStopCommand);
     assert.ok(codexHook, 'Codex Stop should have absolute throughline.mjs codex-hook stop');
     assert.equal(codexHook.async, false, 'Codex Stop hook should be synchronous for Codex');
-    assert.equal(codexHook.timeoutSec, 300, 'Codex Stop hook should allow summarizer time');
+    assert.equal(codexHook.timeout, 300, 'Codex Stop hook should allow summarizer time');
     const promptHook = hooks.hooks.UserPromptSubmit
       .flatMap(g => g.hooks ?? [])
       .find(h => h.command === expectedPromptCommand);
     assert.ok(promptHook, 'Codex UserPromptSubmit should have absolute throughline.mjs codex-hook user-prompt-submit');
     assert.equal(promptHook.async, false, 'Codex UserPromptSubmit hook should be synchronous for capture/monitor state');
-    assert.equal(promptHook.timeoutSec, 30, 'Codex UserPromptSubmit hook should be short');
+    assert.equal(promptHook.timeout, 30, 'Codex UserPromptSubmit hook should be short');
     const postToolUseHook = hooks.hooks.PostToolUse
       .flatMap(g => g.hooks ?? [])
       .find(h => h.command === expectedPostToolUseCommand);
     assert.ok(postToolUseHook, 'Codex PostToolUse should have absolute throughline.mjs codex-hook post-tool-use');
     assert.equal(postToolUseHook.async, false, 'Codex PostToolUse hook should be synchronous for capture/monitor state');
-    assert.equal(postToolUseHook.timeoutSec, 30, 'Codex PostToolUse hook should be short');
+    assert.equal(postToolUseHook.timeout, 30, 'Codex PostToolUse hook should be short');
+    const managedHooks = [codexHook, promptHook, postToolUseHook];
+    assert.doesNotMatch(JSON.stringify(managedHooks), /timeoutSec/);
     const config = readFileSync(join(home.dir, '.codex', 'config.toml'), 'utf8');
     assert.match(config, /^\[features\]\ncodex_hooks = true/m);
     assert.match(config, /^hooks = true/m);
@@ -245,7 +247,7 @@ test('global install preserves existing Codex hooks and is idempotent', async ()
                 {
                   type: 'command',
                   command: '/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop',
-                  timeoutSec: 5,
+                  timeout: 5,
                   async: false,
                   statusMessage: null,
                 },
@@ -287,7 +289,7 @@ test('global install preserves existing Codex hooks and is idempotent', async ()
   }
 });
 
-test('global install updates existing Throughline Codex hook shapes', async () => {
+test('global install replaces legacy timeoutSec Throughline Codex hook shapes', async () => {
   const home = makeTempHome();
   if (home.resolved !== home.dir) {
     home.restore();
@@ -356,19 +358,22 @@ test('global install updates existing Throughline Codex hook shapes', async () =
       .filter(h => h.command === expectedStopCommand);
     assert.equal(codexHooks.length, 1);
     assert.equal(codexHooks[0].async, false);
-    assert.equal(codexHooks[0].timeoutSec, 300);
+    assert.equal(codexHooks[0].timeout, 300);
+    assert.equal(Object.hasOwn(codexHooks[0], 'timeoutSec'), false);
     const promptHooks = hooks.hooks.UserPromptSubmit
       .flatMap(g => g.hooks ?? [])
       .filter(h => h.command === expectedPromptCommand);
     assert.equal(promptHooks.length, 1);
     assert.equal(promptHooks[0].async, false);
-    assert.equal(promptHooks[0].timeoutSec, 30);
+    assert.equal(promptHooks[0].timeout, 30);
+    assert.equal(Object.hasOwn(promptHooks[0], 'timeoutSec'), false);
     const postToolUseHooks = hooks.hooks.PostToolUse
       .flatMap(g => g.hooks ?? [])
       .filter(h => h.command === expectedPostToolUseCommand);
     assert.equal(postToolUseHooks.length, 1);
     assert.equal(postToolUseHooks[0].async, false);
-    assert.equal(postToolUseHooks[0].timeoutSec, 30);
+    assert.equal(postToolUseHooks[0].timeout, 30);
+    assert.equal(Object.hasOwn(postToolUseHooks[0], 'timeoutSec'), false);
     assert.equal(
       hooks.hooks.Stop.flatMap(g => g.hooks ?? []).filter(h => h.command === 'throughline codex-hook stop').length,
       0,
@@ -426,7 +431,7 @@ test('global uninstall removes only Throughline-managed Codex hook', async () =>
         {
           type: 'command',
           command: '/usr/bin/node /home/kite/.npm-global/bin/caveat codex-hook stop',
-          timeoutSec: 5,
+          timeout: 5,
           async: false,
           statusMessage: null,
         },

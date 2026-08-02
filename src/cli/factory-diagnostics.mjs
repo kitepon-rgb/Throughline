@@ -122,11 +122,11 @@ function hasFactoryDatabaseShape(db) {
   return bodiesUnique;
 }
 
-function eventStatus({ hooks, legacyHooks, featureEnabled, expectedCommand, timeoutSec }) {
+function eventStatus({ hooks, legacyHooks, featureEnabled, expectedCommand, timeout }) {
   if (hooks.length === 0) return featureEnabled ? 'not_ready' : 'not_applicable';
   if (!featureEnabled || legacyHooks.length > 0 || hooks.length !== 1) return 'not_ready';
   const hook = hooks[0];
-  return hook.type === 'command' && hook.command === expectedCommand && hook.timeoutSec === timeoutSec &&
+  return hook.type === 'command' && hook.command === expectedCommand && hook.timeout === timeout &&
     hook.async === false ? 'ready' : 'not_ready';
 }
 
@@ -143,21 +143,21 @@ export function inspectFactoryHooks({ codexHome = defaultCodexHome(), readHooks 
         legacyHooks: diagnosis.legacyManagedPromptHooks,
         featureEnabled: diagnosis.featureEnabled,
         expectedCommand: diagnosis.expectedPromptCommand,
-        timeoutSec: 30,
+        timeout: 30,
       }),
       postToolUse: eventStatus({
         hooks: diagnosis.managedPostToolUseHooks,
         legacyHooks: diagnosis.legacyManagedPostToolUseHooks,
         featureEnabled: diagnosis.featureEnabled,
         expectedCommand: diagnosis.expectedPostToolUseCommand,
-        timeoutSec: 30,
+        timeout: 30,
       }),
       stop: eventStatus({
         hooks: diagnosis.managedStopHooks,
         legacyHooks: diagnosis.legacyManagedStopHooks,
         featureEnabled: diagnosis.featureEnabled,
         expectedCommand: diagnosis.expectedStopCommand,
-        timeoutSec: 300,
+        timeout: 300,
       }),
     };
     const values = Object.values(events);

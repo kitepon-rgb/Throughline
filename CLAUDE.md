@@ -88,6 +88,11 @@ directory／lock／final storeのnative owner-only ACLは専用testで維持す�
 event／ref単位concurrency、unit test 5分SLO／8分timeoutとする。判断は
 [ADR 0020](docs/adr/0020-windows-ci-release-latency.md) を正とする。
 
+**v0.8.8（2026-08-02 release準備）**: Codex `hooks.json` の hook deadline は
+Codexが解釈する秒単位の `timeout` keyへ修正した。従来の `timeoutSec` は無視されて
+既定600秒になっていたため、再install時にcommand identityで3 managed hookをcanonical化する。
+`doctor --codex`は旧keyを要再installと明示し、factory diagnosticsは`timeout`だけをreadyとする。
+
 **Observer completed-turn feed（2026-07-16実装・受入完了）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
 assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切
@@ -319,9 +324,9 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 ```json
 {
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "command": "/abs/node /abs/throughline/bin/throughline.mjs codex-hook user-prompt-submit", "async": false, "timeoutSec": 30 }] }],
-    "PostToolUse": [{ "hooks": [{ "command": "/abs/node /abs/throughline/bin/throughline.mjs codex-hook post-tool-use", "async": false, "timeoutSec": 30 }] }],
-    "Stop": [{ "hooks": [{ "command": "/abs/node /abs/throughline/bin/throughline.mjs codex-hook stop", "async": false, "timeoutSec": 300 }] }]
+    "UserPromptSubmit": [{ "hooks": [{ "command": "/abs/node /abs/throughline/bin/throughline.mjs codex-hook user-prompt-submit", "async": false, "timeout": 30 }] }],
+    "PostToolUse": [{ "hooks": [{ "command": "/abs/node /abs/throughline/bin/throughline.mjs codex-hook post-tool-use", "async": false, "timeout": 30 }] }],
+    "Stop": [{ "hooks": [{ "command": "/abs/node /abs/throughline/bin/throughline.mjs codex-hook stop", "async": false, "timeout": 300 }] }]
   }
 }
 ```
@@ -341,7 +346,7 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - Codex trim の削減量は host tokenizer の厳密実測ではなく、現時点では rollout text の `chars / 4` heuristic estimate として dry-run に表示する。rollback candidate turns が 0 の場合は、削減量も 0 と明示する。
 - L2 → L1 要約は現行実装で唯一の subagent 的 external model call。backend 順序は codex-sidecar (configured 時) → Codex CLI（既定 `gpt-5.6-luna`@`low`、ADR 0015 の実測評価で選定）→ Claude Haiku → raw L2。削減割合は既定 1/5 で `THROUGHLINE_L1_RATIO` により割合形式のまま変更できる。`/tl` の in-flight memo はメイン Claude が slash command 手順で書くため sidecar 移行対象ではない
 - Claude CLI を実際に呼ぶテスト / smoke は、明示的に必要な場合だけ実行し、モデルは Haiku を使う。他モデルを使う必要がある場合は根拠を残してから実行する
-- 現行 install は Throughline 管理 Codex hook の shape を更新する。同じ `throughline codex-hook stop` command が既にあっても、絶対パス型 command / `timeoutSec` / `async` などを [src/cli/install.mjs](src/cli/install.mjs) の生成値に合わせる。
+- 現行 install は Throughline 管理 Codex hook の shape を更新する。同じ `throughline codex-hook stop` command が既にあっても、絶対パス型 command / `timeout` / `async` などを [src/cli/install.mjs](src/cli/install.mjs) の生成値に合わせる。旧 `timeoutSec` entry も command identity で除去し、canonical entryへ置換する。
 - **UserPromptSubmit** は二相ハンドオフ第二相 (pending intent 消費 + merge + 予算内注入) + `/tl` または `/clear` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 3 役 (ADR 0014)。注入がこの hook に移ったため、SessionStart 側の注入は廃止（旧「二重注入回避」制約は消滅）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **Claude PostToolUse** は登録しない（schema v4 で廃止）。Codex PostToolUse は別用途で、tool loop 中の rollout capture / monitor state write hook として登録する。current-session refresh instruction は注入しない。
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
