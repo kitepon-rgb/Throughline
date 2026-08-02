@@ -8,7 +8,9 @@ import {
   buildCodexPostToolUseHookCommand,
   buildCodexStopHookCommand,
   buildCodexUserPromptSubmitHookCommand,
+  isEquivalentCodexHookCommand,
   isThroughlineCodexHookCommand,
+  parseCodexHookCommand,
   resolveCodexHookNodePath,
   run,
   resolveThroughlineOnPath,
@@ -578,6 +580,65 @@ test('resolveCodexHookNodePath: falls back to process execPath when PATH node is
     },
   });
   assert.equal(result, execPath);
+});
+
+test('parseCodexHookCommand: 絶対パス型を分解し、旧 PATH 解決型と別コマンドは null', () => {
+  assert.deepEqual(
+    parseCodexHookCommand('/opt/homebrew/bin/node /pkg/bin/throughline.mjs codex-hook stop'),
+    { nodePath: '/opt/homebrew/bin/node', scriptPath: '/pkg/bin/throughline.mjs', event: 'stop' },
+  );
+  assert.deepEqual(
+    parseCodexHookCommand('& "C:\\node.exe" "C:\\pkg\\bin\\throughline.mjs" codex-hook post-tool-use'),
+    { nodePath: 'C:\\node.exe', scriptPath: 'C:\\pkg\\bin\\throughline.mjs', event: 'post-tool-use' },
+  );
+  assert.equal(parseCodexHookCommand('throughline codex-hook stop'), null);
+  assert.equal(parseCodexHookCommand('/bin/node /pkg/bin/throughline.mjs codex-hook rewind'), null);
+  assert.equal(parseCodexHookCommand('/bin/node /pkg/bin/other.mjs codex-hook stop'), null);
+});
+
+test('isEquivalentCodexHookCommand: 同一 node 実体を指す別表記を legacy と誤判定しない', () => {
+  // launchd の最小 PATH から診断すると expected 側だけ Cellar 実体表記になる。
+  const registered = '/opt/homebrew/bin/node /pkg/bin/throughline.mjs codex-hook user-prompt-submit';
+  const expected = '/opt/homebrew/Cellar/node/26.5.0/bin/node /pkg/bin/throughline.mjs codex-hook user-prompt-submit';
+  const realpath = (p) => (p.endsWith('node') ? '/real/node' : p);
+  assert.equal(isEquivalentCodexHookCommand(registered, expected, { realpath }), true);
+});
+
+test('isEquivalentCodexHookCommand: 別 install / 別 event / 旧形式は同一とみなさない', () => {
+  const realpath = (p) => p;
+  assert.equal(
+    isEquivalentCodexHookCommand(
+      '/bin/node /old/bin/throughline.mjs codex-hook stop',
+      '/bin/node /new/bin/throughline.mjs codex-hook stop',
+      { realpath },
+    ),
+    false,
+  );
+  assert.equal(
+    isEquivalentCodexHookCommand(
+      '/bin/node /pkg/bin/throughline.mjs codex-hook stop',
+      '/bin/node /pkg/bin/throughline.mjs codex-hook post-tool-use',
+      { realpath },
+    ),
+    false,
+  );
+  assert.equal(
+    isEquivalentCodexHookCommand(
+      'throughline codex-hook stop',
+      '/bin/node /pkg/bin/throughline.mjs codex-hook stop',
+      { realpath },
+    ),
+    false,
+  );
+  // realpath を解決できない時は同一とみなさない（暗黙の緩和をしない）
+  assert.equal(
+    isEquivalentCodexHookCommand(
+      '/a/node /pkg/bin/throughline.mjs codex-hook stop',
+      '/b/node /pkg/bin/throughline.mjs codex-hook stop',
+      { realpath: (p) => { throw new Error(`missing: ${p}`); } },
+    ),
+    false,
+  );
 });
 
 test('install is idempotent: second run keeps exactly one tl.md and one hook entry', async () => {

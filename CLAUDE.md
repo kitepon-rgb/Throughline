@@ -92,6 +92,16 @@ event／ref単位concurrency、unit test 5分SLO／8分timeoutとする。判断
 Codexが解釈する秒単位の `timeout` keyへ修正した。従来の `timeoutSec` は無視されて
 既定600秒になっていたため、再install時にcommand identityで3 managed hookをcanonical化する。
 `doctor --codex`は旧keyを要再installと明示し、factory diagnosticsは`timeout`だけをreadyとする。
+0.8.8はnpm `latest`として2026-08-02T00:43Zに公開済み。tag / GitHub Releaseは未作成。
+
+**v0.8.9（2026-08-02）**: Codex hook診断が呼び出し元の`PATH`に依存する欠陥を修理した。
+期待hook commandは毎回`resolveCodexHookNodePath`で組み立てられ、PATH上に同一nodeがあれば
+その表記（`/opt/homebrew/bin/node`）、無ければ`process.execPath`（`.../Cellar/node/<ver>/bin/node`）
+を返す。これを登録済みcommandと文字列比較していたため、launchd等の最小PATHから走る
+factory reporterでは正規登録が「legacy command」と誤判定され、`codex_hooks`が恒常的に
+`not_ready`になっていた（BugHub `factory::mac-kite::throughline` high issue、2026-07-18初観測）。
+比較を解析済みidentity（node実体のrealpath一致＋CLI script realpath一致＋event一致）へ変更した。
+別installを指すhook、別event、旧PATH解決型、realpathを解決できないpathは従来どおり要再install扱いとする。
 
 **Observer completed-turn feed（2026-07-16実装・受入完了）**: Claude private receiptとCodex
 `task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -200,6 +200,48 @@ test('factory-diagnostics hook inspection summarizes every canonical ready event
   assert.deepEqual(result.events, { userPromptSubmit: 'ready', postToolUse: 'ready', stop: 'ready' });
   assert.equal(result.status, 'ready');
   assert.equal(result.reason, 'hooks_inspected');
+});
+
+test('factory-diagnostics hook inspection: 最小 PATH 由来の node 別表記を not_ready にしない', () => {
+  // launchd の factory reporter は PATH に /opt/homebrew/bin を持たないため、期待値の
+  // node が PATH symlink ではなく実体表記になる。同一 node を指す限り ready を維持する。
+  const dir = mkdtempSync(join(tmpdir(), 'tl-factory-hook-'));
+  try {
+    mkdirSync(join(dir, 'bin'));
+    mkdirSync(join(dir, 'cellar'));
+    const realNode = join(dir, 'cellar', 'node');
+    const pathNode = join(dir, 'bin', 'node');
+    const script = join(dir, 'throughline.mjs');
+    writeFileSync(realNode, '');
+    writeFileSync(script, '');
+    symlinkSync(realNode, pathNode);
+    const registered = (event) => `${pathNode} ${script} codex-hook ${event}`;
+    const expected = (event) => `${realNode} ${script} codex-hook ${event}`;
+
+    const result = inspectFactoryHooks({
+      readHooks: () => ({
+        configExists: true,
+        configReadable: true,
+        hooksExists: true,
+        hooksReadable: true,
+        featureEnabled: true,
+        expectedPromptCommand: expected('user-prompt-submit'),
+        expectedPostToolUseCommand: expected('post-tool-use'),
+        expectedStopCommand: expected('stop'),
+        managedPromptHooks: [{ type: 'command', command: registered('user-prompt-submit'), timeout: 30, async: false }],
+        legacyManagedPromptHooks: [],
+        managedPostToolUseHooks: [{ type: 'command', command: registered('post-tool-use'), timeout: 30, async: false }],
+        legacyManagedPostToolUseHooks: [],
+        managedStopHooks: [{ type: 'command', command: registered('stop'), timeout: 300, async: false }],
+        legacyManagedStopHooks: [],
+      }),
+    });
+
+    assert.deepEqual(result.events, { userPromptSubmit: 'ready', postToolUse: 'ready', stop: 'ready' });
+    assert.equal(result.status, 'ready');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('factory-diagnostics hook inspection rejects legacy timeoutSec keys', () => {

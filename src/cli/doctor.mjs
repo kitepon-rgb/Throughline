@@ -32,6 +32,7 @@ import {
   buildCodexPostToolUseHookCommand,
   buildCodexStopHookCommand,
   buildCodexUserPromptSubmitHookCommand,
+  isEquivalentCodexHookCommand,
   isThroughlineCodexHookCommand,
   isThroughlineCodexPostToolUseCommand,
   isThroughlineCodexStopCommand,
@@ -576,13 +577,17 @@ function readCodexHookDiagnosis(codexHome) {
   );
   const stopHooks = listHooksWithTrust(parsed, 'Stop', 'stop', hooksPath, out.trustedStateKeys);
   out.managedPromptHooks = promptHooks.filter(h => isThroughlineCodexHookCommand(h.command));
-  out.legacyManagedPromptHooks = out.managedPromptHooks.filter(h => h.command !== expectedPromptCommand);
+  out.legacyManagedPromptHooks = out.managedPromptHooks.filter(
+    h => !isEquivalentCodexHookCommand(h.command, expectedPromptCommand),
+  );
   out.managedPostToolUseHooks = postToolUseHooks.filter(h => isThroughlineCodexPostToolUseCommand(h.command));
   out.legacyManagedPostToolUseHooks = out.managedPostToolUseHooks.filter(
-    h => h.command !== expectedPostToolUseCommand,
+    h => !isEquivalentCodexHookCommand(h.command, expectedPostToolUseCommand),
   );
   out.managedStopHooks = stopHooks.filter(h => isThroughlineCodexStopCommand(h.command));
-  out.legacyManagedStopHooks = out.managedStopHooks.filter(h => h.command !== expectedStopCommand);
+  out.legacyManagedStopHooks = out.managedStopHooks.filter(
+    h => !isEquivalentCodexHookCommand(h.command, expectedStopCommand),
+  );
   out.managedHookTrust = summarizeHookTrust(
     [
       ...out.managedPromptHooks,

@@ -7,6 +7,7 @@ import { buildFactoryDiagnostics } from '../factory-diagnostics.mjs';
 import { findCodexThreadCandidate, defaultCodexHome } from '../codex-thread-index.mjs';
 import { resolveCodexThreadIdentity } from '../codex-thread-identity.mjs';
 import { CURRENT_VERSION } from '../db.mjs';
+import { isEquivalentCodexHookCommand } from './install.mjs';
 import { _internal as doctorInternal } from './doctor.mjs';
 
 const require = createRequire(import.meta.url);
@@ -126,8 +127,8 @@ function eventStatus({ hooks, legacyHooks, featureEnabled, expectedCommand, time
   if (hooks.length === 0) return featureEnabled ? 'not_ready' : 'not_applicable';
   if (!featureEnabled || legacyHooks.length > 0 || hooks.length !== 1) return 'not_ready';
   const hook = hooks[0];
-  return hook.type === 'command' && hook.command === expectedCommand && hook.timeout === timeout &&
-    hook.async === false ? 'ready' : 'not_ready';
+  return hook.type === 'command' && isEquivalentCodexHookCommand(hook.command, expectedCommand) &&
+    hook.timeout === timeout && hook.async === false ? 'ready' : 'not_ready';
 }
 
 export function inspectFactoryHooks({ codexHome = defaultCodexHome(), readHooks = doctorInternal.readCodexHookDiagnosis } = {}) {

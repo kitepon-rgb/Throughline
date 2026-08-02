@@ -10,6 +10,25 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.8.9] — 2026-08-02
+
+### Fixed
+
+- Codex hook diagnosis no longer depends on the caller's `PATH`. The expected
+  hook command is rebuilt per invocation, and `resolveCodexHookNodePath` returns
+  the PATH form of Node when one is on `PATH` and `process.execPath` otherwise.
+  Comparing that string against the registered command classified a correctly
+  installed hook as a legacy command whenever the two representations differed,
+  so `doctor --codex` reported "legacy command needs reinstall" and
+  `factory-diagnostics` reported `codex_hooks` as `not_ready` for every scheduled
+  run started from a minimal environment. Hook commands are now compared by
+  parsed identity — same Node executable by realpath, same CLI script by
+  realpath, same event — so a hook registered as `/opt/homebrew/bin/node` still
+  matches an expectation resolved to `/opt/homebrew/Cellar/node/<ver>/bin/node`.
+  Hooks pointing at a different Throughline installation, a different event, or
+  the legacy PATH-resolved form remain flagged for reinstall, and paths whose
+  realpath cannot be resolved are never treated as equivalent.
+
 ## [0.8.8] — 2026-08-02
 
 ### Fixed
@@ -1191,7 +1210,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.8...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.9...HEAD
+[0.8.9]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.5...v0.8.6
