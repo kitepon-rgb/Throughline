@@ -38,7 +38,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --import ./src/test-env.mjs --test src/*.test.mjs src/cli/*.test.mjs"
+    "test": "node --import ./src/test-env.mjs --test scripts/verify-release-commit.test.mjs src/*.test.mjs src/cli/*.test.mjs",
+    "verify:release-commit": "node scripts/verify-release-commit.mjs",
+    "prepublishOnly": "npm run verify:release-commit && npm test"
   },
   "engines": {
     "node": ">=22.13"
