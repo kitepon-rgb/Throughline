@@ -1,5 +1,10 @@
 import { spawnSync } from 'node:child_process';
 
+// GitHub hosted Windows runners can spend more than 15 seconds starting the
+// inbox Windows PowerShell process while the Node matrix is contended. This is
+// a hang guard for a fixture boundary, not a latency assertion.
+const WINDOWS_ACL_FIXTURE_TIMEOUT_MS = 30_000;
+
 export function applyWindowsPrivateAcl(path, directory = false) {
   if (process.platform !== 'win32') return;
   const script = String.raw`
@@ -14,10 +19,10 @@ $acl.AddAccessRule($rule)
 if($isDir){[System.IO.Directory]::SetAccessControl($target,$acl)}else{[System.IO.File]::SetAccessControl($target,$acl)}
 `;
   const result = spawnSync('powershell.exe', [
-    '-NoProfile', '-NonInteractive', '-Command', script,
+    '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script,
   ], {
     encoding: 'utf8',
-    timeout: 15_000,
+    timeout: WINDOWS_ACL_FIXTURE_TIMEOUT_MS,
     windowsHide: true,
     env: {
       ...process.env,
@@ -43,10 +48,10 @@ $rule=$rules[0]
 if($rule.IdentityReference.Value -ne $sid -or $rule.AccessControlType -ne 'Allow' -or $rule.IsInherited -or ($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl){exit 43}
 `;
   const result = spawnSync('powershell.exe', [
-    '-NoProfile', '-NonInteractive', '-Command', script,
+    '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script,
   ], {
     encoding: 'utf8',
-    timeout: 15_000,
+    timeout: WINDOWS_ACL_FIXTURE_TIMEOUT_MS,
     windowsHide: true,
     env: {
       ...process.env,
