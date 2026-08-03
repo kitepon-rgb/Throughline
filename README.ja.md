@@ -1,5 +1,7 @@
 <p align="center">
-  <img src=".github/og.png" alt="Throughline — Claude Code のコンテキスト消費を約 90% 削減しつつ記憶はほぼ残す" width="100%">
+  <img src=".github/og.png" alt="Throughline — 環境や境界が変わっても方向と記憶を保って進むクジラの群れ" width="100%">
+  <br>
+  <sub><em>この画像は、環境や境界が変わっても、関係・方向・記憶を失わずに進み続ける連続性を表しています。</em></sub>
 </p>
 
 # Throughline

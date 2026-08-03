@@ -1,5 +1,7 @@
 <p align="center">
-  <img src=".github/og.png" alt="Throughline — cut ~90% of Claude Code's context usage while keeping nearly all the memory" width="100%">
+  <img src=".github/og.png" alt="Throughline — a whale family carrying direction and memory across changing boundaries" width="100%">
+  <br>
+  <sub><em>This image represents continuity that preserves relationships, direction, and memory even as environments and boundaries change.</em></sub>
 </p>
 
 # Throughline
