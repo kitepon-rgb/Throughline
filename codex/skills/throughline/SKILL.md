@@ -1,6 +1,6 @@
 ---
 name: throughline
-description: Use when the user asks to use Throughline from Codex, continue or restore Throughline memory, prepare a new Codex thread handoff, summarize a captured Codex session, or check whether the Throughline Codex Stop hook captured the current session. Hide long Throughline command details behind this workflow.
+description: Use when the user asks to use Throughline from Codex, continue or restore Throughline memory, export read-only handoff context for a local launcher, prepare a new Codex thread handoff, summarize a captured Codex session, or check whether the Throughline Codex Stop hook captured the current session. Hide long Throughline command details behind this workflow.
 ---
 
 # Throughline
@@ -111,6 +111,22 @@ throughline codex-summarize --session codex:<current-thread-id> --json
 
 Codex-primary summarization uses the Codex CLI backend. Do not claim it fell
 back to Claude Haiku.
+
+### "export memory" / "portable fork context"
+
+Run:
+
+```bash
+throughline handoff-context --session <exact-session-id> --json
+```
+
+This is a local read-only export for another launcher. It requires an exact
+session id and returns `schema`, `status`, `sessionId`, and `context`. It does
+not create or migrate the database, consume a baton, merge sessions, move
+memory rows, or change `sessions.merged_into`. Do not substitute the Observer
+completed-turn feed, infer the latest session, or read the SQLite database
+directly. If the command fails or returns no context, report that failure
+instead of falling back to a different memory source.
 
 ### "trim" / "rewind" / "rollback" / "context cleanup"
 

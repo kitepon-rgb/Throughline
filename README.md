@@ -765,15 +765,12 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**v0.6.3 は2026-07-14に公開済みです。** factory diagnostics は Codex の managed
-`UserPromptSubmit` / `PostToolUse` / `Stop` hooks がすべて canonical `ready` の場合に
-Codex readiness を `ready` と返す。Claude connector は未検査のまま明示的に
-`unverified` とし、Codex-only overall を妨げない。local runtime error
-aggregate は collection が既定OFFで、canonical dotagents config の
-`collection.enabled: true` を明示した場合だけ収集します。いずれも network I/O は
-行いません。`throughline@0.6.3`、tag / GitHub Release、公開 CI run
-`29284655280`（9/9 green）を確認済みです。npm registry artifact の shasum は
-`4f3fcd2598a75f026358dae7f3eb3165242b580b` です。
+**v0.9.0 was published on 2026-08-04.** It adds the versioned, read-only
+`handoff-context` boundary for local launchers. The command opens only an
+existing database and leaves baton state, session ownership, and memory rows
+unchanged. Existing factory diagnostics, Observer, runtime-error, capture, and
+normal handoff behavior remain available under the same explicit-failure and
+local-only contracts.
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
@@ -821,6 +818,23 @@ aggregate は collection が既定OFFで、canonical dotagents config の
 | `throughline trim --execute --host codex`      | Explicit diagnostic Codex current-thread rollback + Throughline DB memory inject; bare `$throughline` does not run this automatically |
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
+
+### Read-only handoff context for local launchers
+
+Use this boundary when a local launcher needs Throughline memory without
+performing a normal handoff:
+
+```bash
+throughline handoff-context --session codex:<thread-id> --json
+```
+
+The successful `throughline.handoff_context.v1` object contains only `schema`,
+`status`, `sessionId`, and `context`. The context is the same budgeted
+inheritance text used by SessionStart. The command does not create or migrate a
+database, consume a baton, merge sessions, infer a latest session, change
+`sessions.merged_into`, or reassign L1/L2/L3 rows. AIterm uses this boundary for
+its optional cross-vendor portable fork; the Observer feed is a separate
+completed-turn projection and is not a substitute.
 
 Slash commands (invoked by the user in Claude Code):
 

@@ -8,6 +8,15 @@
 
 実行 ToDo、依存、状態、完了証拠の正本は Lattice plan `readonly-handoff-context` とする。
 
+## 完了
+
+2026-08-04に`throughline@0.9.0`としてnpm、tag、GitHub Release、global installまで公開した。
+focused契約testと全回帰は729 pass／1 skip／0 fail。AIterm v0.23.0の代表cross-vendor smokeでは
+Codex source memoryをClaudeへ注入し、前後でsource session、`sessions.merged_into`、L1/L2/L3 row所属が
+完全一致することを確認した。公開後の現行ドキュメント全域監査は、Latticeの終端ToDoを再openして
+README、作業者入口、配布Codex skill、docs索引、計画、CHANGELOGへ同期した。変更Markdownの
+相対リンク監査とCLI help／handoff-contextのfocused test 5/5を通過した。
+
 ## 契約
 
 - `throughline handoff-context --session <id> --json` は session を明示必須とする。

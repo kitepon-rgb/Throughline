@@ -16,6 +16,8 @@ Throughline は Claude Code を主軸として育ってきたプロジェクト�
    - [docs/05_codex_first_roadmap.md](docs/05_codex_first_roadmap.md)
    - [docs/08_codex_dual_support.md](docs/08_codex_dual_support.md)
    - [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md)
+4. DB記憶を別プロセスへ渡す作業なら:
+   - [docs/16_readonly_handoff_context_plan.md](docs/16_readonly_handoff_context_plan.md)
 
 `CLAUDE.md` と実装が食い違う場合は、まず実装を直接確認する。必要なら `CLAUDE.md` 側を更新する。
 
@@ -35,6 +37,14 @@ Codex は、このプロジェクトでは Claude の代替ではなく、追加
 - Codex support は `throughline_handoff` context block、Codex primary entrypoint、Codex CLI backend、`codex-sidecar` integration として追加する。
 - Codex-on-Codex の再帰委譲は、isolated worktree、structured result capture、明示的な review / critic role など別境界がある場合だけ許可する。
 - `codex-sidecar` が未設定または diagnostics 失敗の環境を、成功扱いにしない。失敗は明示し、既存 Claude behavior を baseline として維持する。
+
+## Read-only handoff context
+
+`throughline handoff-context --session <id> --json` は、同一端末内のlauncherが既存sessionの
+継承文脈を取得するためのread-only境界である。通常handoffのようにbatonを消費したり、memory rowの
+`session_id`や`sessions.merged_into`を変更したりしない。consumerはSQLiteを直接読まず、このCLIの
+versioned JSONだけを使う。Observer向け`observer-read`／`observer-wait`はcompleted-turn projectionで
+目的が異なるため、portable forkの代替にしない。
 
 ## 2 つの計画の扱い
 

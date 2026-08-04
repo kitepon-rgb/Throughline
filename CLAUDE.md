@@ -11,6 +11,9 @@
 SessionStartと同じ`buildBudgetedResumeContext(..., isInheritance: true)`の本文を返す。
 DB作成・migration・merge・baton消費・session推測は行わず、記憶行の`session_id`と
 `sessions.merged_into`を変更しない。成功schemaは`throughline.handoff_context.v1`。
+focused契約testと全回帰は729 pass／1 skip／0 fail。npm、tag、GitHub Release、global install、
+AIterm v0.23.0からのCodex source→Claude target実smokeまで受入済み。設計と非目標は
+[docs/16](docs/16_readonly_handoff_context_plan.md)を正とする。
 
 **v0.6.1 (published 2026-07-13)**: Spotter向けのversioned read-only `auditor-context` projectionを追加。
 exact session/projectとfreshな完了L2 pairだけをbounded JSONで返し、DB作成・migration・書き込みはしない。
@@ -166,7 +169,8 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [docs/08_codex_dual_support.md](docs/08_codex_dual_support.md) | Claude / Codex 両対応の architecture brief。Claude path を置き換えず、Codex support を adapter / projection として追加する方針 |
 | [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md) | rollback を model-visible context の delete primitive と見る設計メモ。次フェーズでは Codex Rewind 互換の根拠として扱う |
 | [docs/10_transcript_injection_plan.md](docs/10_transcript_injection_plan.md) | v0.5 系の transcript injection 検証計画と実機ラン結果。Phase 0-2 / 0-5 (D 経路) と Phase 0-6 (`hookSpecificOutput.initialUserMessage` 経路) を実機検証し、両 no-go 確定。plugin scope での完成形は 道 C (v2.1 header + 現在地 anchor) と判定し v0.5.0 として release |
-| [docs/14_observer_completed_turn_feed_plan.md](docs/14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only project resolver、opaque cursor、JSON read / wait CLIのactive計画。MCP transportはObserver所有で、Throughlineは外部依存ゼロのlibrary / CLI境界を維持する |
+| [docs/14_observer_completed_turn_feed_plan.md](docs/14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only project resolver、opaque cursor、JSON read / wait CLIの完了済み設計・受入記録。v0.7.0で公開済み。MCP transportはObserver所有で、Throughlineは外部依存ゼロのlibrary / CLI境界を維持する |
+| [docs/16_readonly_handoff_context_plan.md](docs/16_readonly_handoff_context_plan.md) | SessionStartと同じ継承文脈をDB所有権変更なしで返す、ローカルlauncher向けread-only CLIのv0.9.0設計・受入記録 |
 | [rag/INDEX.md](rag/INDEX.md) | Throughline 設計判断の根拠となる third-party spec 知識ベース。Claude Code hooks reference、Anthropic Messages API、`/clear`/`/compact` 挙動、openclaude の `initialUserMessage` source 抜粋を蓄積。各 finding は実機検証結果と対で更新 |
 | [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v8、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
 | [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録、npm publish 前のアクションメモ等）。歴史記述用 |

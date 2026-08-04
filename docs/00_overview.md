@@ -18,9 +18,9 @@
 | [10_transcript_injection_plan.md](10_transcript_injection_plan.md) | transcript injection 検証計画と v0.5 実機結果 |
 | [11_codex_monitor_implementation_plan.md](11_codex_monitor_implementation_plan.md) | Codex monitor 対応の実装記録 |
 | [13_native_factory_diagnostics_plan.md](13_native_factory_diagnostics_plan.md) | native factory read-only readiness 診断の実装記録 |
-| [14_observer_completed_turn_feed_plan.md](14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only read / wait CLIのactive計画。CLI・opaque cursor・pagination・最大3600秒waitは実装済み、公開／full regression gateは継続中 |
+| [14_observer_completed_turn_feed_plan.md](14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only read / wait CLIの完了済み設計・受入記録。v0.7.0で公開済み |
 | [15_windows_ci_release_latency_plan.md](15_windows_ci_release_latency_plan.md) | Windows CI 18分の原因、ACL安全網を維持した短縮、release gateの受入条件 |
-| [16_readonly_handoff_context_plan.md](16_readonly_handoff_context_plan.md) | DB所有権を変更せずSessionStartと同じ記憶を返す、ローカルランチャー向けread-only I/F |
+| [16_readonly_handoff_context_plan.md](16_readonly_handoff_context_plan.md) | DB所有権を変更せずSessionStartと同じ記憶を返す、ローカルランチャー向けread-only I/F。v0.9.0で公開済み |
 | [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) | local runtime error aggregate store の契約と実装 TODO |
 
 ## Supporting Records
@@ -43,6 +43,11 @@ Observerの公開境界は`throughline observer-read`／`throughline observer-wa
 ThroughlineはClaude Stop receiptとCodex rolloutの`task_complete`だけからcompleted cursorを構築し、
 ObserverがDB、WAL、rolloutを直接監視するfallbackは持たない。waitは最大3600秒で、`changed`、`timeout`、
 `resync_required`、`ambiguous_parent`を返す。
+
+portable contextの公開境界は`throughline handoff-context --session <id> --json`である。既存DBを
+read-onlyで開き、SessionStartと同じbudgeted inheritance contextを返すが、baton、merge、
+`sessions.merged_into`、L1/L2/L3 rowの`session_id`は変更しない。Observer境界とは用途もschemaも別で、
+AIterm v0.23.0はこのCLIだけをconsumer境界として使う。
 
 ## Entrypoints
 

@@ -10,6 +10,13 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Documentation
+
+- Synchronized the current README, Codex skill, contributor entrypoint, docs
+  overview, and implementation plan around the v0.9.0 read-only handoff-context
+  contract. Historical ADRs, archived plans, and RAG source records remain
+  unchanged as point-in-time evidence.
+
 ## [0.9.0] — 2026-08-04
 
 ### Added
