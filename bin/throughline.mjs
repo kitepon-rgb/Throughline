@@ -11,6 +11,7 @@
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline recall --l2|--l1 # 注入案内から辿る pull 用 read-only 記憶取得
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
+ *   throughline handoff-context --session <id> --json # Read-only inheritance context JSON
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
  *   throughline migrate --json # Migrate the existing Throughline database only
@@ -76,6 +77,11 @@ switch (cmd) {
   case 'handoff-preview':
     await (await import('../src/cli/handoff-preview.mjs')).run(rest);
     break;
+  case 'handoff-context': {
+    const exitCode = (await import('../src/cli/handoff-context.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
   case 'auditor-context': {
     const exitCode = (await import('../src/cli/auditor-context.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
