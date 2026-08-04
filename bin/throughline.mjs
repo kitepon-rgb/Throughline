@@ -208,6 +208,9 @@ Usage:
   throughline monitor           Multi-session token monitor (use --all, --session <id>)
   throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
   throughline handoff-preview   Print Codex-facing throughline_handoff JSON
+  throughline handoff-context --session <id> --json
+                              Print the exact inheritance context without
+                              changing database ownership
   throughline auditor-context --session <id> --project <root>
                               Read only bounded completed user/assistant context
                               for an auditor; requires either --host plus --transcript,

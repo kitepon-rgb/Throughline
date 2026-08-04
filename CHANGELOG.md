@@ -10,6 +10,16 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-04
+
+### Added
+
+- `throughline handoff-context --session <id> --json` returns the exact
+  budgeted SessionStart inheritance context through a versioned local CLI
+  boundary. It opens only an existing database read-only and never creates or
+  migrates it, consumes a baton, merges sessions, changes `sessions.merged_into`,
+  or reassigns L1/L2/L3 memory rows.
+
 ## [0.8.9] — 2026-08-02
 
 ### Fixed

@@ -6,6 +6,12 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
+**v0.9.0（2026-08-04公開）**: 同一端末内の別ベンダーランチャー向けに
+`throughline handoff-context --session <id> --json` を追加した。既存DBをread-onlyで開き、
+SessionStartと同じ`buildBudgetedResumeContext(..., isInheritance: true)`の本文を返す。
+DB作成・migration・merge・baton消費・session推測は行わず、記憶行の`session_id`と
+`sessions.merged_into`を変更しない。成功schemaは`throughline.handoff_context.v1`。
+
 **v0.6.1 (published 2026-07-13)**: Spotter向けのversioned read-only `auditor-context` projectionを追加。
 exact session/projectとfreshな完了L2 pairだけをbounded JSONで返し、DB作成・migration・書き込みはしない。
 公開commit `089235f`のCIは6/6 green、npm `latest`、tag / GitHub Release、このMacのregistry由来global
@@ -227,6 +233,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断。`doctor --trim --host claude|codex|unknown` で trim host boundary を診断し、Codex では host primitive audit status も表示する。`doctor --codex` で Codex primary の thread env / rollout candidates / captured DB sessions / context refresh memory source と `/tl` memory contract、new-thread handoff / safe continuation status、host primitive audit、VSCode monitor task の登録状態 / Reload Window note を診断 |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
+| [src/cli/handoff-context.mjs](src/cli/handoff-context.mjs) | `handoff-context --session <id> --json` — 既存DBをread-onlyで開き、SessionStartと同じ9,500字予算のinheritance contextをversioned JSONで返す。DB作成・migration・merge・baton・既定session解決は行わない |
 | [src/cli/auditor-context.mjs](src/cli/auditor-context.mjs) | `auditor-context` — Spotter 専用・JSON-only の read-only projection。`--session` / `--project` と、explicit pair identity/hash または `--host claude\|codex --transcript` を受ける（排他）。`fresh` だけに L2 body を含め、`empty` / `stale` / `session_mismatch` / `unavailable` / `schema_mismatch` は空 turns を返す。DB は create/migrate/write しない |
 | [src/cli/observer-read.mjs](src/cli/observer-read.mjs) | `observer-read` — existing absolute project向けJSON-only completed-turn page。opaque cursorを受け、snapshot / delta / thread・host switch、`resync_required`、`projection_pending`を返す |
 | [src/cli/observer-wait.mjs](src/cli/observer-wait.mjs) | `observer-wait` — opaque after cursorから最大3600秒待機し、`changed` / `timeout` / `resync_required` / `ambiguous_parent`だけをJSONで返す。cancelは成功に丸めない |
@@ -287,6 +294,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/handoff-record.test.mjs](src/handoff-record.test.mjs) | `buildHandoffRecord` の stable projection、origin 除外、空 projection |
 | [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の host mode 分岐、`codex-sidecar` 使用、disabled 時の Haiku 互換経路、Codex CLI backend、Codex CLI failure 非 fallback、再帰ガード |
 | [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |
+| [src/cli/handoff-context.test.mjs](src/cli/handoff-context.test.mjs) | `throughline handoff-context` が既存rendererと完全一致する文脈を返し、L1/L2/L3のsession所有権と`merged_into`を変えず、DB不在時に作成しない契約 |
 | [src/codex-resume.test.mjs](src/codex-resume.test.mjs) | `throughline codex-resume` の text / developer message item JSON / cwd latest Codex session 出力 |
 | [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `session-start` / `process-turn` subprocess 動作。二相ハンドオフ（SessionStart は intent のみ / 初回プロンプトで merge + 注入）、幽霊先着でもバトンを奪えない incident 回帰、走行中セッションの future baton 非横取り、`/tl` / `/clear` baton 書き込みを含む |
 | [src/pending-handoff.test.mjs](src/pending-handoff.test.mjs) | `registerPendingHandoff` / `consumePendingHandoff` の登録・再登録 (resume)・1 回限り消費・他セッション非干渉 |
@@ -411,6 +419,9 @@ node bin/throughline.mjs status
 
 # Codex-facing handoff JSON preview
 node bin/throughline.mjs handoff-preview --session <id>
+
+# Portable cross-vendor handoff context (read-only, ownership unchanged)
+node bin/throughline.mjs handoff-context --session <id> --json
 
 # Codex primary active-work context
 node bin/throughline.mjs codex-summarize --session codex:<thread-id> --json

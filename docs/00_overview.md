@@ -20,6 +20,7 @@
 | [13_native_factory_diagnostics_plan.md](13_native_factory_diagnostics_plan.md) | native factory read-only readiness 診断の実装記録 |
 | [14_observer_completed_turn_feed_plan.md](14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only read / wait CLIのactive計画。CLI・opaque cursor・pagination・最大3600秒waitは実装済み、公開／full regression gateは継続中 |
 | [15_windows_ci_release_latency_plan.md](15_windows_ci_release_latency_plan.md) | Windows CI 18分の原因、ACL安全網を維持した短縮、release gateの受入条件 |
+| [16_readonly_handoff_context_plan.md](16_readonly_handoff_context_plan.md) | DB所有権を変更せずSessionStartと同じ記憶を返す、ローカルランチャー向けread-only I/F |
 | [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) | local runtime error aggregate store の契約と実装 TODO |
 
 ## Supporting Records

@@ -334,6 +334,7 @@ Throughline state をまだ書いていない現在セッションも表示で�
 | `throughline doctor` | Node バージョン、hook 登録状況、DB、PATH をチェック |
 | `throughline doctor --trim --host claude` | trim boundary と手動手順を診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
+| `throughline handoff-context --session <id> --json` | SessionStart と同じ引き継ぎ文脈を versioned JSON で取得。記憶行の `session_id` と `sessions.merged_into` は変更せず、同一端末内の別ベンダーランチャーから使える |
 | `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
 | `throughline codex-sidecar-dry-run` | App Server を呼ばずに read-only sidecar request を正規化表示 |
 | `throughline trim --dry-run --host codex` | Codex same-thread trim の dry-run preview |
