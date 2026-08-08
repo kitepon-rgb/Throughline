@@ -54,3 +54,26 @@ read-only refuterによる敵対的検証ではP0はなく、次のP1を設計�
 - matrix縮小
 - npm自動publish、credential保管
 - release番号だけを根拠にした性能成功扱い
+
+## Terminal audit evidence
+
+2026-08-08 に公開後の終端監査を再確認し、次を受け入れた。
+
+- 公開commit `df215fcaeb6d09d13bfbf5389c6f7c98a995b25c` は現在の `origin/main` の祖先で、
+  annotated tag `v0.8.7` は同commitへ解決する。
+- GitHub Actions run `29726067549` は公開commitに対して9/9 greenである。Windows jobは
+  2分46秒／2分53秒／2分59秒、unit test stepは2分14秒／2分26秒／2分38秒で、
+  5分SLOと3分目標を満たした。
+- GitHub Release `v0.8.7` はdraft／prereleaseではなく公開済みで、公開commit、CI run、
+  Windows実測、npm shasumを保持する。
+- npm registryの `throughline@0.8.7` はshasum
+  `35a50f6878095d0881e75ebfb1da097a8da937c8`、integrity
+  `sha512-7Z/Mz0FRT2bJaxOLl+M8AYlNp5AhmaouQYeiLQ5BKu94+iyo/p1l1vrOhlFHWMlNSv4a89mGYtEAzolPZGRKtA==`
+  を返す。registryから再取得したtarballも同じSHA-1で、212 entries、package version `0.8.7`
+  を確認した。
+- 元のrelease sessionではregistry版global install、`throughline --version = 0.8.7`、
+  managed hooks／skillの再install、migration、`doctor --codex` exit 0まで受け入れた。
+  現在のglobal installは後続release `0.9.0`へ正当に更新済みのため、監査目的のdowngradeは行わない。
+
+以上により、製品受入は2026-07-20時点で完了しており、遅延していたLattice terminal-auditの
+記録を証拠付きで閉じてよいと裁定する。
