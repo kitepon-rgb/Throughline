@@ -32,6 +32,7 @@ import { logDecision } from './decision-log.mjs';
 import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
+import { isUnsupportedNonClaudeEnvelope } from './hook-envelope.mjs';
 
 const ENV_DISABLE_AUTO_HANDOFF = 'THROUGHLINE_DISABLE_AUTO_HANDOFF';
 
@@ -91,6 +92,7 @@ export async function run() {
   });
 
   const payload = JSON.parse(raw);
+  if (isUnsupportedNonClaudeEnvelope(payload)) return;
   const { session_id, cwd, source, transcript_path } = payload;
 
   if (!session_id) throw new Error('Missing session_id in SessionStart payload');
