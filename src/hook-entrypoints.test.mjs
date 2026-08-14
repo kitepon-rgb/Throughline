@@ -34,10 +34,10 @@ function childEnv(home) {
   };
 }
 
-function runNode(args, { home, cwd = REPO_ROOT, input = '' }) {
+function runNode(args, { home, cwd = REPO_ROOT, input = '', env = {} }) {
   return spawnSync(process.execPath, args, {
     cwd,
-    env: childEnv(home),
+    env: { ...childEnv(home), ...env },
     input,
     encoding: 'utf8',
   });
@@ -70,6 +70,71 @@ test('hook modules can be imported without executing their hook body', () => {
       'importing hook modules should not create the real hook DB or state dir',
     );
   } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Grok camelCase envelopes are unsupported no-op before Throughline side effects [GF04T]', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  const common = {
+    sessionId: 'grok-session',
+    cwd: project,
+    workspaceRoot: project,
+    timestamp: '2026-08-14T00:00:00Z',
+    permissionMode: 'default',
+  };
+  const cases = [
+    {
+      event: 'SessionStart',
+      entrypoint: 'src/session-start.mjs',
+      input: { ...common, hookEventName: 'session_start', source: 'startup' },
+    },
+    {
+      event: 'UserPromptSubmit',
+      entrypoint: 'src/prompt-submit.mjs',
+      input: { ...common, hookEventName: 'user_prompt_submit', prompt: 'hello' },
+    },
+    {
+      event: 'Stop',
+      entrypoint: 'src/turn-processor.mjs',
+      input: {
+        ...common,
+        hookEventName: 'stop',
+        reason: 'end_turn',
+        stopHookActive: false,
+        lastAssistantMessage: 'done',
+        backgroundTasks: [],
+        sessionCrons: [],
+      },
+    },
+  ];
+
+  try {
+    const results = cases.map(({ event, entrypoint, input }) => {
+      const result = runNode([join(REPO_ROOT, entrypoint)], {
+        home,
+        cwd: project,
+        input: JSON.stringify(input),
+        env: { THROUGHLINE_NO_VSCODE: '0', TERM_PROGRAM: 'vscode' },
+      });
+      return { event, status: result.status, stdout: result.stdout, stderr: result.stderr };
+    });
+
+    assert.deepEqual(
+      {
+        results,
+        throughlineStateExists: existsSync(join(home, '.throughline')),
+        vscodeTaskExists: existsSync(join(project, '.vscode', 'tasks.json')),
+      },
+      {
+        results: cases.map(({ event }) => ({ event, status: 0, stdout: '', stderr: '' })),
+        throughlineStateExists: false,
+        vscodeTaskExists: false,
+      },
+    );
+  } finally {
+    rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }
 });
