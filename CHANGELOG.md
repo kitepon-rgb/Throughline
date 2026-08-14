@@ -10,6 +10,22 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-08-14
+
+### Fixed
+
+- Claude-facing SessionStart, UserPromptSubmit, and Stop entrypoints now ignore
+  non-Claude camelCase envelopes immediately after JSON parsing and before any
+  database, state, VS Code task, handoff, transcript, or runtime-error side
+  effect. The boundary requires non-empty `sessionId` and `hookEventName` and
+  the absence of Claude's `session_id`; it does not convert payloads or add a
+  Grok transcript reader.
+
+### Changed
+
+- CI now uses the shared factory workflow for the maintained native and WSL2
+  environments.
+
 ### Documentation
 
 - Synchronized the current README, Codex skill, contributor entrypoint, docs

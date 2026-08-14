@@ -6,6 +6,11 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
+**v0.9.1（2026-08-14公開）**: Claude用SessionStart、UserPromptSubmit、Stopへ流入した
+非ClaudeのcamelCase envelopeを、JSON parse直後かつDB、state、VS Code task、handoff、
+transcript処理、runtime error記録より前に無出力・exit 0で終了する。payload変換やGrok transcript
+readerは追加せず、Claude/Codexの既存Hook契約とThroughlineの正式host範囲を維持する。
+
 **v0.9.0（2026-08-04公開）**: 同一端末内の別ベンダーランチャー向けに
 `throughline handoff-context --session <id> --json` を追加した。既存DBをread-onlyで開き、
 SessionStartと同じ`buildBudgetedResumeContext(..., isInheritance: true)`の本文を返す。
