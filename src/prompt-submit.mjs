@@ -43,6 +43,7 @@ import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
 import { GROK_SESSION_PREFIX, normalizeHookPayload } from './hook-envelope.mjs';
+import { injectGrokHandoffContext } from './grok-history-inject.mjs';
 import { readTranscript } from './transcript-reader.mjs';
 
 // Phase 0-5 spike marker (SessionStart の spike-inject.flag とは別)
@@ -192,7 +193,17 @@ export async function run() {
     });
     if (handoff.attempted) {
       if (handoff.injectionText) {
-        process.stdout.write(handoff.injectionText + '\n');
+        if (session_id.startsWith(GROK_SESSION_PREFIX)) {
+          const injected = injectGrokHandoffContext(
+            payload.transcript_path,
+            handoff.injectionText,
+          );
+          if (!injected.injected) {
+            process.stderr.write(`[prompt-submit] grok chat_history inject skipped: ${injected.reason}\n`);
+          }
+        } else {
+          process.stdout.write(handoff.injectionText + '\n');
+        }
       }
       logDecision({
         ts: new Date(now).toISOString(),

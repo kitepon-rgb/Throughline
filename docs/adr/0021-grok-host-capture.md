@@ -22,6 +22,7 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 - Grok hook `command` is absolute `node` + `bin/throughline.mjs` + subcommand. Do not write bare `throughline`.
 - Keep Claude and Codex adapters unchanged. Do not mix `grok:` rows into Claude predecessor search.
 - Grok `/tl` / `/clear` / `/new` detection reads the inner `<user_query>`. If the hook `prompt` is empty, fall back to the last user row in `chat_history.jsonl`. Do not treat `source=new` as Claude `source=clear` auto-handoff.
+- Grok UserPromptSubmit stdout is observe-only. Handoff inject writes a `synthetic_reason=throughline_handoff` user row into `chat_history.jsonl` immediately before the latest `<user_query>`. Claude still uses stdout.
 
 ## Consequences
 
@@ -31,4 +32,4 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 
 ## 現在地
 
-live `/tl`（session `01a00b38`）は hook success だったがバトンは書かれなかった。Grok の prompt は `<user_query>/tl</user_query>` + skill 本文で、裸 `/tl` 判定に当たらない。判定を user_query 剥がしにし、hook prompt が空なら `chat_history` の最終 user を見る。`/new` は Grok の `/clear` alias として baton 対象。`source=new` を auto path にはしない。live 再 `/tl` と `/new` 後の注入は未測。Claude/Codex の裸コマンド判定は維持。npm 未公開。他席と Spotter は未了。
+新 session `01a00ce5-0169` は baton 消費・merge・stdout 8600字まで成功したが、Grok は UserPromptSubmit stdout を無視するのでモデルに届かなかった。注入を `chat_history.jsonl` の最新 `<user_query>` 直前へ `synthetic_reason=throughline_handoff` 行として書く。Claude stdout は維持。live 再 `/tl` → 新規 session の注入は未測。他席と Spotter は未了。

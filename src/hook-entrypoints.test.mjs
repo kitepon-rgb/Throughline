@@ -378,6 +378,86 @@ test('prompt-submit: non-baton prompt does not write any baton', () => {
   }
 });
 
+test('Grok first prompt injects handoff into chat_history instead of stdout', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  const oldId = '01a00aa2-50f8-7791-86fd-df2d27cf003e';
+  const newId = '01a00ce5-0169-7852-95c0-9e6b8cc50c06';
+  const historyDir = join(home, '.grok', 'sessions', encodeURIComponent(project), newId);
+  mkdirSync(historyDir, { recursive: true });
+  writeFileSync(
+    join(historyDir, 'chat_history.jsonl'),
+    [
+      JSON.stringify({ type: 'system', content: 'sys' }),
+      JSON.stringify({
+        type: 'user',
+        content: [{ type: 'text', text: '<user_query>\nこれかな？\n</user_query>' }],
+      }),
+    ].join('\n') + '\n',
+  );
+  try {
+    const baton = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        sessionId: oldId,
+        cwd: project,
+        hookEventName: 'user_prompt_submit',
+        prompt: '/tl',
+      }),
+    });
+    assert.equal(baton.status, 0, baton.stderr);
+
+    const db = openDb(home);
+    db.prepare(
+      `INSERT INTO sessions (session_id, project_path, status, created_at, updated_at)
+       VALUES (?, ?, 'active', 1, 1)`,
+    ).run(`grok:${oldId}`, project);
+    db.prepare(
+      `INSERT INTO bodies
+         (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES (?, ?, 1, 'assistant', 'old assistant body', 4, 2)`,
+    ).run(`grok:${oldId}`, `grok:${oldId}`);
+    db.close();
+
+    const started = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        sessionId: newId,
+        cwd: project,
+        hookEventName: 'session_start',
+        source: 'new',
+      }),
+    });
+    assert.equal(started.status, 0, started.stderr);
+
+    const firstPrompt = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        sessionId: newId,
+        cwd: project,
+        hookEventName: 'user_prompt_submit',
+        prompt: 'これかな？',
+      }),
+    });
+    assert.equal(firstPrompt.status, 0, firstPrompt.stderr);
+    assert.equal(firstPrompt.stdout, '', 'Grok must not rely on ignored hook stdout');
+
+    const rows = readFileSync(join(historyDir, 'chat_history.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.equal(rows[1].synthetic_reason, 'throughline_handoff');
+    assert.match(rows[1].content[0].text, /old assistant body/);
+    assert.match(rows[2].content[0].text, /これかな？/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('two-phase: session-start registers intent only; first prompt consumes baton and injects', () => {
   const home = makeTempHome();
   const project = makeTempProject();
