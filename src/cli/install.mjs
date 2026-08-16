@@ -9,6 +9,8 @@
  * Claude-facing hook は従来通り PATH 解決型 (throughline <subcommand>) を使う。
  * Codex-facing hook は VSCode App Server の PATH 差分を避けるため、絶対 node + CLI
  * script path で登録する。
+ * Grok-facing hook も Desktop の GUI PATH に throughline が無いため、同じ絶対
+ * node + CLI script path で ~/.grok/hooks/throughline.json に書く。
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, rmSync, realpathSync } from 'node:fs';
@@ -288,31 +290,27 @@ function resolveGrokHooksPath() {
   return join(homedir(), ...GROK_HOOKS_RELATIVE_PATH);
 }
 
-function grokHookCommand(subcommand, {
+export function buildGrokHookCommand(subcommand, {
   nodePath = resolveCodexHookNodePath(),
   cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
-  platform = process.platform,
 } = {}) {
-  if (platform === 'win32') {
-    return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} ${subcommand}`;
-  }
-  return `throughline ${subcommand}`;
+  return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} ${subcommand}`;
 }
 
-export function createGrokHooksFile({ platform = process.platform } = {}) {
+export function createGrokHooksFile(options = {}) {
   return {
     hooks: {
       SessionStart: [
-        { hooks: [{ type: 'command', command: grokHookCommand('session-start', { platform }), timeout: 10 }] },
+        { hooks: [{ type: 'command', command: buildGrokHookCommand('session-start', options), timeout: 10 }] },
       ],
       UserPromptSubmit: [
-        { hooks: [{ type: 'command', command: grokHookCommand('prompt-submit', { platform }), timeout: 30 }] },
+        { hooks: [{ type: 'command', command: buildGrokHookCommand('prompt-submit', options), timeout: 30 }] },
       ],
       Stop: [
         {
           hooks: [{
             type: 'command',
-            command: grokHookCommand('process-turn', { platform }),
+            command: buildGrokHookCommand('process-turn', options),
             timeout: 300,
             async: true,
           }],

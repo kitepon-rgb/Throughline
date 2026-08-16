@@ -8,6 +8,8 @@ import {
   buildCodexPostToolUseHookCommand,
   buildCodexStopHookCommand,
   buildCodexUserPromptSubmitHookCommand,
+  buildGrokHookCommand,
+  createGrokHooksFile,
   isEquivalentCodexHookCommand,
   isThroughlineCodexHookCommand,
   parseCodexHookCommand,
@@ -76,6 +78,20 @@ test('global install copies Throughline slash commands to ~/.claude/commands/', 
     assert.ok(grokHooks.hooks?.SessionStart, 'Grok SessionStart hook should be registered');
     assert.ok(grokHooks.hooks?.UserPromptSubmit, 'Grok UserPromptSubmit hook should be registered');
     assert.ok(grokHooks.hooks?.Stop, 'Grok Stop hook should be registered');
+    const grokCommands = [
+      grokHooks.hooks.SessionStart[0].hooks[0].command,
+      grokHooks.hooks.UserPromptSubmit[0].hooks[0].command,
+      grokHooks.hooks.Stop[0].hooks[0].command,
+    ];
+    assert.deepEqual(grokCommands, [
+      buildGrokHookCommand('session-start'),
+      buildGrokHookCommand('prompt-submit'),
+      buildGrokHookCommand('process-turn'),
+    ]);
+    for (const command of grokCommands) {
+      assert.match(command, /throughline\.mjs/);
+      assert.doesNotMatch(command, /^throughline /);
+    }
   } finally {
     unsilence();
     home.restore();
@@ -148,6 +164,32 @@ test('global install registers Codex session hooks and enables hooks features', 
     unsilence();
     home.restore();
   }
+});
+
+test('Grok hook commands are absolute node + throughline.mjs on every platform', () => {
+  const options = {
+    nodePath: String.raw`C:\Program Files\nodejs\node.exe`,
+    cliScriptPath: String.raw`C:\Users\Kite\App Data\Roaming\npm\node_modules\throughline\bin\throughline.mjs`,
+  };
+  assert.equal(
+    buildGrokHookCommand('session-start', options),
+    String.raw`"C:\Program Files\nodejs\node.exe" "C:\Users\Kite\App Data\Roaming\npm\node_modules\throughline\bin\throughline.mjs" session-start`,
+  );
+  assert.equal(
+    buildGrokHookCommand('process-turn', {
+      nodePath: '/opt/homebrew/bin/node',
+      cliScriptPath: '/Users/kite/Developer/Throughline/bin/throughline.mjs',
+    }),
+    '/opt/homebrew/bin/node /Users/kite/Developer/Throughline/bin/throughline.mjs process-turn',
+  );
+  const file = createGrokHooksFile({
+    nodePath: '/usr/bin/node',
+    cliScriptPath: '/pkg/bin/throughline.mjs',
+  });
+  assert.equal(file.hooks.SessionStart[0].hooks[0].command, '/usr/bin/node /pkg/bin/throughline.mjs session-start');
+  assert.equal(file.hooks.UserPromptSubmit[0].hooks[0].command, '/usr/bin/node /pkg/bin/throughline.mjs prompt-submit');
+  assert.equal(file.hooks.Stop[0].hooks[0].command, '/usr/bin/node /pkg/bin/throughline.mjs process-turn');
+  assert.equal(file.hooks.Stop[0].hooks[0].async, true);
 });
 
 test('Codex hook builders use the PowerShell call operator on Windows only', () => {

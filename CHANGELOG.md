@@ -14,7 +14,8 @@ shipped to npm but were not individually tagged on GitHub.
 
 - Grok is a first-class hook host. CamelCase envelopes are normalized to
   `grok:<sessionId>` and L2 is recovered from Grok `chat_history.jsonl`.
-  `throughline install` writes `~/.grok/hooks/throughline.json`.
+  `throughline install` writes `~/.grok/hooks/throughline.json` with absolute
+  `node` + `bin/throughline.mjs` commands so Desktop GUI PATH can fire them.
 
 ## [0.9.1] — 2026-08-14
 

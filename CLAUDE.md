@@ -9,7 +9,9 @@
 **進行中（Grok host）**: Grok camelCase envelope（`sessionId` / `hookEventName`）は
 `grok:<id>` に正規化して SessionStart / UserPromptSubmit / Stop を処理する。
 L2 回収は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`。
-`throughline install` は `~/.grok/hooks/throughline.json` を書く。Claude/Codex 契約は変えない。
+`throughline install` は `~/.grok/hooks/throughline.json` に絶対 `node` +
+`bin/throughline.mjs` の SessionStart / UserPromptSubmit / Stop を書く。
+Claude/Codex 契約は変えない。
 
 **v0.9.1（2026-08-14公開）**: 当時は Claude用SessionStart、UserPromptSubmit、Stopへ流入した
 非ClaudeのcamelCase envelopeを副作用前に無出力・exit 0で終了していた。Grok正式host化でこのno-opは撤回。
