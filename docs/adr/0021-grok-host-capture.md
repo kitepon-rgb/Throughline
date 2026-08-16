@@ -30,4 +30,4 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 
 ## 現在地
 
-Mac Desktop capture受入は閉じた（2026-08-17 session `01a00b38-87ea-7670-8f7d-a9fe937263c5`、このDesktop窓。前sessionの見た目は数えない）。Throughline origin/mainは`a964e0a`。`updates.jsonl`の`global/throughline:session_start` / `user_prompt_submit` / `stop`はsuccess。最新stopは96ms。`backfill.log`は`chat_history.jsonl`で`groups:4` `inserted_turns:4`（それ以前の同一sessionは`updates.jsonl`で`groups:0`）。DBに`grok:01a00b38-87ea-7670-8f7d-a9fe937263c5`行とL2 user/assistant 4往復（8行）がある。成功条件（この新規sessionの`grok:`行とL2）は達した。Claude/Codexは触っていない。npm未公開。restore/handoff実機と他席install、Spotterは未了。
+Mac Desktop の restore 実機は閉じた（session `01a00b38-87ea-7670-8f7d-a9fe937263c5`）。`throughline handoff-context --session grok:01a00b38-87ea-7670-8f7d-a9fe937263c5 --json` は status ready、context 8730字。この会話の L2（受入依頼 / GO / 進めてくれ / もう一言だ）を含む。L1 skeletons と L3 details は 0 件のまま（Grok Stop は既存 Haiku L1 を回さない）。実装追加なし。hook `/tl` → 新規 session 注入は未了。auto path は `grok:` を前任から除外するので、Grok 同士の引き継ぎは `/tl` バトンが要る。`baton-write.log` に grok 行は無い。他席 install と Spotter は未了。Claude/Codex は触っていない。npm 未公開。
