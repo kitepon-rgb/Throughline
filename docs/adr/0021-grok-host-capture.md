@@ -22,7 +22,7 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 - Grok hook `command` is absolute `node` + `bin/throughline.mjs` + subcommand. Do not write bare `throughline`.
 - Keep Claude and Codex adapters unchanged. Do not mix `grok:` rows into Claude predecessor search.
 - Grok `/tl` / `/clear` / `/new` detection reads the inner `<user_query>`. If the hook `prompt` is empty, fall back to the last user row in `chat_history.jsonl`. Do not treat `source=new` as Claude `source=clear` auto-handoff.
-- Grok UserPromptSubmit stdout is observe-only. Handoff inject writes a `synthetic_reason=system_reminder` user row into `chat_history.jsonl` immediately before the latest `<user_query>`. A custom synthetic_reason is stored and dropped from the model prompt. Claude still uses stdout.
+- Grok UserPromptSubmit stdout is observe-only. Writing into `chat_history.jsonl` does not enter the live model prompt. Live conversation is `updates.jsonl`. Claude still uses stdout additionalContext.
 
 ## Consequences
 
@@ -32,4 +32,4 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 
 ## 現在地
 
-新 session `01a00cf9` は baton 消費・merge・`chat_history` への注入行まで成功した。行の `synthetic_reason` が独自値 `throughline_handoff` だったため Grok がモデル文脈から外した。ネイティブと同じ `system_reminder` に直し、冪等は `data-throughline-handoff` で見る。Claude stdout は維持。live 再測は未了。
+新 session `01a00cfe` は baton 消費・merge・`chat_history` L5 への `system_reminder` 注入まで成功した。その文は `updates.jsonl` / `prompt_context.json` / 初回 assistant のどれにも無い。Grok のライブ文脈は chat_history を再読しない。UserPromptSubmit でモデルに記憶を足す公式面は無い。capture と `handoff-context` restore は生きている。同じ窓への hook 自動注入は host 非対応。他席と Spotter は未了。
