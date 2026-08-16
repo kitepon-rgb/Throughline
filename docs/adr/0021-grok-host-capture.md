@@ -21,6 +21,7 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 - Install product hooks at `~/.grok/hooks/throughline.json`. Do not write factory.json.
 - Grok hook `command` is absolute `node` + `bin/throughline.mjs` + subcommand. Do not write bare `throughline`.
 - Keep Claude and Codex adapters unchanged. Do not mix `grok:` rows into Claude predecessor search.
+- Grok `/tl` / `/clear` / `/new` detection reads the inner `<user_query>`. If the hook `prompt` is empty, fall back to the last user row in `chat_history.jsonl`. Do not treat `source=new` as Claude `source=clear` auto-handoff.
 
 ## Consequences
 
@@ -30,4 +31,4 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 
 ## 現在地
 
-Mac Desktop の restore 実機は閉じた（session `01a00b38-87ea-7670-8f7d-a9fe937263c5`）。`throughline handoff-context --session grok:01a00b38-87ea-7670-8f7d-a9fe937263c5 --json` は status ready、context 8730字。この会話の L2（受入依頼 / GO / 進めてくれ / もう一言だ）を含む。L1 skeletons と L3 details は 0 件のまま（Grok Stop は既存 Haiku L1 を回さない）。実装追加なし。hook `/tl` → 新規 session 注入は未了。auto path は `grok:` を前任から除外するので、Grok 同士の引き継ぎは `/tl` バトンが要る。`baton-write.log` に grok 行は無い。他席 install と Spotter は未了。Claude/Codex は触っていない。npm 未公開。
+live `/tl`（session `01a00b38`）は hook success だったがバトンは書かれなかった。Grok の prompt は `<user_query>/tl</user_query>` + skill 本文で、裸 `/tl` 判定に当たらない。判定を user_query 剥がしにし、hook prompt が空なら `chat_history` の最終 user を見る。`/new` は Grok の `/clear` alias として baton 対象。`source=new` を auto path にはしない。live 再 `/tl` と `/new` 後の注入は未測。Claude/Codex の裸コマンド判定は維持。npm 未公開。他席と Spotter は未了。

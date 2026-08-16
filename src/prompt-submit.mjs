@@ -42,7 +42,8 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
-import { normalizeHookPayload } from './hook-envelope.mjs';
+import { GROK_SESSION_PREFIX, normalizeHookPayload } from './hook-envelope.mjs';
+import { readTranscript } from './transcript-reader.mjs';
 
 // Phase 0-5 spike marker (SessionStart の spike-inject.flag とは別)
 const PROMPT_SPIKE_MARKER_PATH = join(homedir(), '.throughline', 'spike-prompt.flag');
@@ -109,28 +110,47 @@ function markSpiked(sessionId) {
   writeFileSync(join(PROMPT_SPIKE_STATE_DIR, sessionId), '', 'utf8');
 }
 
+const USER_QUERY_RE = /<user_query>\s*([\s\S]*?)\s*<\/user_query>/i;
+
+/**
+ * Grok は hook prompt と chat_history を
+ * `<user_query>/tl</user_query>` + skill 本文で包む。
+ * Claude の裸 `/tl` はそのまま返す。
+ */
+export function commandTextFromPrompt(prompt) {
+  if (typeof prompt !== 'string') return '';
+  const match = prompt.match(USER_QUERY_RE);
+  return (match ? match[1] : prompt).trim();
+}
+
+function isNamedSlashCommand(prompt, name) {
+  const text = commandTextFromPrompt(prompt);
+  if (!text) return false;
+  return text === name || text.startsWith(`${name} `) || text.startsWith(`${name}\n`);
+}
+
+function lastUserPromptText(transcriptPath) {
+  const turns = readTranscript(transcriptPath);
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role === 'user') return turns[i].content;
+  }
+  return '';
+}
+
 /**
  * プロンプトが /tl バトン発動コマンドか判定する。
- * 許容: "/tl", "/tl\n", "/tl 何か" (前後空白は trim 済み前提)
+ * 許容: "/tl", "/tl\n", "/tl 何か"。Grok の user_query 包装も見る。
  */
 export function isBatonCommand(prompt) {
-  if (typeof prompt !== 'string') return false;
-  const trimmed = prompt.trim();
-  if (trimmed === '/tl') return true;
-  if (trimmed.startsWith('/tl ') || trimmed.startsWith('/tl\n')) return true;
-  return false;
+  return isNamedSlashCommand(prompt, '/tl');
 }
 
 /**
  * プロンプトが /clear バトン発動コマンドか判定する。
- * 許容: "/clear", "/clear\n", "/clear 何か" (前後空白は trim 済み前提)
+ * 許容: "/clear", Grok の alias "/new"。Grok の user_query 包装も見る。
  */
 export function isClearCommand(prompt) {
-  if (typeof prompt !== 'string') return false;
-  const trimmed = prompt.trim();
-  if (trimmed === '/clear') return true;
-  if (trimmed.startsWith('/clear ') || trimmed.startsWith('/clear\n')) return true;
-  return false;
+  return isNamedSlashCommand(prompt, '/clear') || isNamedSlashCommand(prompt, '/new');
 }
 
 export async function run() {
@@ -192,8 +212,17 @@ export async function run() {
     }
   }
 
-  const tlMatch = isBatonCommand(prompt);
-  const clearMatch = !tlMatch && isClearCommand(prompt);
+  let commandPrompt = prompt;
+  if (
+    typeof session_id === 'string'
+    && session_id.startsWith(GROK_SESSION_PREFIX)
+    && !isBatonCommand(commandPrompt)
+    && !isClearCommand(commandPrompt)
+  ) {
+    commandPrompt = lastUserPromptText(payload.transcript_path);
+  }
+  const tlMatch = isBatonCommand(commandPrompt);
+  const clearMatch = !tlMatch && isClearCommand(commandPrompt);
 
   // Phase 0-5 spike: real user prompt (not /tl, not /clear) で、marker file あり、
   // session 未 spike なら chain (b) で JSONL に inject する。失敗しても prompt 自体は

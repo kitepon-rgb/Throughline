@@ -204,6 +204,70 @@ test('Grok Stop with updates.jsonl transcriptPath still captures L2 from chat_hi
   }
 });
 
+test('Grok wrapped /tl prompt writes a grok: baton', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  const sessionId = '01a00b38-87ea-7670-8f7d-a9fe937263c5';
+  try {
+    const result = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        sessionId,
+        cwd: project,
+        hookEventName: 'user_prompt_submit',
+        prompt:
+          '<user_query>\n/tl\n</user_query>\n<skill_information>\nThroughline saved the baton.\n</skill_information>',
+      }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const db = openDb(home);
+    const row = db.prepare('SELECT project_path, session_id FROM handoff_batons').get();
+    assert.equal(row.project_path, project);
+    assert.equal(row.session_id, `grok:${sessionId}`);
+    db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Grok empty hook prompt still writes /tl baton from chat_history', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  const sessionId = '01a00b38-87ea-7670-8f7d-a9fe937263c5';
+  const historyDir = join(home, '.grok', 'sessions', encodeURIComponent(project), sessionId);
+  mkdirSync(historyDir, { recursive: true });
+  writeFileSync(
+    join(historyDir, 'chat_history.jsonl'),
+    JSON.stringify({
+      type: 'user',
+      content: [{ type: 'text', text: '<user_query>\n/tl\n</user_query>\n<skill_information>x</skill_information>' }],
+    }) + '\n',
+  );
+  try {
+    const result = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        sessionId,
+        cwd: project,
+        hookEventName: 'user_prompt_submit',
+      }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const db = openDb(home);
+    const row = db.prepare('SELECT session_id FROM handoff_batons').get();
+    assert.equal(row.session_id, `grok:${sessionId}`);
+    db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('prompt-submit subprocess writes a /tl baton into an isolated DB', () => {
   const home = makeTempHome();
   const project = makeTempProject();
