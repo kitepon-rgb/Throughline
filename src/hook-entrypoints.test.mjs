@@ -140,6 +140,70 @@ test('Grok camelCase envelopes register a grok: session instead of no-op', () =>
   }
 });
 
+test('Grok Stop with updates.jsonl transcriptPath still captures L2 from chat_history', () => {
+  const home = makeTempHome();
+  const project = makeTempProject();
+  const sessionId = '01a00b38-87ea-7670-8f7d-a9fe937263c5';
+  const common = {
+    sessionId,
+    cwd: project,
+    workspaceRoot: project,
+    timestamp: '2026-08-17T00:00:00Z',
+    permissionMode: 'default',
+  };
+
+  try {
+    const start = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ ...common, hookEventName: 'session_start', source: 'startup' }),
+    });
+    assert.equal(start.status, 0, start.stderr);
+
+    const historyDir = join(home, '.grok', 'sessions', encodeURIComponent(project), sessionId);
+    mkdirSync(historyDir, { recursive: true });
+    writeFileSync(
+      join(historyDir, 'updates.jsonl'),
+      JSON.stringify({
+        method: '_x.ai/session/update',
+        params: { update: { sessionUpdate: 'hook_execution', event_name: 'stop' } },
+      }) + '\n',
+    );
+    writeFileSync(
+      join(historyDir, 'chat_history.jsonl'),
+      [
+        JSON.stringify({ type: 'user', content: [{ type: 'text', text: 'hello grok' }] }),
+        JSON.stringify({ type: 'assistant', content: 'captured reply' }),
+      ].join('\n'),
+    );
+    const stop = runNode([join(REPO_ROOT, 'src/turn-processor.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        ...common,
+        hookEventName: 'stop',
+        transcriptPath: join(historyDir, 'updates.jsonl'),
+        lastAssistantMessage: 'captured reply',
+      }),
+    });
+    assert.equal(stop.status, 0, stop.stderr);
+
+    const db = openDb(home);
+    const bodies = db.prepare('SELECT role, text FROM bodies ORDER BY role').all();
+    assert.deepEqual(
+      bodies.map((b) => ({ role: b.role, text: b.text })),
+      [
+        { role: 'assistant', text: 'captured reply' },
+        { role: 'user', text: 'hello grok' },
+      ],
+    );
+    db.close();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('prompt-submit subprocess writes a /tl baton into an isolated DB', () => {
   const home = makeTempHome();
   const project = makeTempProject();

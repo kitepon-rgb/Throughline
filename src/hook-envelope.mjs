@@ -35,9 +35,9 @@ export function normalizeHookPayload(payload, { home = homedir() } = {}) {
   const cwd = typeof payload.cwd === 'string' && payload.cwd.length > 0
     ? payload.cwd
     : (typeof payload.workspaceRoot === 'string' ? payload.workspaceRoot : undefined);
-  const transcriptPath = typeof payload.transcriptPath === 'string' && payload.transcriptPath.length > 0
-    ? payload.transcriptPath
-    : deriveGrokChatHistoryPath(cwd, payload.sessionId, { home });
+  // Live Grok Stop sets transcriptPath to updates.jsonl (sessionUpdate frames,
+  // no user/assistant rows). L2 lives in chat_history.jsonl only.
+  const transcriptPath = deriveGrokChatHistoryPath(cwd, payload.sessionId, { home });
   return {
     ...payload,
     session_id: `${GROK_SESSION_PREFIX}${payload.sessionId}`,

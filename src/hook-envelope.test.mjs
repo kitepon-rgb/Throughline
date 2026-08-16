@@ -51,3 +51,29 @@ test('normalizeHookPayload prefixes grok: and derives chat_history path', () => 
     payload.transcript_path,
   );
 });
+
+test('normalizeHookPayload ignores Grok transcriptPath pointing at updates.jsonl', () => {
+  const home = '/tmp/tl-home';
+  const cwd = '/Users/kite/Developer/dotagents';
+  const sessionId = '01a00b38-87ea-7670-8f7d-a9fe937263c5';
+  const payload = normalizeHookPayload(
+    {
+      sessionId,
+      hookEventName: 'stop',
+      cwd,
+      transcriptPath: join(
+        home,
+        '.grok',
+        'sessions',
+        encodeURIComponent(cwd),
+        sessionId,
+        'updates.jsonl',
+      ),
+    },
+    { home },
+  );
+  assert.equal(
+    payload.transcript_path,
+    join(home, '.grok', 'sessions', encodeURIComponent(cwd), sessionId, 'chat_history.jsonl'),
+  );
+});
