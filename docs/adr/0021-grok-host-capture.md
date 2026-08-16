@@ -30,4 +30,4 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 
 ## 現在地
 
-Grok hostはpayloadの`transcriptPath`を使わず導出先`chat_history.jsonl`だけを読む。根拠は session `01a00b38` のStopが`updates.jsonl`を読んで`groups:0`、同一readerは`chat_history.jsonl`ならturns 16 / groups 3。focused test（`hook-envelope` / `hook-entrypoints` / `transcript-reader-grok`）23件pass。Claude/Codex adapterは未変更。このMacのhookはrepoの`bin/throughline.mjs`なので再install不要。live L2はまだ再測していない。次はこのsessionの次Stopで`backfill.log`が`chat_history.jsonl`になりbodiesにuser/assistantが載ること。npm未公開・restore/handoff実機・Spotter着手はしていない。
+Mac Desktop capture受入は閉じた（2026-08-17 session `01a00b38-87ea-7670-8f7d-a9fe937263c5`、このDesktop窓。前sessionの見た目は数えない）。Throughline origin/mainは`a964e0a`。`updates.jsonl`の`global/throughline:session_start` / `user_prompt_submit` / `stop`はsuccess。最新stopは96ms。`backfill.log`は`chat_history.jsonl`で`groups:4` `inserted_turns:4`（それ以前の同一sessionは`updates.jsonl`で`groups:0`）。DBに`grok:01a00b38-87ea-7670-8f7d-a9fe937263c5`行とL2 user/assistant 4往復（8行）がある。成功条件（この新規sessionの`grok:`行とL2）は達した。Claude/Codexは触っていない。npm未公開。restore/handoff実機と他席install、Spotterは未了。
