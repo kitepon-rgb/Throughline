@@ -24,6 +24,7 @@ const CODEX_SKILLS_SRC = join(PACKAGE_ROOT, 'codex', 'skills');
 const CODEX_SKILL_NAMES = ['throughline'];
 const CODEX_HOOKS_RELATIVE_PATH = ['.codex', 'hooks.json'];
 const CODEX_CONFIG_RELATIVE_PATH = ['.codex', 'config.toml'];
+const GROK_HOOKS_RELATIVE_PATH = ['.grok', 'hooks', 'throughline.json'];
 
 // Throughline が管理する hook コマンド一覧
 // schema v4 以降: PostToolUse (capture-tool) は廃止。Stop 内で L2/L3 を一括処理する。
@@ -283,6 +284,58 @@ function resolveCodexSkillsDir() {
   return join(homedir(), '.codex', 'skills');
 }
 
+function resolveGrokHooksPath() {
+  return join(homedir(), ...GROK_HOOKS_RELATIVE_PATH);
+}
+
+function grokHookCommand(subcommand, {
+  nodePath = resolveCodexHookNodePath(),
+  cliScriptPath = join(PACKAGE_ROOT, 'bin', 'throughline.mjs'),
+  platform = process.platform,
+} = {}) {
+  if (platform === 'win32') {
+    return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} ${subcommand}`;
+  }
+  return `throughline ${subcommand}`;
+}
+
+export function createGrokHooksFile({ platform = process.platform } = {}) {
+  return {
+    hooks: {
+      SessionStart: [
+        { hooks: [{ type: 'command', command: grokHookCommand('session-start', { platform }), timeout: 10 }] },
+      ],
+      UserPromptSubmit: [
+        { hooks: [{ type: 'command', command: grokHookCommand('prompt-submit', { platform }), timeout: 30 }] },
+      ],
+      Stop: [
+        {
+          hooks: [{
+            type: 'command',
+            command: grokHookCommand('process-turn', { platform }),
+            timeout: 300,
+            async: true,
+          }],
+        },
+      ],
+    },
+  };
+}
+
+function installGrokHooks() {
+  const hooksPath = resolveGrokHooksPath();
+  mkdirSync(dirname(hooksPath), { recursive: true });
+  writeFileSync(hooksPath, `${JSON.stringify(createGrokHooksFile(), null, 2)}\n`);
+  return { hooksPath };
+}
+
+function uninstallGrokHooks() {
+  const hooksPath = resolveGrokHooksPath();
+  if (!existsSync(hooksPath)) return { hooksPath, removed: 0 };
+  unlinkSync(hooksPath);
+  return { hooksPath, removed: 1 };
+}
+
 function installSlashCommands(commandsDir) {
   if (!existsSync(SLASH_COMMANDS_SRC)) {
     return { installed: [], skipped: 'source-missing' };
@@ -537,6 +590,7 @@ export async function run(args = []) {
     writeSettings(settingsPath, current);
     const removedCommands = uninstallSlashCommands(commandsDir);
     const codex = args.includes('--project') ? null : uninstallCodexHooks();
+    const grok = args.includes('--project') ? null : uninstallGrokHooks();
     const removedCodexSkills = args.includes('--project') ? [] : uninstallCodexSkills(codexSkillsDir);
     console.log('Throughline hooks を削除しました。');
     console.log(`  ${settingsPath}`);
@@ -545,6 +599,9 @@ export async function run(args = []) {
     }
     if (codex?.removed > 0) {
       console.log(`  Codex hooks 削除: ${codex.removed} (${codex.hooksPath})`);
+    }
+    if (grok?.removed > 0) {
+      console.log(`  Grok hooks 削除: ${grok.removed} (${grok.hooksPath})`);
     }
     if (removedCodexSkills.length > 0) {
       console.log(`  Codex skills 削除: ${removedCodexSkills.join(', ')} (${codexSkillsDir})`);
@@ -568,6 +625,7 @@ export async function run(args = []) {
   writeSettings(settingsPath, current);
   const { installed: installedCommands, skipped } = installSlashCommands(commandsDir);
   const codex = args.includes('--project') ? null : installCodexHooks();
+  const grok = args.includes('--project') ? null : installGrokHooks();
   const codexSkills = args.includes('--project') ? { installed: [], skipped: null } : installCodexSkills(codexSkillsDir);
   const monitorTask = ensureMonitorTaskFile({
     cwd: process.cwd(),
@@ -584,6 +642,9 @@ export async function run(args = []) {
       console.log(`  ${codexSkillsDir}`);
     }
   }
+  if (grok) {
+    console.log(`  ${grok.hooksPath}`);
+  }
   console.log('');
   console.log('有効な hooks:');
   console.log('  SessionStart     → throughline session-start  (セッション記録・バトン消費・引き継ぎ注入)');
@@ -593,6 +654,9 @@ export async function run(args = []) {
     console.log(`  Codex UserPromptSubmit → ${buildCodexUserPromptSubmitHookCommand()} (capture / monitor state only; auto refresh disabled)`);
     console.log(`  Codex PostToolUse      → ${buildCodexPostToolUseHookCommand()} (capture / monitor state only; auto refresh disabled)`);
     console.log(`  Codex Stop             → ${buildCodexStopHookCommand()} (Codex rollout capture + L1 要約)`);
+  }
+  if (grok) {
+    console.log('  Grok SessionStart / UserPromptSubmit / Stop → ~/.grok/hooks/throughline.json');
   }
   console.log('');
   if (installedCommands.length > 0) {

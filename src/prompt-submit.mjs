@@ -42,7 +42,7 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
-import { isUnsupportedNonClaudeEnvelope } from './hook-envelope.mjs';
+import { normalizeHookPayload } from './hook-envelope.mjs';
 
 // Phase 0-5 spike marker (SessionStart の spike-inject.flag とは別)
 const PROMPT_SPIKE_MARKER_PATH = join(homedir(), '.throughline', 'spike-prompt.flag');
@@ -143,8 +143,7 @@ export async function run() {
     process.stdin.on('end', resolve);
   });
 
-  const payload = JSON.parse(raw);
-  if (isUnsupportedNonClaudeEnvelope(payload)) return;
+  const payload = normalizeHookPayload(JSON.parse(raw));
   const { session_id, cwd, prompt } = payload;
 
   // VSCode 新規プロジェクトへの tasks.json 自動プロビジョニング。

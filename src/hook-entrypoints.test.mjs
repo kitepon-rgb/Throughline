@@ -74,65 +74,66 @@ test('hook modules can be imported without executing their hook body', () => {
   }
 });
 
-test('Grok camelCase envelopes are unsupported no-op before Throughline side effects [GF04T]', () => {
+test('Grok camelCase envelopes register a grok: session instead of no-op', () => {
   const home = makeTempHome();
   const project = makeTempProject();
+  const sessionId = '01a00aa2-50f8-7791-86fd-df2d27cf003e';
   const common = {
-    sessionId: 'grok-session',
+    sessionId,
     cwd: project,
     workspaceRoot: project,
-    timestamp: '2026-08-14T00:00:00Z',
+    timestamp: '2026-08-17T00:00:00Z',
     permissionMode: 'default',
   };
-  const cases = [
-    {
-      event: 'SessionStart',
-      entrypoint: 'src/session-start.mjs',
-      input: { ...common, hookEventName: 'session_start', source: 'startup' },
-    },
-    {
-      event: 'UserPromptSubmit',
-      entrypoint: 'src/prompt-submit.mjs',
-      input: { ...common, hookEventName: 'user_prompt_submit', prompt: 'hello' },
-    },
-    {
-      event: 'Stop',
-      entrypoint: 'src/turn-processor.mjs',
-      input: {
-        ...common,
-        hookEventName: 'stop',
-        reason: 'end_turn',
-        stopHookActive: false,
-        lastAssistantMessage: 'done',
-        backgroundTasks: [],
-        sessionCrons: [],
-      },
-    },
-  ];
 
   try {
-    const results = cases.map(({ event, entrypoint, input }) => {
-      const result = runNode([join(REPO_ROOT, entrypoint)], {
-        home,
-        cwd: project,
-        input: JSON.stringify(input),
-        env: { THROUGHLINE_NO_VSCODE: '0', TERM_PROGRAM: 'vscode' },
-      });
-      return { event, status: result.status, stdout: result.stdout, stderr: result.stderr };
+    const start = runNode([join(REPO_ROOT, 'src/session-start.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ ...common, hookEventName: 'session_start', source: 'startup' }),
     });
+    assert.equal(start.status, 0, start.stderr);
 
-    assert.deepEqual(
-      {
-        results,
-        throughlineStateExists: existsSync(join(home, '.throughline')),
-        vscodeTaskExists: existsSync(join(project, '.vscode', 'tasks.json')),
-      },
-      {
-        results: cases.map(({ event }) => ({ event, status: 0, stdout: '', stderr: '' })),
-        throughlineStateExists: false,
-        vscodeTaskExists: false,
-      },
+    const prompt = runNode([join(REPO_ROOT, 'src/prompt-submit.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({ ...common, hookEventName: 'user_prompt_submit', prompt: 'hello grok' }),
+    });
+    assert.equal(prompt.status, 0, prompt.stderr);
+
+    const historyDir = join(home, '.grok', 'sessions', encodeURIComponent(project), sessionId);
+    mkdirSync(historyDir, { recursive: true });
+    writeFileSync(
+      join(historyDir, 'chat_history.jsonl'),
+      [
+        JSON.stringify({ type: 'user', content: [{ type: 'text', text: 'hello grok' }] }),
+        JSON.stringify({ type: 'assistant', content: 'captured reply' }),
+      ].join('\n'),
     );
+    const stop = runNode([join(REPO_ROOT, 'src/turn-processor.mjs')], {
+      home,
+      cwd: project,
+      input: JSON.stringify({
+        ...common,
+        hookEventName: 'stop',
+        lastAssistantMessage: 'captured reply',
+      }),
+    });
+    assert.equal(stop.status, 0, stop.stderr);
+
+    const db = openDb(home);
+    const row = db.prepare('SELECT session_id, project_path FROM sessions').get();
+    assert.equal(row.session_id, `grok:${sessionId}`);
+    assert.equal(row.project_path, project);
+    const bodies = db.prepare('SELECT role, text FROM bodies ORDER BY role').all();
+    assert.deepEqual(
+      bodies.map((b) => ({ role: b.role, text: b.text })),
+      [
+        { role: 'assistant', text: 'captured reply' },
+        { role: 'user', text: 'hello grok' },
+      ],
+    );
+    db.close();
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

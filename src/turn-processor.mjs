@@ -46,7 +46,7 @@ import { readLatestUsage } from './transcript-usage.mjs';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
 import { writeCompletedTurnReceipt } from './completed-turn-receipts.mjs';
-import { isUnsupportedNonClaudeEnvelope } from './hook-envelope.mjs';
+import { normalizeHookPayload } from './hook-envelope.mjs';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
@@ -191,8 +191,7 @@ export async function run() {
     process.stdin.on('end', resolve);
   });
 
-  const payload = JSON.parse(raw || '{}');
-  if (isUnsupportedNonClaudeEnvelope(payload)) return;
+  const payload = normalizeHookPayload(JSON.parse(raw || '{}'));
   const { session_id, transcript_path, cwd, last_assistant_message } = payload;
   if (!session_id) throw new Error('Missing session_id in Stop payload');
 
@@ -206,10 +205,12 @@ export async function run() {
     process.stderr.write(`[vscode-task] ${msg}\n`);
   }
 
-  await waitForClaudeStopTranscriptFlush({
-    transcriptPath: transcript_path,
-    lastAssistantMessage: last_assistant_message,
-  });
+  if (!session_id.startsWith('grok:')) {
+    await waitForClaudeStopTranscriptFlush({
+      transcriptPath: transcript_path,
+      lastAssistantMessage: last_assistant_message,
+    });
+  }
 
   // Stop hook 時点で state ファイルを更新 → token-monitor の「アクティブ行」判定が
   // アシスタント応答終了時刻まで追従する

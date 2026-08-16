@@ -72,6 +72,10 @@ test('global install copies Throughline slash commands to ~/.claude/commands/', 
     assert.match(tlBody, /Throughline/, 'tl.md content should be real');
     const settings = JSON.parse(readFileSync(join(home.dir, '.claude', 'settings.json'), 'utf8'));
     assert.ok(settings.hooks?.UserPromptSubmit, 'UserPromptSubmit hook should be registered');
+    const grokHooks = JSON.parse(readFileSync(join(home.dir, '.grok', 'hooks', 'throughline.json'), 'utf8'));
+    assert.ok(grokHooks.hooks?.SessionStart, 'Grok SessionStart hook should be registered');
+    assert.ok(grokHooks.hooks?.UserPromptSubmit, 'Grok UserPromptSubmit hook should be registered');
+    assert.ok(grokHooks.hooks?.Stop, 'Grok Stop hook should be registered');
   } finally {
     unsilence();
     home.restore();

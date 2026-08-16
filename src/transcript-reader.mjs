@@ -59,14 +59,18 @@ export function readTranscript(transcriptPath) {
     if (entry.isSidechain === true) continue;
 
     const msg = entry.message;
-    if (!msg || !msg.role || msg.content == null) continue;
+    const grokContent = entry.content;
+    const role = msg?.role ?? entry.type;
+    const rawContent = msg?.content ?? grokContent;
+    if (!role || rawContent == null) continue;
 
-    const text = extractText(msg.content);
+    const text = extractText(rawContent);
     if (!text) continue;
 
     const ts = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN;
+    // grok chat_history.jsonl は Claude の message 包みを持たず type/content 直置き。
     turns.push({
-      role: msg.role,
+      role,
       content: text,
       turn_number: turns.length,
       timestamp: Number.isNaN(ts) ? null : ts,

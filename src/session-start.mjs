@@ -32,7 +32,7 @@ import { logDecision } from './decision-log.mjs';
 import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
-import { isUnsupportedNonClaudeEnvelope } from './hook-envelope.mjs';
+import { normalizeHookPayload } from './hook-envelope.mjs';
 
 const ENV_DISABLE_AUTO_HANDOFF = 'THROUGHLINE_DISABLE_AUTO_HANDOFF';
 
@@ -62,6 +62,7 @@ function findLatestClaudePredecessor(db, projectPath, currentSessionId) {
          AND merged_into IS NULL
          AND session_id != ?
          AND session_id NOT LIKE 'codex:%'
+         AND session_id NOT LIKE 'grok:%'
        ORDER BY updated_at DESC
        LIMIT 5`,
     )
@@ -91,8 +92,7 @@ export async function run() {
     process.stdin.on('end', resolve);
   });
 
-  const payload = JSON.parse(raw);
-  if (isUnsupportedNonClaudeEnvelope(payload)) return;
+  const payload = normalizeHookPayload(JSON.parse(raw));
   const { session_id, cwd, source, transcript_path } = payload;
 
   if (!session_id) throw new Error('Missing session_id in SessionStart payload');
