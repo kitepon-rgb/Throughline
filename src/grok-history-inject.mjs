@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export const GROK_HANDOFF_SYNTHETIC_REASON = 'throughline_handoff';
+// Grok includes native injections only when synthetic_reason is
+// system_reminder. A custom reason is written to disk and dropped from
+// the model prompt (live session 01a00cf9).
+export const GROK_HANDOFF_SYNTHETIC_REASON = 'system_reminder';
+export const GROK_HANDOFF_MARKER = 'data-throughline-handoff="1"';
 
 function rowText(entry) {
   if (typeof entry?.content === 'string') return entry.content;
@@ -39,13 +43,16 @@ export function injectGrokHandoffContext(transcriptPath, injectionText) {
 
   const existing = existsSync(transcriptPath) ? readFileSync(transcriptPath, 'utf8') : '';
   const rows = parseLines(existing);
-  if (rows.some((row) => row.synthetic_reason === GROK_HANDOFF_SYNTHETIC_REASON)) {
+  if (rows.some((row) => rowText(row).includes(GROK_HANDOFF_MARKER))) {
     return { injected: false, reason: 'already_present' };
   }
 
   const reminder = {
     type: 'user',
-    content: [{ type: 'text', text: `<system-reminder>\n${injectionText}\n</system-reminder>` }],
+    content: [{
+      type: 'text',
+      text: `<system-reminder ${GROK_HANDOFF_MARKER}>\n${injectionText}\n</system-reminder>`,
+    }],
     synthetic_reason: GROK_HANDOFF_SYNTHETIC_REASON,
   };
 

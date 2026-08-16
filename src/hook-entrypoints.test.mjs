@@ -449,7 +449,8 @@ test('Grok first prompt injects handoff into chat_history instead of stdout', ()
       .split('\n')
       .filter(Boolean)
       .map((line) => JSON.parse(line));
-    assert.equal(rows[1].synthetic_reason, 'throughline_handoff');
+    assert.equal(rows[1].synthetic_reason, 'system_reminder');
+    assert.match(rows[1].content[0].text, /data-throughline-handoff="1"/);
     assert.match(rows[1].content[0].text, /old assistant body/);
     assert.match(rows[2].content[0].text, /これかな？/);
   } finally {

@@ -29,6 +29,7 @@ test('injectGrokHandoffContext inserts reminder before the latest user_query', (
       .map((line) => JSON.parse(line));
     assert.equal(rows.length, 4);
     assert.equal(rows[2].synthetic_reason, GROK_HANDOFF_SYNTHETIC_REASON);
+    assert.match(rows[2].content[0].text, /data-throughline-handoff="1"/);
     assert.match(rows[2].content[0].text, /old assistant body/);
     assert.match(rows[3].content[0].text, /これかな？/);
   } finally {
