@@ -18,6 +18,10 @@ Claude / Codex `/tl` と Grok `/clear` では起動しない。一覧の正は s
 Desktop Inactive は成功条件にしない。L2 が無い源（`merged_into` の空席など）では起動しない。
 v0.9.1 の GF04 no-op は撤回。正本は [ADR 0021](docs/adr/0021-grok-host-capture.md) と
 [plan_grok-successor-launch.md](docs/plan_grok-successor-launch.md)。Claude/Codex 契約は変えない。
+公開commit `26d2d5a`、npm `throughline@0.10.0`、tag `v0.10.0`、GitHub Release、
+shasum `d2662b45915564ad2c2a6d821b238180b71f7e68`、このMacのregistry由来global install
+（`throughline --version` = 0.10.0、Grok hook は
+`/opt/homebrew/lib/node_modules/throughline/bin/throughline.mjs`）。
 
 **v0.9.1（2026-08-14公開）**: 当時は Claude用SessionStart、UserPromptSubmit、Stopへ流入した
 非ClaudeのcamelCase envelopeを副作用前に無出力・exit 0で終了していた。Grok正式host化でこのno-opは撤回。
