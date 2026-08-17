@@ -10,12 +10,33 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-17
+
 ### Added
 
 - Grok is a first-class hook host. CamelCase envelopes are normalized to
   `grok:<sessionId>` and L2 is recovered from Grok `chat_history.jsonl`.
   `throughline install` writes `~/.grok/hooks/throughline.json` with absolute
   `node` + `bin/throughline.mjs` commands so Desktop GUI PATH can fire them.
+  The v0.9.1 Claude-facing no-op for non-Claude envelopes is withdrawn.
+- `throughline grok-continue --session <id>` starts a person-facing Grok seat
+  whose first user text is the handoff-context body. cwd is the source
+  session's `project_path`, not the caller's cwd. The first user text is
+  preamble + context + continue + wait. Missing context or project_path does
+  not spawn. `--rules`, aiterm, and `--from` are not used. macOS Terminal only.
+- Grok `/tl` writes the baton and then launches `grok-continue` as a side
+  effect. Claude `/tl`, Codex `/tl`, and Grok `/clear` do not launch it.
+  Empty-L2 sources (including a `merged_into` chain member with no bodies)
+  do not spawn. The list of record is the session directory under
+  `~/.grok/sessions/<encodeURIComponent(cwd)>/`. Desktop Inactive folding is
+  not a success condition.
+
+### Documentation
+
+- README, README.ja, contributor entrypoints, docs overview, ADR 0021
+  current state, and the successor-launch plan now state the live Grok
+  `/tl` → `grok-continue` contract. Historical ADRs and archived plans
+  remain point-in-time records.
 
 ## [0.9.1] — 2026-08-14
 

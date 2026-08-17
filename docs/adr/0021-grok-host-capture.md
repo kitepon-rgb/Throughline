@@ -52,4 +52,9 @@ Grok 1.0.4 バイナリの hook 出力型は `GateHookJson`（PreToolUse deny/up
 
 - spawn の cwd は源セッションの `project_path`。呼び出し元 cwd は使わない。共有 `GROK_HOME` の対話 `grok`。位置引数 `[PROMPT]` を使う。`--rules` / `--system-prompt-override` / `--agent` / 単発 `-p` は使わない。aiterm は使わない。
 - Claude / Codex の `/tl` 契約は変えない。Grok `/tl` 成功後の副作用起動だけが配線対象。
-- 一覧の正は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/` と `grok --resume`。Desktop Inactive 畳みは成功条件にしない。
+- 一覧の正は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/`。Desktop Inactive 畳みは成功条件にしない。
+- L2 が無い源（`merged_into` チェーンの空席など）では spawn しない。新しい chat で 1〜2 往復してから `/tl` する。
+
+2026-08-17 実機受入: `grok:01a00ff1-3f97-70e2-ba76-5acd90561a84` の `/tl` が
+`c01a2689-5b4f-4977-97ce-f73fcf317f94` を Dotagents 棚に立て、初手末尾は待機、
+後継は待って止まった。v0.10.0 で公開。

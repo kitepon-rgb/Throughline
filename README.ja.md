@@ -38,6 +38,41 @@ throughline install     # hook / Codex skill / VS Code monitor task を登録
 `/clear` を打てば新セッションはゼロからではなく、**思考の途中から再開** される。
 `/clear` を経由しない新規 chat / VS Code 再起動では `/tl` で前任を指名できる。
 
+Grok Desktop も first-class host である。`throughline install` は
+`~/.grok/hooks/throughline.json` を書く。Grok の `/tl` は今の窓へ注入せず、
+Terminal に新席を立てる（詳細は下）。
+
+<details>
+<summary><b>Grok も併用する場合</b> Grok hooks も登録される — クリックで詳細</summary>
+
+global install は `~/.grok/hooks/throughline.json` に絶対 `node` +
+installed `bin/throughline.mjs` の SessionStart / UserPromptSubmit / Stop を書く。
+bare `throughline` は書かない（Grok Desktop の GUI PATH では見えない）。
+
+ターンは `grok:<sessionId>` として保存し、L2 は
+`~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl` から回収する。
+Grok は UserPromptSubmit stdout や書き換えた `chat_history.jsonl` をライブ
+モデル文脈へ入れない。
+
+L2 がある Grok 席で `/tl` を打つと、バトンを書いたあと次を副作用起動する:
+
+```bash
+throughline grok-continue --session grok:<id>
+```
+
+cwd は源セッションの `project_path` であり、呼び出し元 cwd は使わない。
+初手 user 文は前文 + handoff-context 本文 + 続き + 待機。context /
+`project_path` が無ければ spawn しない。Claude / Codex の `/tl` と Grok の
+`/clear` では起動しない。aiterm / `--rules` / `--from` は使わない。
+macOS Terminal のみ。
+
+新席は `~/.grok/sessions/<encodeURIComponent(cwd)>/` のトップレベル
+ディレクトリ。Desktop の Inactive 畳みは成功条件にしない。L2 が無い源
+（`merged_into` チェーンの空席など）では起動しない。新しい chat で 1〜2
+往復してから `/tl` する。
+
+</details>
+
 <details>
 <summary><b>Codex も併用する場合</b> Codex hooks も登録される — クリックで詳細</summary>
 
@@ -324,7 +359,7 @@ Throughline state をまだ書いていない現在セッションも表示で�
 
 | コマンド | 役割 |
 | --- | --- |
-| `throughline install` | hook / Codex UserPromptSubmit・PostToolUse・Stop hook / Codex skill を登録し、VS Code 配下なら現プロジェクトの monitor task も配置 |
+| `throughline install` | hook / Codex UserPromptSubmit・PostToolUse・Stop hook / Codex skill / `~/.grok/hooks/throughline.json` を登録し、VS Code 配下なら現プロジェクトの monitor task も配置 |
 | `throughline install --project` | 現リポジトリの `.claude/settings.json` だけに hook を登録 |
 | `throughline uninstall` | hook を削除 |
 | `throughline monitor` | マルチセッション監視を起動 |
@@ -335,6 +370,7 @@ Throughline state をまだ書いていない現在セッションも表示で�
 | `throughline doctor --trim --host claude` | trim boundary と手動手順を診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
 | `throughline handoff-context --session <id> --json` | SessionStart と同じ引き継ぎ文脈を versioned JSON で取得。記憶行の `session_id` と `sessions.merged_into` は変更せず、同一端末内の別ベンダーランチャーから使える |
+| `throughline grok-continue --session <id>` | handoff-context を初手 user 文にした対話 Grok 席を立てる。cwd は源の `project_path`。ready でなければ spawn しない。`--rules` なし。macOS Terminal のみ |
 | `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
 | `throughline codex-sidecar-dry-run` | App Server を呼ばずに read-only sidecar request を正規化表示 |
 | `throughline trim --dry-run --host codex` | Codex same-thread trim の dry-run preview |
@@ -360,7 +396,7 @@ latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変�
 
 | コマンド | 役割 |
 | --- | --- |
-| `/tl` | 引き継ぎバトンを書き込む (auto path を OFF にしているユーザー / `/clear` 経由しない引継ぎの逃げ道) |
+| `/tl` | 引き継ぎバトンを書き込む (auto path を OFF にしているユーザー / `/clear` 経由しない引継ぎの逃げ道)。Grok ではバトン成功後に `grok-continue` も起動する |
 | `/sc-detail <時刻>` | 過去ターンの L2 本文と L3 ツール I/O を取得 |
 
 > v0.4.0 から auto-handoff がデフォルト ON です。`/clear` だけで新セッションが
@@ -387,6 +423,8 @@ latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変�
 - [`docs/03_inheritance_on_clear_only.md`](docs/03_inheritance_on_clear_only.md) — `/tl` バトン引き継ぎ方式の設計判断記録 (schema v6–v7)
 - [`docs/08_codex_dual_support.md`](docs/08_codex_dual_support.md) — Claude 主軸を維持したまま Codex 対応を足すための architecture brief
 - [`docs/09_rollback_context_trim_insight.md`](docs/09_rollback_context_trim_insight.md) — rollback / trim 設計 insight。復元 memory を current work として読ませる制約も記録
+- [`docs/adr/0021-grok-host-capture.md`](docs/adr/0021-grok-host-capture.md) — Grok first-class host と `/tl` → `grok-continue` の現行契約
+- [`docs/plan_grok-successor-launch.md`](docs/plan_grok-successor-launch.md) — Grok 後継席の CLI・初手・非目標・実機受入
 - [`docs/07_codex_trim_implementation_plan.md`](docs/07_codex_trim_implementation_plan.md) — Claude/Codex 両対応と rollback trim の統合 TODO 計画
 - [`docs/04_public_release_plan.md`](docs/04_public_release_plan.md) — 公開配布化プラン、§ 0 フォールバック禁止ルール、バージョン別実装ステータス
 - [`docs/15_windows_ci_release_latency_plan.md`](docs/15_windows_ci_release_latency_plan.md) — Windows CI性能gateとACL契約を維持するrelease工程

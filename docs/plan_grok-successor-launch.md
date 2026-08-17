@@ -1,11 +1,18 @@
 # Grok successor launch — Throughline 所有の最小起動
 
 Date: 2026-08-17  
+Status: Accepted（v0.10.0）  
 Lattice plan: `grok-successor-launch`  
 対象 repo: Throughline だけ。aiterm は依存にも実装の借り先にもしない。
 
 t1-contract（2026-08-17）で起動核の CLI名・初手文面・非目標・受入を固定した。
 以降の工程は本ファイルと [ADR 0021](adr/0021-grok-host-capture.md) の現在地を正とする。
+
+2026-08-17 実機: Dotagents 棚の `grok:01a00ff1-3f97-70e2-ba76-5acd90561a84` で
+`handoff-context` が `ready` のあと `/tl`。後継
+`~/.grok/sessions/%2FUsers%2Fkite%2FDeveloper%2Fdotagents/c01a2689-5b4f-4977-97ce-f73fcf317f94/`
+が立ち、初手末尾は待機行、モデルは仕事を始めず待った。源の `merged_into` 空席
+（`01a00b38`、L2 0 件）では spawn しない。
 
 ## 目的
 
@@ -20,7 +27,7 @@ Grok Desktop の UserPromptSubmit はモデルへ本文を渡せない。`/tl` �
 - `--system-prompt-override` / `--agent` で初手 user 文を代替する
 - Claude / Codex の `/tl` 契約を変える
 - UserPromptSubmit stdout や `chat_history.jsonl` への再注入で Desktop 新窓を直す
-- npm publish / Spotter
+- 実装キャンペーン中の Spotter 作業（npm 公開は製品完遂であり禁止ではない）
 
 ## 固定契約
 

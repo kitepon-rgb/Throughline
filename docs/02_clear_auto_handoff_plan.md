@@ -17,6 +17,12 @@ A 案 (= /clear で自動引継ぎ + /tl は逃げ道として残す + /tl-trim 
 > `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` は **fallback path のみに作用** する
 > ようになった (typed `/clear` / `/tl` には効かない)。
 
+> **2026-08-17 (ADR 0021 / v0.10.0)**: 本書は Claude `/clear`・`/tl` の現行仕様である。
+> Grok は UserPromptSubmit stdout をモデルへ渡さない。Grok `/tl` の記憶再開は
+> `throughline grok-continue` であり、本書の「次セッション初回プロンプトで注入」を
+> Grok に適用しない。正本は [ADR 0021](adr/0021-grok-host-capture.md) と
+> [plan_grok-successor-launch.md](plan_grok-successor-launch.md)。
+
 > **2026-07-18 (ADR 0016) update**: 注入の中身を push/pull 二段に再設計した。
 > push (9,500 字) はヘッダ + 現在地アンカー + 案内セクション + **L2 をターン原子で
 > 入るだけ全文**（L1 は注入しない）。窓 20 ターンの残りは `throughline recall --l2`、

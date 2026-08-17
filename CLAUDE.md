@@ -6,12 +6,18 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
-**進行中（Grok host）**: Grok camelCase envelope（`sessionId` / `hookEventName`）は
-`grok:<id>` に正規化して SessionStart / UserPromptSubmit / Stop を処理する。
-L2 回収は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`。
-`throughline install` は `~/.grok/hooks/throughline.json` に絶対 `node` +
-`bin/throughline.mjs` の SessionStart / UserPromptSubmit / Stop を書く。
-Claude/Codex 契約は変えない。
+**v0.10.0（2026-08-17公開）**: Grok を first-class hook host にする。camelCase envelope は
+`grok:<id>` に正規化し、L2 は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`
+から回収する。`throughline install` は `~/.grok/hooks/throughline.json` に絶対 `node` +
+`bin/throughline.mjs` の SessionStart / UserPromptSubmit / Stop を書く（bare `throughline` は書かない）。
+Grok は UserPromptSubmit stdout をモデルへ渡さない。Grok `/tl` 成功後だけ
+`throughline grok-continue --session grok:<id>` が源セッションの `project_path` で
+macOS Terminal の対話 grok を立てる。初手は前文 + handoff-context 本文 + 続き + 待機。
+context / `project_path` 失敗では spawn しない。`--rules` / aiterm / `--from` は使わない。
+Claude / Codex `/tl` と Grok `/clear` では起動しない。一覧の正は session ディレクトリ。
+Desktop Inactive は成功条件にしない。L2 が無い源（`merged_into` の空席など）では起動しない。
+v0.9.1 の GF04 no-op は撤回。正本は [ADR 0021](docs/adr/0021-grok-host-capture.md) と
+[plan_grok-successor-launch.md](docs/plan_grok-successor-launch.md)。Claude/Codex 契約は変えない。
 
 **v0.9.1（2026-08-14公開）**: 当時は Claude用SessionStart、UserPromptSubmit、Stopへ流入した
 非ClaudeのcamelCase envelopeを副作用前に無出力・exit 0で終了していた。Grok正式host化でこのno-opは撤回。

@@ -39,6 +39,10 @@ type `/clear` — the new session resumes mid-thought instead of starting from
 zero. (For non-`/clear` boundaries such as a brand-new chat or a VSCode
 restart, type `/tl` first to mark the predecessor.)
 
+Grok Desktop is also a first-class host. `throughline install` writes
+`~/.grok/hooks/throughline.json`. On Grok, `/tl` does not inject into the
+current window — it starts a new Terminal seat. See below.
+
 <details>
 <summary><b>Also using Codex?</b> Global install registers Codex hooks too — click for details.</summary>
 
@@ -57,6 +61,40 @@ trigger. It also installs a global `$throughline` Codex skill. Bare
 DB handoff memory as a developer item, and opens that thread in the selected
 host; ask explicitly for current-thread rollback diagnostics when you want the
 guarded `trim --execute --host codex` surface.
+
+</details>
+
+<details>
+<summary><b>Also using Grok?</b> Global install registers Grok hooks — click for details.</summary>
+
+Global install writes `~/.grok/hooks/throughline.json` with absolute `node` +
+installed `bin/throughline.mjs` for SessionStart, UserPromptSubmit, and Stop.
+Do not register a bare `throughline` command: Grok Desktop's GUI PATH will not
+see it.
+
+Turns are stored as `grok:<sessionId>`. L2 is recovered from
+`~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`.
+Grok does not feed UserPromptSubmit stdout or a rewritten `chat_history.jsonl`
+into the live model prompt.
+
+After `/tl` on a Grok session whose `handoff-context` is `ready`, Throughline
+writes the baton and then runs:
+
+```bash
+throughline grok-continue --session grok:<id>
+```
+
+cwd is the source session's `project_path`, not the caller's cwd. The first
+user text is preamble + the handoff-context body + continue + wait. Missing
+context or project_path does not spawn. Claude `/tl`, Codex `/tl`, and Grok
+`/clear` do not launch this CLI. Do not use aiterm, `--rules`, or `--from`.
+macOS Terminal only.
+
+The new seat is a top-level directory under
+`~/.grok/sessions/<encodeURIComponent(cwd)>/`. Desktop Inactive folding is
+not the success condition. A source with no L2 (including a `merged_into`
+chain member with zero bodies) does not spawn — open a fresh chat, exchange
+one or two turns, then `/tl`.
 
 </details>
 
@@ -774,7 +812,7 @@ local-only contracts.
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
-| `throughline install`                          | Register Claude user hooks/slash commands, the global Codex UserPromptSubmit/PostToolUse/Stop hooks, the global `$throughline` Codex skill, and the current VS Code monitor task when applicable |
+| `throughline install`                          | Register Claude user hooks/slash commands, the global Codex UserPromptSubmit/PostToolUse/Stop hooks, the global `$throughline` Codex skill, `~/.grok/hooks/throughline.json`, and the current VS Code monitor task when applicable |
 | `throughline install --project`                | Register Claude hooks/slash commands in this repo only       |
 | `throughline uninstall`                        | Remove Throughline-managed Claude hooks/slash commands, only the Throughline-managed Codex hook, and the `$throughline` Codex skill |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
@@ -797,6 +835,7 @@ local-only contracts.
 | `throughline runtime-errors compact --json`    | Remove only acknowledged, resolved aggregates after retention; open or unacknowledged records remain |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
 | `throughline handoff-context --session <id> --json` | Print the exact SessionStart inheritance context as versioned JSON without moving memory rows or changing `sessions.merged_into`; intended for local launchers that need portable cross-vendor context |
+| `throughline grok-continue --session <id>` | Spawn a person-facing Grok seat whose first user text is the handoff-context body. cwd is the source session `project_path`. Does not spawn without ready context. No `--rules`. macOS Terminal only |
 | `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
 | `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |
 | `throughline codex-resume --session codex:<id>` | Render Codex active-work context from a captured Codex session |
@@ -840,7 +879,7 @@ Slash commands (invoked by the user in Claude Code):
 
 | Command       | What it does                                                      |
 | ------------- | ----------------------------------------------------------------- |
-| `/tl`         | Write a handoff baton (explicit inheritance signal across non-`/clear` boundaries — new chat / VSCode restart) |
+| `/tl`         | Write a handoff baton (explicit inheritance signal across non-`/clear` boundaries — new chat / VSCode restart). On Grok, also launches `grok-continue` after a successful baton write |
 | `/clear`      | Built-in Claude Code reset. Throughline's `UserPromptSubmit` hook also writes a baton so the next session inherits the cleared session's memory |
 | `/sc-detail <time>` | Retrieve L2 body text and L3 tool I/O for a past turn       |
 
@@ -854,7 +893,7 @@ Slash commands (invoked by the user in Claude Code):
 
 Hook subcommands (invoked by Claude Code, not by humans):
 `session-start` (SessionStart), `process-turn` (Stop),
-`prompt-submit` (UserPromptSubmit — detects `/tl` and `/clear` and writes a baton).
+`prompt-submit` (UserPromptSubmit — detects `/tl` and `/clear` and writes a baton; Grok `/tl` also launches `grok-continue`).
 
 ### Observer completed-turn feed (development)
 

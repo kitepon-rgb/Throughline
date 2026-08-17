@@ -21,6 +21,7 @@
 | [14_observer_completed_turn_feed_plan.md](14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only read / wait CLIの完了済み設計・受入記録。v0.7.0で公開済み |
 | [15_windows_ci_release_latency_plan.md](15_windows_ci_release_latency_plan.md) | Windows CI 18分の原因、ACL安全網を維持した短縮、release gateの受入条件 |
 | [16_readonly_handoff_context_plan.md](16_readonly_handoff_context_plan.md) | DB所有権を変更せずSessionStartと同じ記憶を返す、ローカルランチャー向けread-only I/F。v0.9.0で公開済み |
+| [plan_grok-successor-launch.md](plan_grok-successor-launch.md) | Grok `/tl` 後の後継席起動。v0.10.0で公開済み。正本は本ファイルと [ADR 0021](adr/0021-grok-host-capture.md) |
 | [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) | local runtime error aggregate store の契約と実装 TODO |
 
 ## Supporting Records
@@ -38,6 +39,7 @@
 - [ADR 0002](adr/0002-observer-claude-completion-receipt.md): Claude completed turnはThroughline所有のStop receiptで固定する。
 - [ADR 0003](adr/0003-observer-completed-chain-cursor.md): Observer cursorをhost固有のcompleted pair chainとprefix検証へ束縛する。
 - [ADR 0020](adr/0020-windows-ci-release-latency.md): Windows ACL契約を維持し、境界fixtureと実ACL検証を分離する。
+- [ADR 0021](adr/0021-grok-host-capture.md): Grok を first-class hook host にし、`/tl` 後の記憶再開は `grok-continue` に固定する。
 
 Observerの公開境界は`throughline observer-read`／`throughline observer-wait`のJSON-only CLIである。
 ThroughlineはClaude Stop receiptとCodex rolloutの`task_complete`だけからcompleted cursorを構築し、

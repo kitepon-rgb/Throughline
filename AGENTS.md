@@ -18,8 +18,16 @@ Throughline は Claude Code を主軸として育ってきたプロジェクト�
    - [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md)
 4. DB記憶を別プロセスへ渡す作業なら:
    - [docs/16_readonly_handoff_context_plan.md](docs/16_readonly_handoff_context_plan.md)
+5. Grok host / `/tl` 後継なら:
+   - [docs/adr/0021-grok-host-capture.md](docs/adr/0021-grok-host-capture.md)
+   - [docs/plan_grok-successor-launch.md](docs/plan_grok-successor-launch.md)
 
 `CLAUDE.md` と実装が食い違う場合は、まず実装を直接確認する。必要なら `CLAUDE.md` 側を更新する。
+
+Grok は first-class host である。capture は `chat_history.jsonl`、hook は
+`~/.grok/hooks/throughline.json` の絶対パス。Grok `/tl` の記憶再開は
+`throughline grok-continue --session grok:<id>` だけとする。stdout 再注入、
+aiterm、`--rules`、`--from` を現行契約に戻さない。
 
 ## Claude 正本を守る
 

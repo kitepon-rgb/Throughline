@@ -34,10 +34,10 @@ Throughline を GitHub + npm で公開し、世界中の Claude Code ユーザ�
 
 ```bash
 npm install -g throughline     # CLI を PATH に配置
-throughline install            # ~/.claude/settings.json、Codex hook、Codex skill を追記
+throughline install            # ~/.claude/settings.json、Codex hook、Codex skill、Grok hook を追記
 ```
 
-Claude hook コマンドは **`throughline <subcommand>` の PATH 解決型**。node のインストール先や OS が変わっても PATH さえ通っていれば動く。Codex Stop hook は Codex App Server / VSCode host の PATH 差分を避けるため、絶対 node + installed `bin/throughline.mjs` で登録する。Codex 手動 UX は `~/.codex/skills/throughline` の `$throughline` skill で自然言語から呼ぶ。
+Claude hook コマンドは **`throughline <subcommand>` の PATH 解決型**。node のインストール先や OS が変わっても PATH さえ通っていれば動く。Codex Stop hook と Grok hook は host の PATH 差分を避けるため、絶対 node + installed `bin/throughline.mjs` で登録する。Grok は `~/.grok/hooks/throughline.json`。Codex 手動 UX は `~/.codex/skills/throughline` の `$throughline` skill で自然言語から呼ぶ。Grok `/tl` の後継起動は `throughline grok-continue`（macOS Terminal）。
 
 ### hook 登録後の `~/.claude/settings.json`（抜粋）
 

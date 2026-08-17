@@ -209,7 +209,7 @@ async function showHelp() {
   console.log(`throughline v${version}
 
 Usage:
-  throughline install           Register hooks in ~/.claude/settings.json
+  throughline install           Register Claude, Codex, and Grok hooks
   throughline uninstall         Remove hooks
   throughline monitor           Multi-session token monitor (use --all, --session <id>)
   throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
