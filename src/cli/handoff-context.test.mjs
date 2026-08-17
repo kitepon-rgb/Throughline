@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 import { buildBudgetedResumeContext } from '../resume-context.mjs';
+import { readSessionProjectPath } from './handoff-context.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'bin/throughline.mjs');
@@ -126,6 +127,18 @@ test('handoff-context emits the exact inheritance context without changing DB ow
     const verify = new DatabaseSync(dbPath, { readOnly: true });
     assert.deepEqual(ownershipSnapshot(verify), before);
     verify.close();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('readSessionProjectPath returns the source session project', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-session-project-'));
+  try {
+    const { db, dbPath } = createFixture(home);
+    db.close();
+    assert.equal(readSessionProjectPath(SESSION_ID, { dbPath }), '/work/project');
+    assert.equal(readSessionProjectPath('missing', { dbPath }), null);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

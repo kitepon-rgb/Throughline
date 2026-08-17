@@ -38,7 +38,7 @@ Grok 1.0.4 バイナリの hook 出力型は `GateHookJson`（PreToolUse deny/up
 
 - CLI: `throughline grok-continue --session <id>`。`<id>` は `grok:` 接頭辞付き Throughline session id。`--from` は採用しない。
 - 内部で `handoff-context --session <id> --json` を読む。ready でなければ spawn しない。
-- 初手 user 文は次の 3 段だけ。`{context}` は handoff-context の `context` 文字列。JSON envelope は載せない。
+- 初手 user 文は次の 4 段だけ。`{context}` は handoff-context の `context` 文字列。JSON envelope は載せない。末尾は待機。
 
   ```
   この発言は直前 Throughline 席の履歴を前提とする。
@@ -46,8 +46,10 @@ Grok 1.0.4 バイナリの hook 出力型は `GateHookJson`（PreToolUse deny/up
   {context}
 
   直前の作業の自然な続きとして応答すること。
+
+  この後ユーザーが指示を出す。何もせず待機すること。
   ```
 
-- spawn は同じ cwd・共有 `GROK_HOME` の対話 `grok`。位置引数 `[PROMPT]` を使う。`--rules` / `--system-prompt-override` / `--agent` / 単発 `-p` は使わない。aiterm は使わない。
+- spawn の cwd は源セッションの `project_path`。呼び出し元 cwd は使わない。共有 `GROK_HOME` の対話 `grok`。位置引数 `[PROMPT]` を使う。`--rules` / `--system-prompt-override` / `--agent` / 単発 `-p` は使わない。aiterm は使わない。
 - Claude / Codex の `/tl` 契約は変えない。Grok `/tl` 成功後の副作用起動だけが配線対象。
 - 一覧の正は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/` と `grok --resume`。Desktop Inactive 畳みは成功条件にしない。

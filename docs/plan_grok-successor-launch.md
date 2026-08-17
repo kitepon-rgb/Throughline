@@ -39,14 +39,15 @@ throughline grok-continue --session <id>
 
 ### spawn
 
-- 同じ project cwd で、共有 `GROK_HOME`（上書きしない）のまま `grok` を人の席として立てる。
+- 源セッション（`--session` の Throughline 行）の `project_path` で立てる。呼び出し元の cwd は使わない。`project_path` が無い・読めない・ディレクトリが無いときは spawn しない。
+- 共有 `GROK_HOME`（上書きしない）のまま `grok` を人の席として立てる。
 - 起動は対話セッションである。`-p` / `--prompt` / `--prompt-file` / `--prompt-json` の単発終了経路は使わない。
 - 初手は `grok` の位置引数 `[PROMPT]` に渡す。`--rules` は付けない。
 - hook から呼ぶので対話 TTY は無い。macOS では新しい Terminal 窓で grok を前面に出す。立てた session id が分かれば標準出力にも出す（`grok --resume` できるようにする）。両方できることが受入の強い形である。
 
 ### 初手文面
 
-初手 user 文は次の 3 段だけとする。前後の飾り文を足さない。`{context}` は handoff-context が返した `context` 文字列そのもの。
+初手 user 文は次の 4 段だけとする。前後の飾り文を足さない。`{context}` は handoff-context が返した `context` 文字列そのもの。末尾の待機が無いと、要約を新しい仕事の着手と誤る。
 
 ```
 この発言は直前 Throughline 席の履歴を前提とする。
@@ -54,6 +55,8 @@ throughline grok-continue --session <id>
 {context}
 
 直前の作業の自然な続きとして応答すること。
+
+この後ユーザーが指示を出す。何もせず待機すること。
 ```
 
 ### `/tl` 配線
@@ -72,7 +75,7 @@ throughline grok-continue --session <id>
 ### focused（t2 / t3）
 
 - `handoff-context` 失敗では `grok` を spawn しない。
-- 初手文面は上の 3 段で、2 段目に `context` 文字列がそのまま含まれる。
+- 初手文面は上の 4 段で、2 段目に `context` 文字列がそのまま含まれ、末尾が待機である。
 - spawn argv に `--rules` が無い。
 - spawn 経路に aiterm / tmux / `role=subagent` が無い。
 - Grok 以外の `/tl` では `grok-continue` を呼ばない。

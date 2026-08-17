@@ -36,6 +36,25 @@ export function readHandoffContext(sessionId, {
   }
 }
 
+export function readSessionProjectPath(sessionId, {
+  dbPath = join(homedir(), '.throughline', 'throughline.db'),
+} = {}) {
+  if (!existsSync(dbPath)) return null;
+
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const row = db.prepare(
+      'SELECT project_path FROM sessions WHERE session_id = ?',
+    ).get(sessionId);
+    const projectPath = row?.project_path;
+    return typeof projectPath === 'string' && projectPath.length > 0
+      ? projectPath
+      : null;
+  } finally {
+    db.close();
+  }
+}
+
 export function run(argv = [], {
   stdout = process.stdout,
   stderr = process.stderr,

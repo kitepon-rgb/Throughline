@@ -4,10 +4,11 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-import { readHandoffContext } from './handoff-context.mjs';
+import { readHandoffContext, readSessionProjectPath } from './handoff-context.mjs';
 
 export const GROK_CONTINUE_PREAMBLE = 'この発言は直前 Throughline 席の履歴を前提とする。';
 export const GROK_CONTINUE_REQUEST = '直前の作業の自然な続きとして応答すること。';
+export const GROK_CONTINUE_WAIT = 'この後ユーザーが指示を出す。何もせず待機すること。';
 
 export function parseArgs(argv = []) {
   if (
@@ -25,7 +26,7 @@ export function buildGrokContinuePrompt(context) {
   if (typeof context !== 'string' || context.length === 0) {
     throw new TypeError('empty context');
   }
-  return `${GROK_CONTINUE_PREAMBLE}\n\n${context}\n\n${GROK_CONTINUE_REQUEST}`;
+  return `${GROK_CONTINUE_PREAMBLE}\n\n${context}\n\n${GROK_CONTINUE_REQUEST}\n\n${GROK_CONTINUE_WAIT}`;
 }
 
 export function shQuote(value) {
@@ -125,10 +126,10 @@ export function run(argv = [], {
   stdout = process.stdout,
   stderr = process.stderr,
   readContext = readHandoffContext,
+  readProjectPath = readSessionProjectPath,
   resolveBin = resolveGrokBin,
   createSessionId = randomUUID,
   platform = process.platform,
-  cwd = process.cwd(),
   spawnLaunch = defaultSpawnLaunch,
 } = {}) {
   let sessionId;
@@ -148,6 +149,22 @@ export function run(argv = [], {
   }
   if (!context) {
     stderr.write('Throughline handoff context is not available for that session.\n');
+    return 1;
+  }
+
+  let cwd;
+  try {
+    cwd = readProjectPath(sessionId);
+  } catch {
+    stderr.write('Throughline session project path could not be read.\n');
+    return 1;
+  }
+  if (!cwd) {
+    stderr.write('Throughline session project path is not available for that session.\n');
+    return 1;
+  }
+  if (!existsSync(cwd)) {
+    stderr.write('Throughline session project path does not exist.\n');
     return 1;
   }
 

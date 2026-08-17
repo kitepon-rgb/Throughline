@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import {
   GROK_CONTINUE_PREAMBLE,
   GROK_CONTINUE_REQUEST,
+  GROK_CONTINUE_WAIT,
   appleScriptForLaunch,
   buildContinuePlan,
   buildGrokArgv,
@@ -41,11 +42,11 @@ test('parseArgs accepts --session only', () => {
   assert.throws(() => parseArgs([]), /usage error/);
 });
 
-test('first-user prompt is the locked three-part text', () => {
+test('first-user prompt is the locked text ending in wait', () => {
   const prompt = buildGrokContinuePrompt(CONTEXT);
   assert.equal(
     prompt,
-    `${GROK_CONTINUE_PREAMBLE}\n\n${CONTEXT}\n\n${GROK_CONTINUE_REQUEST}`,
+    `${GROK_CONTINUE_PREAMBLE}\n\n${CONTEXT}\n\n${GROK_CONTINUE_REQUEST}\n\n${GROK_CONTINUE_WAIT}`,
   );
 });
 
@@ -100,10 +101,10 @@ test('handoff-context failure does not spawn grok', () => {
   const code = run(['--session', 'grok:missing'], {
     ...io,
     readContext: () => null,
+    readProjectPath: () => '/work/dotagents',
     resolveBin: () => '/tmp/grok',
     spawnLaunch: (plan) => { spawned.push(plan); },
     platform: 'darwin',
-    cwd: '/work/Throughline',
   });
   assert.equal(code, 1);
   assert.equal(spawned.length, 0);
@@ -116,6 +117,7 @@ test('handoff-context throw does not spawn grok', () => {
   const code = run(['--session', 'grok:broken'], {
     ...io,
     readContext: () => { throw new Error('db'); },
+    readProjectPath: () => REPO_ROOT,
     resolveBin: () => '/tmp/grok',
     spawnLaunch: (plan) => { spawned.push(plan); },
     platform: 'darwin',
@@ -130,6 +132,7 @@ test('missing grok binary does not spawn', () => {
   const code = run(['--session', 'grok:ok'], {
     ...io,
     readContext: () => CONTEXT,
+    readProjectPath: () => REPO_ROOT,
     resolveBin: () => null,
     spawnLaunch: (plan) => { spawned.push(plan); },
     platform: 'darwin',
@@ -138,7 +141,7 @@ test('missing grok binary does not spawn', () => {
   assert.equal(spawned.length, 0);
 });
 
-test('successful continue spawn includes context and prints new session id', () => {
+test('successful continue spawn uses source project cwd and waits', () => {
   const io = capture();
   const spawned = [];
   const uuid = '22222222-2222-4222-8222-222222222222';
@@ -148,23 +151,60 @@ test('successful continue spawn includes context and prints new session id', () 
       assert.equal(id, 'grok:source');
       return CONTEXT;
     },
+    readProjectPath: (id) => {
+      assert.equal(id, 'grok:source');
+      return REPO_ROOT;
+    },
     resolveBin: () => '/tmp/fake-grok',
     createSessionId: () => uuid,
     spawnLaunch: (plan) => { spawned.push(plan); },
     platform: 'darwin',
-    cwd: '/work/Throughline',
   });
   assert.equal(code, 0);
   assert.equal(spawned.length, 1);
   assert.equal(io.out, `grok:${uuid}\n`);
-  const { grokArgv } = spawned[0];
+  const { grokArgv, launchFile, cwd } = spawned[0];
+  assert.equal(cwd, REPO_ROOT);
   assert.equal(grokArgv.includes('--rules'), false);
   assert.ok(grokArgv.at(-1).includes(CONTEXT));
   assert.ok(grokArgv.at(-1).startsWith(GROK_CONTINUE_PREAMBLE));
-  assert.ok(grokArgv.at(-1).endsWith(GROK_CONTINUE_REQUEST));
+  assert.ok(grokArgv.at(-1).endsWith(GROK_CONTINUE_WAIT));
   assert.equal(grokArgv[0], '/tmp/fake-grok');
   assert.equal(grokArgv[1], '--session-id');
-  assert.match(appleScriptForLaunch(spawned[0].launchFile), /Terminal/);
+  assert.match(readFileSync(launchFile, 'utf8'), /cd '/);
+  assert.match(appleScriptForLaunch(launchFile), /Terminal/);
+});
+
+test('missing source project path does not spawn', () => {
+  const io = capture();
+  const spawned = [];
+  const code = run(['--session', 'grok:source'], {
+    ...io,
+    readContext: () => CONTEXT,
+    readProjectPath: () => null,
+    resolveBin: () => '/tmp/grok',
+    spawnLaunch: (plan) => { spawned.push(plan); },
+    platform: 'darwin',
+  });
+  assert.equal(code, 1);
+  assert.equal(spawned.length, 0);
+  assert.match(io.err, /project path is not available/);
+});
+
+test('absent source project directory does not spawn', () => {
+  const io = capture();
+  const spawned = [];
+  const code = run(['--session', 'grok:source'], {
+    ...io,
+    readContext: () => CONTEXT,
+    readProjectPath: () => '/no/such/throughline-parent-project',
+    resolveBin: () => '/tmp/grok',
+    spawnLaunch: (plan) => { spawned.push(plan); },
+    platform: 'darwin',
+  });
+  assert.equal(code, 1);
+  assert.equal(spawned.length, 0);
+  assert.match(io.err, /does not exist/);
 });
 
 test('plan builder refuses --rules if a caller tries to add it', () => {

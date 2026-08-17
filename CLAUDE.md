@@ -248,7 +248,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
 | [src/cli/handoff-context.mjs](src/cli/handoff-context.mjs) | `handoff-context --session <id> --json` — 既存DBをread-onlyで開き、SessionStartと同じ9,500字予算のinheritance contextをversioned JSONで返す。DB作成・migration・merge・baton・既定session解決は行わない |
-| [src/cli/grok-continue.mjs](src/cli/grok-continue.mjs) | `grok-continue --session <id>` — handoff-context を初手 user 文にして macOS Terminal で対話 `grok` を立てる。context 失敗では spawn しない。`--rules` なし |
+| [src/cli/grok-continue.mjs](src/cli/grok-continue.mjs) | `grok-continue --session <id>` — handoff-context を初手 user 文にして、源セッションの `project_path` で macOS Terminal の対話 `grok` を立てる。context / project_path 失敗では spawn しない。末尾は待機。`--rules` なし |
 | [src/cli/auditor-context.mjs](src/cli/auditor-context.mjs) | `auditor-context` — Spotter 専用・JSON-only の read-only projection。`--session` / `--project` と、explicit pair identity/hash または `--host claude\|codex --transcript` を受ける（排他）。`fresh` だけに L2 body を含め、`empty` / `stale` / `session_mismatch` / `unavailable` / `schema_mismatch` は空 turns を返す。DB は create/migrate/write しない |
 | [src/cli/observer-read.mjs](src/cli/observer-read.mjs) | `observer-read` — existing absolute project向けJSON-only completed-turn page。opaque cursorを受け、snapshot / delta / thread・host switch、`resync_required`、`projection_pending`を返す |
 | [src/cli/observer-wait.mjs](src/cli/observer-wait.mjs) | `observer-wait` — opaque after cursorから最大3600秒待機し、`changed` / `timeout` / `resync_required` / `ambiguous_parent`だけをJSONで返す。cancelは成功に丸めない |
@@ -310,7 +310,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/haiku-summarizer.test.mjs](src/haiku-summarizer.test.mjs) | L2 → L1 要約の host mode 分岐、`codex-sidecar` 使用、disabled 時の Haiku 互換経路、Codex CLI backend、Codex CLI failure 非 fallback、再帰ガード |
 | [src/handoff-preview.test.mjs](src/handoff-preview.test.mjs) | `throughline handoff-preview` の explicit session / cwd latest session 出力 |
 | [src/cli/handoff-context.test.mjs](src/cli/handoff-context.test.mjs) | `throughline handoff-context` が既存rendererと完全一致する文脈を返し、L1/L2/L3のsession所有権と`merged_into`を変えず、DB不在時に作成しない契約 |
-| [src/cli/grok-continue.test.mjs](src/cli/grok-continue.test.mjs) | `grok-continue` の初手3段、handoff-context 失敗時非 spawn、`--rules` / aiterm 非使用、macOS Terminal 起動 |
+| [src/cli/grok-continue.test.mjs](src/cli/grok-continue.test.mjs) | `grok-continue` の初手待機、源 project_path 起動、handoff-context 失敗時非 spawn、`--rules` / aiterm 非使用、macOS Terminal 起動 |
 | [src/codex-resume.test.mjs](src/codex-resume.test.mjs) | `throughline codex-resume` の text / developer message item JSON / cwd latest Codex session 出力 |
 | [src/hook-entrypoints.test.mjs](src/hook-entrypoints.test.mjs) | import-safe hook module、temp HOME / isolated DB での `prompt-submit` / `session-start` / `process-turn` subprocess 動作。二相ハンドオフ（SessionStart は intent のみ / 初回プロンプトで merge + 注入）、幽霊先着でもバトンを奪えない incident 回帰、走行中セッションの future baton 非横取り、`/tl` / `/clear` baton 書き込みを含む |
 | [src/pending-handoff.test.mjs](src/pending-handoff.test.mjs) | `registerPendingHandoff` / `consumePendingHandoff` の登録・再登録 (resume)・1 回限り消費・他セッション非干渉 |
