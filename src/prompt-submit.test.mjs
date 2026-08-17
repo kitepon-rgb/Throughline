@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commandTextFromPrompt, isBatonCommand, isClearCommand } from './prompt-submit.mjs';
+import {
+  commandTextFromPrompt,
+  isBatonCommand,
+  isClearCommand,
+  launchGrokContinueAfterTl,
+  shouldLaunchGrokContinue,
+} from './prompt-submit.mjs';
 
 test('isBatonCommand: bare /tl', () => {
   assert.equal(isBatonCommand('/tl'), true);
@@ -71,6 +77,30 @@ test('commandTextFromPrompt unwraps Grok user_query and leaves bare Claude text'
     commandTextFromPrompt('<user_query>\n/tl\n</user_query>\n<skill_information>saved</skill_information>'),
     '/tl',
   );
+});
+
+test('shouldLaunchGrokContinue is only Grok /tl', () => {
+  assert.equal(shouldLaunchGrokContinue({ sessionId: 'grok:abc', trigger: 'tl' }), true);
+  assert.equal(shouldLaunchGrokContinue({ sessionId: 'grok:abc', trigger: 'clear' }), false);
+  assert.equal(shouldLaunchGrokContinue({ sessionId: 'old-session', trigger: 'tl' }), false);
+  assert.equal(shouldLaunchGrokContinue({ sessionId: 'codex:thread', trigger: 'tl' }), false);
+});
+
+test('launchGrokContinueAfterTl calls grok-continue with the source session', () => {
+  const calls = [];
+  const code = launchGrokContinueAfterTl({
+    sessionId: 'grok:abc',
+    cwd: '/work/Throughline',
+    continueRun: (argv, opts) => {
+      calls.push({ argv, opts });
+      return 0;
+    },
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(calls, [{
+    argv: ['--session', 'grok:abc'],
+    opts: { cwd: '/work/Throughline' },
+  }]);
 });
 
 test('isBatonCommand: Grok user_query wrap around /tl', () => {

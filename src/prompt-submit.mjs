@@ -45,6 +45,7 @@ import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
 import { GROK_SESSION_PREFIX, normalizeHookPayload } from './hook-envelope.mjs';
 import { injectGrokHandoffContext } from './grok-history-inject.mjs';
 import { readTranscript } from './transcript-reader.mjs';
+import { run as runGrokContinue } from './cli/grok-continue.mjs';
 
 // Phase 0-5 spike marker (SessionStart の spike-inject.flag とは別)
 const PROMPT_SPIKE_MARKER_PATH = join(homedir(), '.throughline', 'spike-prompt.flag');
@@ -152,6 +153,20 @@ export function isBatonCommand(prompt) {
  */
 export function isClearCommand(prompt) {
   return isNamedSlashCommand(prompt, '/clear') || isNamedSlashCommand(prompt, '/new');
+}
+
+export function shouldLaunchGrokContinue({ sessionId, trigger }) {
+  return trigger === 'tl'
+    && typeof sessionId === 'string'
+    && sessionId.startsWith(GROK_SESSION_PREFIX);
+}
+
+export function launchGrokContinueAfterTl({
+  sessionId,
+  cwd,
+  continueRun = runGrokContinue,
+}) {
+  return continueRun(['--session', sessionId], { cwd });
 }
 
 export async function run() {
@@ -265,6 +280,19 @@ export async function run() {
     project_path: projectPath,
     trigger: tlMatch ? 'tl' : 'clear',
   });
+
+  if (shouldLaunchGrokContinue({
+    sessionId: session_id,
+    trigger: tlMatch ? 'tl' : 'clear',
+  })) {
+    const code = launchGrokContinueAfterTl({
+      sessionId: session_id,
+      cwd: projectPath,
+    });
+    if (code !== 0) {
+      process.stderr.write(`[prompt-submit] grok-continue exited ${code}\n`);
+    }
+  }
 
   process.exit(0);
 }

@@ -215,7 +215,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 |---|---|---|
 | [src/session-start.mjs](src/session-start.mjs)<br>二相ハンドオフ第一相: sessions 登録 + pending intent 登録のみ。merge / 注入はしない (ADR 0014) | `throughline session-start` | SessionStart |
 | [src/turn-processor.mjs](src/turn-processor.mjs)<br>全ターン走査バックフィル（`turn-backfill.mjs` 経由、Stop 空振りの永久穴を解消） | `throughline process-turn` | Stop |
-| [src/prompt-submit.mjs](src/prompt-submit.mjs)<br>二相ハンドオフ第二相: 初回プロンプトで pending consume + merge + 予算内注入。加えて `/tl` / `/clear` baton 書き込み | `throughline prompt-submit` | UserPromptSubmit |
+| [src/prompt-submit.mjs](src/prompt-submit.mjs)<br>二相ハンドオフ第二相: 初回プロンプトで pending consume + merge + 予算内注入。加えて `/tl` / `/clear` baton 書き込み。Grok `/tl` 成功後は `grok-continue` を副作用起動（Claude / Codex は起動しない） | `throughline prompt-submit` | UserPromptSubmit |
 
 上記 hook module は `run()` を export し、直接実行時または [bin/throughline.mjs](bin/throughline.mjs) から呼ばれた時だけ hook body を実行する。import だけでは stdin 待ち、DB 作成、state 書き込みをしない。
 
@@ -385,7 +385,7 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - L2 → L1 要約は現行実装で唯一の subagent 的 external model call。backend 順序は codex-sidecar (configured 時) → Codex CLI（既定 `gpt-5.6-luna`@`low`、ADR 0015 の実測評価で選定）→ Claude Haiku → raw L2。削減割合は既定 1/5 で `THROUGHLINE_L1_RATIO` により割合形式のまま変更できる。`/tl` の in-flight memo はメイン Claude が slash command 手順で書くため sidecar 移行対象ではない
 - Claude CLI を実際に呼ぶテスト / smoke は、明示的に必要な場合だけ実行し、モデルは Haiku を使う。他モデルを使う必要がある場合は根拠を残してから実行する
 - 現行 install は Throughline 管理 Codex hook の shape を更新する。同じ `throughline codex-hook stop` command が既にあっても、絶対パス型 command / `timeout` / `async` などを [src/cli/install.mjs](src/cli/install.mjs) の生成値に合わせる。旧 `timeoutSec` entry も command identity で除去し、canonical entryへ置換する。
-- **UserPromptSubmit** は二相ハンドオフ第二相 (pending intent 消費 + merge + 予算内注入) + `/tl` または `/clear` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 3 役 (ADR 0014)。注入がこの hook に移ったため、SessionStart 側の注入は廃止（旧「二重注入回避」制約は消滅）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
+- **UserPromptSubmit** は二相ハンドオフ第二相 (pending intent 消費 + merge + 予算内注入) + `/tl` または `/clear` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 3 役 (ADR 0014)。Grok `/tl` のあとだけ `throughline grok-continue --session <id>` を副作用で呼ぶ。Claude / Codex と Grok `/clear` では呼ばない。注入がこの hook に移ったため、SessionStart 側の注入は廃止（旧「二重注入回避」制約は消滅）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **Claude PostToolUse** は登録しない（schema v4 で廃止）。Codex PostToolUse は別用途で、tool loop 中の rollout capture / monitor state write hook として登録する。current-session refresh instruction は注入しない。
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
 - dev 時に spike 系 hook（`spike/hook-logger.mjs` 等）が並行登録されている場合があるが、動作ログ採取用で実害なし

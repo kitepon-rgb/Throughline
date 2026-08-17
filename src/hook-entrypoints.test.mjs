@@ -221,6 +221,7 @@ test('Grok wrapped /tl prompt writes a grok: baton', () => {
       }),
     });
     assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /grok-continue exited/);
 
     const db = openDb(home);
     const row = db.prepare('SELECT project_path, session_id FROM handoff_batons').get();
@@ -257,6 +258,7 @@ test('Grok empty hook prompt still writes /tl baton from chat_history', () => {
       }),
     });
     assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /grok-continue exited/);
 
     const db = openDb(home);
     const row = db.prepare('SELECT session_id FROM handoff_batons').get();
@@ -283,6 +285,7 @@ test('prompt-submit subprocess writes a /tl baton into an isolated DB', () => {
     });
 
     assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr.includes('grok-continue'), false);
 
     const db = openDb(home);
     const row = db.prepare('SELECT project_path, session_id FROM handoff_batons').get();
