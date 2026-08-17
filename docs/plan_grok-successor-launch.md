@@ -4,37 +4,85 @@ Date: 2026-08-17
 Lattice plan: `grok-successor-launch`  
 対象 repo: Throughline だけ。aiterm は依存にも実装の借り先にもしない。
 
+t1-contract（2026-08-17）で起動核の CLI名・初手文面・非目標・受入を固定した。
+以降の工程は本ファイルと [ADR 0021](adr/0021-grok-host-capture.md) の現在地を正とする。
+
 ## 目的
 
 Grok Desktop の UserPromptSubmit はモデルへ本文を渡せない。`/tl` のあと人が新窓を開いても記憶は載らない。代わりに Throughline 自身が、handoff-context を**最初の user 文の前**に置いた普通の Grok 席を一本立てる。
 
 ## 非目標
 
+次は成功条件にも実装手段にもしない。
+
 - aiterm / tmux / PTY 完了待ち / `role=subagent` を Throughline に持ち込む
-- `--rules` で subagent 文を付ける（dashboard の top-level から外れる）
+- `grok` 起動に `--rules` を付ける（dashboard の top-level から外れる）
+- `--system-prompt-override` / `--agent` で初手 user 文を代替する
 - Claude / Codex の `/tl` 契約を変える
 - UserPromptSubmit stdout や `chat_history.jsonl` への再注入で Desktop 新窓を直す
 - npm publish / Spotter
 
-## 設計
+## 固定契約
 
-1. **起動核**（新 CLI、名前は実装時に短く決める。候補: `throughline grok-continue --from <session>`）  
-   - `handoff-context --session grok:<id> --json` を読む。失敗したら起動しない（fallback 禁止）。  
-   - 同じ project cwd で `grok` を人の席として spawn する。`--rules` なし。共有 `GROK_HOME`。  
-   - 初手 prompt は固定前文（「この発言は直前 Throughline 席の履歴を前提とする」）＋ context ＋ 短い続き依頼。  
-   - hook から呼ぶので対話 TTY は無い。新しい Terminal 窓（macOS）で grok を前面に出すか、立てた session id を標準出力して `/resume` できるようにする。両方できれば受入が強い。
-2. **`/tl` 配線**  
-   - Grok envelope の `/tl` 成功後に、上記 CLI を副作用で起動する。baton は今どおり書く。  
-   - Claude / Codex は起動しない。
-3. **一覧**  
-   - 新席は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/` にトップレベルとして残る。  
-   - aiterm の Inactive/subagent 隠しを再現しない。  
-   - Desktop roster が別プロセスを Inactive に畳むのは Grok 側の仕様。受入は session ディレクトリと `grok --resume` 一覧を正とする。
+### CLI
+
+名前と引数は次に固定する。
+
+```
+throughline grok-continue --session <id>
+```
+
+- `<id>` は Throughline の session id であり、Grok 由来なら `grok:` 接頭辞を含む。
+- 既存の `handoff-context --session` と同じ flag 名を使う。`--from` は採用しない。
+- この CLI は `handoff-context --session <id> --json` を読む。`status` が `ready` でない、終了が非 0、または context が空なら **spawn しない**。fallback 禁止。
+- JSON envelope（`schema` / `status` / `sessionId`）は初手文へ載せない。載せるのは `context` 文字列だけ。
+
+### spawn
+
+- 同じ project cwd で、共有 `GROK_HOME`（上書きしない）のまま `grok` を人の席として立てる。
+- 起動は対話セッションである。`-p` / `--prompt` / `--prompt-file` / `--prompt-json` の単発終了経路は使わない。
+- 初手は `grok` の位置引数 `[PROMPT]` に渡す。`--rules` は付けない。
+- hook から呼ぶので対話 TTY は無い。macOS では新しい Terminal 窓で grok を前面に出す。立てた session id が分かれば標準出力にも出す（`grok --resume` できるようにする）。両方できることが受入の強い形である。
+
+### 初手文面
+
+初手 user 文は次の 3 段だけとする。前後の飾り文を足さない。`{context}` は handoff-context が返した `context` 文字列そのもの。
+
+```
+この発言は直前 Throughline 席の履歴を前提とする。
+
+{context}
+
+直前の作業の自然な続きとして応答すること。
+```
+
+### `/tl` 配線
+
+- Grok envelope の `/tl` 成功後に、上記 CLI を副作用で起動する。baton は今どおり書く。
+- Claude / Codex ではこの CLI を起動しない。
+
+### 一覧
+
+- 新席は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/` にトップレベルとして残る。
+- aiterm の Inactive/subagent 隠しを再現しない。
+- Desktop roster が別プロセスを Inactive に畳むのは Grok 側の仕様。受入は session ディレクトリと `grok --resume` 一覧を正とする。
 
 ## 受入
 
-- focused test: handoff-context 失敗で spawn しない、初手文面に context が含まれる、`--rules` を付けない。  
-- 実機: この Mac の `/tl` から新席が立ち、session ディレクトリに載り、その席の最初のモデル応答が前文の記憶を使う。
+### focused（t2 / t3）
+
+- `handoff-context` 失敗では `grok` を spawn しない。
+- 初手文面は上の 3 段で、2 段目に `context` 文字列がそのまま含まれる。
+- spawn argv に `--rules` が無い。
+- spawn 経路に aiterm / tmux / `role=subagent` が無い。
+- Grok 以外の `/tl` では `grok-continue` を呼ばない。
+
+### 実機（t4 / t5）
+
+- この Mac の Grok `/tl` から新席が立ち、session ディレクトリに載る。
+- `grok --resume` 一覧にトップレベルとして見える。Desktop Inactive 畳みは成功条件にしない。
+- その席の最初のモデル応答が前文の記憶を使う。宣言または L2 固有事実が出ること。
+- `chat_history.jsonl` への後書きや hook stdout を成功に数えない。
 
 ## 円卓
 

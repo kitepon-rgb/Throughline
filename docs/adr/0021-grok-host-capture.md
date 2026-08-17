@@ -33,3 +33,21 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 ## 現在地
 
 Grok 1.0.4 バイナリの hook 出力型は `GateHookJson`（PreToolUse deny/updatedInput）と `StopHookJson`（block/additionalContext/stopReason）だけ。UserPromptSubmit / SessionStart / PostToolUse の stdout は observe。モデルへ文章を渡せる公式口は (1) PreToolUse deny の reason (2) Stop/SubagentStop の block reason / additionalContext / exit2 stderr。初回トークン前の prompt 注入口は無い。Stop 注入は初回返答のあと 2 周目に載る。`01a00cfe` の chat_history 書き込みは updates に乗らず実証済み。capture と handoff-context は生きている。
+
+`/tl` 後の記憶再開は hook stdout や `chat_history.jsonl` 再注入では成立しない。後継経路は Throughline 所有の最小起動に固定する。正本は [plan_grok-successor-launch.md](../plan_grok-successor-launch.md)。
+
+- CLI: `throughline grok-continue --session <id>`。`<id>` は `grok:` 接頭辞付き Throughline session id。`--from` は採用しない。
+- 内部で `handoff-context --session <id> --json` を読む。ready でなければ spawn しない。
+- 初手 user 文は次の 3 段だけ。`{context}` は handoff-context の `context` 文字列。JSON envelope は載せない。
+
+  ```
+  この発言は直前 Throughline 席の履歴を前提とする。
+
+  {context}
+
+  直前の作業の自然な続きとして応答すること。
+  ```
+
+- spawn は同じ cwd・共有 `GROK_HOME` の対話 `grok`。位置引数 `[PROMPT]` を使う。`--rules` / `--system-prompt-override` / `--agent` / 単発 `-p` は使わない。aiterm は使わない。
+- Claude / Codex の `/tl` 契約は変えない。Grok `/tl` 成功後の副作用起動だけが配線対象。
+- 一覧の正は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/` と `grok --resume`。Desktop Inactive 畳みは成功条件にしない。
