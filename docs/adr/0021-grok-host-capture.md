@@ -32,4 +32,4 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 
 ## 現在地
 
-新 session `01a00cfe` は baton 消費・merge・`chat_history` L5 への `system_reminder` 注入まで成功した。その文は `updates.jsonl` / `prompt_context.json` / 初回 assistant のどれにも無い。Grok のライブ文脈は chat_history を再読しない。UserPromptSubmit でモデルに記憶を足す公式面は無い。capture と `handoff-context` restore は生きている。同じ窓への hook 自動注入は host 非対応。他席と Spotter は未了。
+Grok 1.0.4 バイナリの hook 出力型は `GateHookJson`（PreToolUse deny/updatedInput）と `StopHookJson`（block/additionalContext/stopReason）だけ。UserPromptSubmit / SessionStart / PostToolUse の stdout は observe。モデルへ文章を渡せる公式口は (1) PreToolUse deny の reason (2) Stop/SubagentStop の block reason / additionalContext / exit2 stderr。初回トークン前の prompt 注入口は無い。Stop 注入は初回返答のあと 2 周目に載る。`01a00cfe` の chat_history 書き込みは updates に乗らず実証済み。capture と handoff-context は生きている。
