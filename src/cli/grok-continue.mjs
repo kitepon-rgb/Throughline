@@ -1,0 +1,180 @@
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
+
+import { readHandoffContext } from './handoff-context.mjs';
+
+export const GROK_CONTINUE_PREAMBLE = 'この発言は直前 Throughline 席の履歴を前提とする。';
+export const GROK_CONTINUE_REQUEST = '直前の作業の自然な続きとして応答すること。';
+
+export function parseArgs(argv = []) {
+  if (
+    argv.length !== 2
+    || argv[0] !== '--session'
+    || typeof argv[1] !== 'string'
+    || argv[1].length === 0
+  ) {
+    throw new TypeError('usage error');
+  }
+  return { sessionId: argv[1] };
+}
+
+export function buildGrokContinuePrompt(context) {
+  if (typeof context !== 'string' || context.length === 0) {
+    throw new TypeError('empty context');
+  }
+  return `${GROK_CONTINUE_PREAMBLE}\n\n${context}\n\n${GROK_CONTINUE_REQUEST}`;
+}
+
+export function shQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+export function resolveGrokBin({
+  home = homedir(),
+  env = process.env,
+  exists = existsSync,
+} = {}) {
+  const homeBin = join(home, '.grok', 'bin', 'grok');
+  if (exists(homeBin)) return homeBin;
+  for (const dir of String(env.PATH ?? '').split(delimiter)) {
+    if (!dir) continue;
+    const candidate = join(dir, 'grok');
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function buildGrokArgv(grokBin, sessionUuid, prompt) {
+  return [grokBin, '--session-id', sessionUuid, prompt];
+}
+
+export function buildLaunchScript({ cwd, grokBin, sessionUuid, promptFile }) {
+  return [
+    '#!/bin/sh',
+    'set -e',
+    `cd ${shQuote(cwd)}`,
+    `exec ${shQuote(grokBin)} --session-id ${shQuote(sessionUuid)} "$(cat ${shQuote(promptFile)})"`,
+    '',
+  ].join('\n');
+}
+
+export function appleScriptForLaunch(launchScriptPath) {
+  return [
+    'tell application "Terminal"',
+    '  activate',
+    `  do script "exec " & quoted form of ${JSON.stringify(launchScriptPath)}`,
+    'end tell',
+    '',
+  ].join('\n');
+}
+
+export function buildContinuePlan({
+  context,
+  grokBin,
+  cwd,
+  sessionUuid,
+}) {
+  const prompt = buildGrokContinuePrompt(context);
+  const grokArgv = buildGrokArgv(grokBin, sessionUuid, prompt);
+  if (grokArgv.includes('--rules')) {
+    throw new Error('grok-continue must not pass --rules');
+  }
+  return {
+    prompt,
+    grokArgv,
+    cwd,
+    sessionUuid,
+    throughlineSessionId: `grok:${sessionUuid}`,
+  };
+}
+
+export function writeLaunchArtifacts({
+  cwd,
+  grokBin,
+  sessionUuid,
+  prompt,
+  tmp = tmpdir(),
+}) {
+  const dir = join(tmp, `tl-grok-continue-${sessionUuid}`);
+  mkdirSync(dir, { recursive: true });
+  const promptFile = join(dir, 'prompt.txt');
+  const launchFile = join(dir, 'launch.sh');
+  writeFileSync(promptFile, prompt);
+  writeFileSync(launchFile, buildLaunchScript({
+    cwd,
+    grokBin,
+    sessionUuid,
+    promptFile,
+  }), { mode: 0o755 });
+  return { promptFile, launchFile };
+}
+
+export function defaultSpawnLaunch({ launchFile, spawnImpl = spawn }) {
+  const child = spawnImpl('osascript', ['-e', appleScriptForLaunch(launchFile)], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref?.();
+  return child;
+}
+
+export function run(argv = [], {
+  stdout = process.stdout,
+  stderr = process.stderr,
+  readContext = readHandoffContext,
+  resolveBin = resolveGrokBin,
+  createSessionId = randomUUID,
+  platform = process.platform,
+  cwd = process.cwd(),
+  spawnLaunch = defaultSpawnLaunch,
+} = {}) {
+  let sessionId;
+  try {
+    ({ sessionId } = parseArgs(argv));
+  } catch {
+    stderr.write('Usage: throughline grok-continue --session <id>\n');
+    return 2;
+  }
+
+  let context;
+  try {
+    context = readContext(sessionId);
+  } catch {
+    stderr.write('Throughline handoff context could not be read.\n');
+    return 1;
+  }
+  if (!context) {
+    stderr.write('Throughline handoff context is not available for that session.\n');
+    return 1;
+  }
+
+  const grokBin = resolveBin();
+  if (!grokBin) {
+    stderr.write('grok binary was not found.\n');
+    return 1;
+  }
+  if (platform !== 'darwin') {
+    stderr.write('throughline grok-continue requires macOS Terminal.\n');
+    return 1;
+  }
+
+  const sessionUuid = createSessionId();
+  const plan = buildContinuePlan({
+    context,
+    grokBin,
+    cwd,
+    sessionUuid,
+  });
+  const { launchFile } = writeLaunchArtifacts({
+    cwd: plan.cwd,
+    grokBin,
+    sessionUuid: plan.sessionUuid,
+    prompt: plan.prompt,
+  });
+  spawnLaunch({ launchFile, grokArgv: plan.grokArgv, cwd: plan.cwd });
+  stdout.write(`${plan.throughlineSessionId}\n`);
+  return 0;
+}

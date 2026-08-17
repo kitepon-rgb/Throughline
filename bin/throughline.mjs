@@ -12,6 +12,7 @@
  *   throughline recall --l2|--l1 # 注入案内から辿る pull 用 read-only 記憶取得
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
  *   throughline handoff-context --session <id> --json # Read-only inheritance context JSON
+ *   throughline grok-continue --session <id> # Spawn a Grok seat whose first user text is handoff-context
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
  *   throughline migrate --json # Migrate the existing Throughline database only
@@ -79,6 +80,11 @@ switch (cmd) {
     break;
   case 'handoff-context': {
     const exitCode = (await import('../src/cli/handoff-context.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
+  case 'grok-continue': {
+    const exitCode = (await import('../src/cli/grok-continue.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
     break;
   }
@@ -211,6 +217,11 @@ Usage:
   throughline handoff-context --session <id> --json
                               Print the exact inheritance context without
                               changing database ownership
+  throughline grok-continue --session <id>
+                              Spawn a person-facing Grok seat whose first
+                              user text is the handoff-context body. Does not
+                              spawn when context is unavailable. Does not pass
+                              --rules. macOS Terminal only
   throughline auditor-context --session <id> --project <root>
                               Read only bounded completed user/assistant context
                               for an auditor; requires either --host plus --transcript,
