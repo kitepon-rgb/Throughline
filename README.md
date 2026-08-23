@@ -834,7 +834,7 @@ local-only contracts.
 | `throughline runtime-errors reopen <fingerprint> --json` | Explicitly reopen a resolved aggregate without fabricating a new occurrence |
 | `throughline runtime-errors compact --json`    | Remove only acknowledged, resolved aggregates after retention; open or unacknowledged records remain |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
-| `throughline handoff-context --session <id> --json` | Print the exact SessionStart inheritance context as versioned JSON without moving memory rows or changing `sessions.merged_into`; intended for local launchers that need portable cross-vendor context |
+| `throughline handoff-context --session <id> --json` | Print the exact SessionStart inheritance context as versioned JSON without moving memory rows or changing `sessions.merged_into`; intended for local launchers that need portable cross-harness context |
 | `throughline grok-continue --session <id>` | Spawn a person-facing Grok seat whose first user text is the handoff-context body. cwd is the source session `project_path`. Does not spawn without ready context. No `--rules`. macOS Terminal only |
 | `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
 | `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |
@@ -872,7 +872,7 @@ The successful `throughline.handoff_context.v1` object contains only `schema`,
 inheritance text used by SessionStart. The command does not create or migrate a
 database, consume a baton, merge sessions, infer a latest session, change
 `sessions.merged_into`, or reassign L1/L2/L3 rows. AIterm uses this boundary for
-its optional cross-vendor portable fork; the Observer feed is a separate
+its optional cross-harness portable fork; the Observer feed is a separate
 completed-turn projection and is not a substitute.
 
 Slash commands (invoked by the user in Claude Code):

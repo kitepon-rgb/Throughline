@@ -480,7 +480,7 @@ node bin/throughline.mjs status
 # Codex-facing handoff JSON preview
 node bin/throughline.mjs handoff-preview --session <id>
 
-# Portable cross-vendor handoff context (read-only, ownership unchanged)
+# Portable cross-harness handoff context (read-only, ownership unchanged)
 node bin/throughline.mjs handoff-context --session <id> --json
 node bin/throughline.mjs grok-continue --session grok:<id>
 

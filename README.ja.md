@@ -390,7 +390,7 @@ throughline handoff-context --session codex:<thread-id> --json
 成功時の`throughline.handoff_context.v1`は`schema`、`status`、`sessionId`、`context`だけを返す。
 `context`はSessionStartと同じ予算付き継承文脈で、DB作成・migration・baton消費・session merge・
 latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変更は行わない。AItermは任意の
-別vendor portable forkでこの境界を使う。Observer feedはcompleted-turn projectionであり代替ではない。
+別harness portable forkでこの境界を使う。Observer feedはcompleted-turn projectionであり代替ではない。
 
 スラッシュコマンド (Claude Code 内でユーザーが叩く):
 
