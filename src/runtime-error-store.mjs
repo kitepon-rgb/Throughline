@@ -10,12 +10,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import childProcess from 'node:child_process';
-import { arch as hostArch, homedir, platform as hostPlatform } from 'node:os';
+import { arch as hostArch, platform as hostPlatform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { applyAndVerifyWindowsAcl, isWindows, verifyWindowsAcl } from './os/windows-acl.mjs';
+import { windowsLocalAppData, xdgConfigHome, xdgStateHome } from './os/app-dirs.mjs';
 
 const require = createRequire(import.meta.url);
 const PACKAGE_VERSION = require('../package.json').version;
@@ -53,19 +54,17 @@ const DEFINITIONS = Object.freeze({
 });
 
 export function defaultFactoryReporterConfigPath(env = process.env) {
-  const home = env.HOME || env.USERPROFILE || homedir();
   if (isWindows(env)) {
-    return join(env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'dotagents', 'factory-reporter', 'config.json');
+    return join(windowsLocalAppData(env), 'dotagents', 'factory-reporter', 'config.json');
   }
-  return join(env.XDG_CONFIG_HOME || join(home, '.config'), 'dotagents', 'factory-reporter.json');
+  return join(xdgConfigHome(env), 'dotagents', 'factory-reporter.json');
 }
 
 export function defaultRuntimeErrorStorePath(env = process.env) {
-  const home = env.HOME || env.USERPROFILE || homedir();
   if (isWindows(env)) {
-    return join(env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'throughline', 'runtime-errors.json');
+    return join(windowsLocalAppData(env), 'throughline', 'runtime-errors.json');
   }
-  return join(env.XDG_STATE_HOME || join(home, '.local', 'state'), 'throughline', 'runtime-errors.json');
+  return join(xdgStateHome(env), 'throughline', 'runtime-errors.json');
 }
 
 export function isRuntimeErrorCollectionEnabled({ env = process.env, configPath } = {}) {

@@ -1,4 +1,5 @@
 import { spawnPortableSync } from './os/portable-spawn-sync.mjs';
+import { isWin32Platform } from './os/paths.mjs';
 
 export const CODEX_SIDECAR_WORKFLOWS = Object.freeze([
   'review',
@@ -23,7 +24,7 @@ function resolveCommand({ command, env }) {
 }
 
 export function shouldShellWrapSidecarCommand(platform = process.platform) {
-  return platform === 'win32';
+  return isWin32Platform(platform);
 }
 
 export function runCodexSidecarCommand(command, args, options = {}) {

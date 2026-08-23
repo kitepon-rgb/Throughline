@@ -1,3 +1,4 @@
+import { CLAUDE_HOST, CODEX_HOST } from '../hosts/identity.mjs';
 import {
   AUDITOR_CONTEXT_SCHEMA,
   deriveAuditorFreshnessExpectation,
@@ -53,7 +54,7 @@ export function parseArgs(argv = []) {
     else if (arg === '--max-body-chars') out.maxBodyChars = parsePositiveInteger(value);
     else if (arg === '--max-total-chars') out.maxTotalChars = parsePositiveInteger(value);
     else if (arg === '--db') out.dbPath = value;
-    else if (arg === '--host' && (value === 'claude' || value === 'codex')) out.host = value;
+    else if (arg === '--host' && (value === CLAUDE_HOST || value === CODEX_HOST)) out.host = value;
     else if (arg === '--transcript') out.transcriptPath = value;
     else throw new TypeError('unknown option');
   }

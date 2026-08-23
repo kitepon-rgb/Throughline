@@ -10,3 +10,7 @@ import { platform } from 'node:os';
 export function foldPathCaseForPlatform(path, { hostPlatform = platform() } = {}) {
   return hostPlatform === 'win32' ? path.toLowerCase() : path;
 }
+
+export function isWin32Platform(hostPlatform = platform()) {
+  return hostPlatform === 'win32';
+}

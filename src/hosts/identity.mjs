@@ -1,5 +1,5 @@
 /**
- * hosts/identity.mjs — ベンダー (hook host) 識別の唯一の正本
+ * hosts/identity.mjs — harness (hook host) 識別の唯一の正本
  *
  * Throughline は Claude / Codex / Grok の 3 hook host を同じ SQLite に保存する。
  * host の見分け方は session_id prefix だけであり、その prefix 定義と判定関数を

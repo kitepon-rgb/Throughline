@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { CLAUDE_HOST } from './hosts/identity.mjs';
 import {
   chmodSync,
   lstatSync,
@@ -8,12 +9,12 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { hashAuditorBody } from './body-digest.mjs';
 import { normalizeProjectPathForCompare } from './project-path.mjs';
 import { applyAndVerifyWindowsAcl, isWindows, verifyWindowsAcl } from './os/windows-acl.mjs';
+import { windowsLocalAppData, xdgStateHome } from './os/app-dirs.mjs';
 
 export const COMPLETED_TURN_RECEIPT_STORE_SCHEMA = 'throughline.completed_turn_receipts.v1';
 export const COMPLETED_TURN_RECEIPT_SCHEMA_VERSION = '1.0';
@@ -24,11 +25,10 @@ const PRIVATE_DIRECTORY_CAPABILITY = Symbol('throughline.completed-turn-receipt-
 
 export function defaultCompletedTurnReceiptStorePath(projectSha256, env = process.env) {
   if (!isSha256(projectSha256)) throw new TypeError('projectSha256 must be a SHA-256 digest');
-  const home = env.HOME || env.USERPROFILE || homedir();
   if (isWindows(env)) {
-    return join(env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'throughline', 'completed-turn-receipts', `${projectSha256}.json`);
+    return join(windowsLocalAppData(env), 'throughline', 'completed-turn-receipts', `${projectSha256}.json`);
   }
-  return join(env.XDG_STATE_HOME || join(home, '.local', 'state'), 'throughline', 'completed-turn-receipts', `${projectSha256}.json`);
+  return join(xdgStateHome(env), 'throughline', 'completed-turn-receipts', `${projectSha256}.json`);
 }
 
 /**
@@ -273,7 +273,7 @@ function validateReceipt(receipt, nextSequence) {
   ];
   if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt) ||
     !exactKeys(receipt, keys) || receipt.schema_version !== COMPLETED_TURN_RECEIPT_SCHEMA_VERSION ||
-    receipt.host !== 'claude' || !isSha256(receipt.project_sha256) ||
+    receipt.host !== CLAUDE_HOST || !isSha256(receipt.project_sha256) ||
     !isIdentity(receipt.target_session_id) || !isIdentity(receipt.origin_session_id) ||
     !isSha256(receipt.user_sha256) || !isSha256(receipt.assistant_sha256) ||
     !Number.isSafeInteger(receipt.completed_at) || receipt.completed_at < 0 ||

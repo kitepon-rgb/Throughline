@@ -1,4 +1,5 @@
 import { inspectCodexPlannedRollbackRestoreSafety } from './codex-rollout-memory.mjs';
+import { CLAUDE_HOST, CODEX_HOST } from './hosts/identity.mjs';
 import { buildHandoffRecord, N_RECENT_L2 } from './handoff-record.mjs';
 import { sameProjectPath } from './project-path.mjs';
 import { estimateTokens } from './token-estimator.mjs';
@@ -48,7 +49,7 @@ export function findLatestSessionIdForProject(db, projectPath) {
 
 function resolveDefaultSessionId({ sessionId, host, codexThreadId, db, projectPath }) {
   if (sessionId) return sessionId;
-  if (host === 'codex') {
+  if (host === CODEX_HOST) {
     return codexThreadId ? `codex:${codexThreadId}` : null;
   }
   return findLatestSessionIdForProject(db, projectPath);
@@ -79,7 +80,7 @@ function countDistinctCapturedTurns(db, sessionId) {
 }
 
 export function describeTrimHost(host) {
-  if (host === 'claude') {
+  if (host === CLAUDE_HOST) {
     return {
       host,
       automaticRollback: false,
@@ -94,7 +95,7 @@ export function describeTrimHost(host) {
     };
   }
 
-  if (host === 'codex') {
+  if (host === CODEX_HOST) {
     return {
       host,
       automaticRollback: true,
@@ -123,7 +124,7 @@ export function describeTrimHost(host) {
 }
 
 function buildSafeContinuation({ host, hostIdentity }) {
-  if (host !== 'codex') return null;
+  if (host !== CODEX_HOST) return null;
 
   const threadId = hostIdentity?.codexThreadId ?? '<thread-id>';
   const sessionId = threadId === '<thread-id>' ? 'codex:<thread-id>' : `codex:${threadId}`;
@@ -561,7 +562,7 @@ function buildPlanSession({ resolvedSessionId, session, trimSource, projectPath 
 }
 
 function buildHostIdentity({ host, codexThreadId, codexThreadIdSource = null }) {
-  if (host !== 'codex') {
+  if (host !== CODEX_HOST) {
     return {
       host,
       codexThreadId: null,

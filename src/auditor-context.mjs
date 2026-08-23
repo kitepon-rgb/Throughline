@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildBodyRowsFromActiveTurns } from './codex-capture.mjs';
-import { isCodexSessionId } from './hosts/identity.mjs';
+import { CLAUDE_HOST, CODEX_HOST, isCodexSessionId } from './hosts/identity.mjs';
 import { parseCodexRolloutFile } from './codex-rollout-memory.mjs';
 import { getLogicalTurnGroups } from './transcript-reader.mjs';
 import { hashAuditorBody, normalizeAuditorBody } from './body-digest.mjs';
@@ -24,7 +24,7 @@ export function defaultAuditorContextDbPath() {
 export function deriveAuditorFreshnessExpectation({ host, transcriptPath, sessionId } = {}) {
   assertNonEmptyString(transcriptPath, 'transcriptPath');
   assertNonEmptyString(sessionId, 'sessionId');
-  if (host === 'claude') {
+  if (host === CLAUDE_HOST) {
     const latest = getLogicalTurnGroups(transcriptPath).at(-1);
     if (!latest) return null;
     return {
@@ -34,7 +34,7 @@ export function deriveAuditorFreshnessExpectation({ host, transcriptPath, sessio
       expectedAssistantSha256: hashAuditorBody(latest.representative.content),
     };
   }
-  if (host === 'codex') {
+  if (host === CODEX_HOST) {
     const parsed = parseCodexRolloutFile(transcriptPath, { includeInFlightTurn: false });
     const rows = buildBodyRowsFromActiveTurns(parsed.activeTurns, { sessionId, now: 0 });
     const latestTurnNumber = rows.reduce((max, row) => Math.max(max, row.turnNumber), 0);

@@ -1,4 +1,5 @@
 import { runCodexTrimExecution, runCodexTrimPreflight } from '../codex-app-server.mjs';
+import { CODEX_HOST } from '../hosts/identity.mjs';
 import {
   buildCodexRolloutTrimSource,
   parseCodexRolloutFile,
@@ -122,7 +123,7 @@ export async function run(args) {
   const inflightMemo = parsed.memoStdin ? await readStdin() : null;
   const db = getDb();
   const trimSource =
-    parsed.host === 'codex' && parsed.codexThreadId
+    parsed.host === CODEX_HOST && parsed.codexThreadId
       ? buildCodexRolloutTrimSource({
           threadId: parsed.codexThreadId,
           projectPath: process.cwd(),
@@ -376,7 +377,7 @@ async function runPreflight(parsed, plan) {
 }
 
 function validateCodexAction(parsed, plan, action) {
-  if (parsed.host !== 'codex') {
+  if (parsed.host !== CODEX_HOST) {
     return {
       status: `${action}-refused`,
       reason: `${action}_requires_codex_host`,

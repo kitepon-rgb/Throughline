@@ -10,6 +10,20 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-08-24
+
+### Changed
+
+- 挙動不変のOS/harness層集約リファクタ（harness用語統一campaignの分離規約）:
+  - LOCALAPPDATA / XDG_CONFIG_HOME / XDG_STATE_HOME のベースディレクトリ組み立てを
+    新設`src/os/app-dirs.mjs`へ一本化（runtime-error-store / completed-turn-receipts
+    に3重実装されていた）。
+  - hostリテラル比較（`'claude'`／`'codex'`）6ファイルを`src/hosts/identity.mjs`の
+    定数importへ統一し、「識別の唯一の正本」宣言と実装を一致させた。
+  - codex-auto-refreshの独自パス正規化を`src/os/paths.mjs`の
+    `foldPathCaseForPlatform`へ、codex-sidecarのwin32判定を同`isWin32Platform`へ委譲。
+  - `hosts/identity.mjs`の分類語をvendorからharnessへ更新（用語のみ）。
+
 ## [0.10.1] — 2026-08-23
 
 ### Changed

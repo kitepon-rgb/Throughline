@@ -14,6 +14,7 @@
  */
 
 import { existsSync, accessSync, readFileSync, constants, readdirSync, statSync } from 'node:fs';
+import { CODEX_HOST } from '../hosts/identity.mjs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
@@ -302,9 +303,9 @@ function runTrimDiagnosis(
 ) {
   const info = describeTrimHost(host);
   const codexIdentity =
-    info.host === 'codex' ? resolveCodexThreadIdentity({ codexThreadId: null }, env) : null;
+    info.host === CODEX_HOST ? resolveCodexThreadIdentity({ codexThreadId: null }, env) : null;
   const hostPrimitiveDiagnosis =
-    info.host === 'codex' ? readCodexHostPrimitiveDiagnosis({ env, auditRunner }) : null;
+    info.host === CODEX_HOST ? readCodexHostPrimitiveDiagnosis({ env, auditRunner }) : null;
   console.log(`${BOLD}[Trim]${RESET}\n`);
   console.log(`  host:                  ${info.host}`);
   console.log(`  default keep-recent:   ${DEFAULT_TRIM_KEEP_RECENT}`);
@@ -330,19 +331,19 @@ function runTrimDiagnosis(
   }
   console.log('');
   console.log('  dry-run command:');
-  if (info.host === 'codex' && !codexIdentity?.codexThreadId) {
+  if (info.host === CODEX_HOST && !codexIdentity?.codexThreadId) {
     console.log('    throughline trim --dry-run --host codex --codex-thread-id <id>');
     console.log('    throughline trim --preflight --host codex --codex-thread-id <id>');
-  } else if (info.host === 'codex') {
+  } else if (info.host === CODEX_HOST) {
     console.log('    throughline trim --dry-run --host codex');
     console.log('    throughline trim --preflight --host codex');
   } else {
     console.log(`    throughline trim --dry-run --host ${info.host}`);
   }
-  if (info.host === 'codex') {
+  if (info.host === CODEX_HOST) {
     console.log('    throughline trim --execute --host codex');
   }
-  if (info.host === 'codex') {
+  if (info.host === CODEX_HOST) {
     const sessionId = codexIdentity?.codexThreadId
       ? `codex:${codexIdentity.codexThreadId}`
       : 'codex:<thread-id>';

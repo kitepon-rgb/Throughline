@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir, platform } from 'node:os';
+import { foldPathCaseForPlatform } from './os/paths.mjs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { runCodexTrimExecution } from './codex-app-server.mjs';
@@ -509,8 +510,7 @@ function normalizeProjectPath(value) {
   if (typeof value !== 'string' || value.length === 0) return '';
   let result = resolve(value).replace(/\\/g, '/');
   if (result.length > 1 && result.endsWith('/')) result = result.slice(0, -1);
-  if (platform() === 'win32') result = result.toLowerCase();
-  return result;
+  return foldPathCaseForPlatform(result);
 }
 
 function numberOrNull(value) {
