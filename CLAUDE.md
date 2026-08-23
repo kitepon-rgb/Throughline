@@ -6,6 +6,13 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
+**v0.10.1（2026-08-23公開）**: 挙動変更なしの内部リファクタ。ベンダー (hook host) 依存を
+`src/hosts/` へ一元化（`hosts/identity.mjs` が `codex:`/`grok:` prefix の唯一の正本、
+hook 入口3本は `hosts/{claude,codex,grok}.mjs` の adapter 経由に。`hook-envelope.mjs` は
+`hosts/grok.mjs` へ統合）し、OS 依存を `src/os/` へ集約（二重実装だった Windows owner-only
+ACL を `os/windows-acl.mjs` に統一、macOS Terminal 起動・URL open・quote・path case 畳み・
+portable spawn を移設）。schema・注入契約・CLI 面は不変、full regression 761 pass。
+
 **v0.10.0（2026-08-17公開）**: Grok を first-class hook host にする。camelCase envelope は
 `grok:<id>` に正規化し、L2 は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`
 から回収する。`throughline install` は `~/.grok/hooks/throughline.json` に絶対 `node` +

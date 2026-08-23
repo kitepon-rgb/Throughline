@@ -1,6 +1,6 @@
 {
   "name": "throughline",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "type": "module",
   "description": "Persistent memory hooks for Claude Code, Codex, and Grok (/clear-safe context compression)",
   "keywords": [

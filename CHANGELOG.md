@@ -10,6 +10,25 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-08-23
+
+### Changed
+
+- Internal refactor with no behavior change. Vendor (hook host) identity and
+  per-host behavior moved into `src/hosts/` — `hosts/identity.mjs` is the
+  single source of the `codex:` / `grok:` session prefixes (previously
+  duplicated across four files), and the shared hook entrypoints
+  (`session-start` / `prompt-submit` / `process-turn`) now branch through
+  `hosts/{claude,codex,grok}.mjs` adapters instead of inline host checks.
+  `src/hook-envelope.mjs` is merged into `hosts/grok.mjs`.
+- OS-specific code moved into `src/os/` — the Windows owner-only ACL
+  PowerShell implementation that was duplicated verbatim in
+  `runtime-error-store` and `completed-turn-receipts` is now the single
+  `os/windows-acl.mjs`, alongside macOS Terminal launch, OS URL open,
+  shell/AppleScript quoting, Windows path case folding, and the portable
+  spawn helper. DB schema, injection contract, and every CLI surface are
+  unchanged; full regression is 761 pass / 0 fail.
+
 ## [0.10.0] — 2026-08-17
 
 ### Added
@@ -1271,7 +1290,11 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.9...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.9...v0.9.0
 [0.8.9]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.6...v0.8.7
