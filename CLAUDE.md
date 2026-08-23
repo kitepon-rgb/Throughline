@@ -12,6 +12,9 @@ hook 入口3本は `hosts/{claude,codex,grok}.mjs` の adapter 経由に。`hook
 `hosts/grok.mjs` へ統合）し、OS 依存を `src/os/` へ集約（二重実装だった Windows owner-only
 ACL を `os/windows-acl.mjs` に統一、macOS Terminal 起動・URL open・quote・path case 畳み・
 portable spawn を移設）。schema・注入契約・CLI 面は不変、full regression 761 pass。
+公開commit `f3f183a`、npm `throughline@0.10.1`、shasum
+`49f90d0589d1e4310755c96d8232d92f3205b806`、tag `v0.10.1`、GitHub Release、
+このMacのregistry由来global install（`throughline --version` = 0.10.1）まで確認済み。
 
 **v0.10.0（2026-08-17公開）**: Grok を first-class hook host にする。camelCase envelope は
 `grok:<id>` に正規化し、L2 は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`
