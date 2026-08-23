@@ -1,4 +1,4 @@
-import { spawnPortableSync } from './portable-spawn-sync.mjs';
+import { spawnPortableSync } from './os/portable-spawn-sync.mjs';
 
 export const CODEX_SIDECAR_WORKFLOWS = Object.freeze([
   'review',

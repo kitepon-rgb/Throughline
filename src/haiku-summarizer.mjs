@@ -50,7 +50,7 @@ import {
   CODEX_SIDECAR_STATUS,
   runCodexSidecarCommand,
 } from './codex-sidecar.mjs';
-import { spawnPortableSync } from './portable-spawn-sync.mjs';
+import { spawnPortableSync } from './os/portable-spawn-sync.mjs';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 // Codex CLI 要約の既定。gpt-5.6-luna@low@1/5 は 2026-07-17 の実測評価で選定

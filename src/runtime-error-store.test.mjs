@@ -16,7 +16,7 @@ import {
   reopenRuntimeError,
   resolveRuntimeError,
 } from './runtime-error-store.mjs';
-import { applyWindowsPrivateAcl, verifyWindowsPrivateAcl } from './windows-acl-test-helper.mjs';
+import { applyWindowsPrivateAcl, verifyWindowsPrivateAcl } from './os/windows-acl-test-helper.mjs';
 
 const TEST_PLATFORM = process.platform === 'win32' ? 'win32' : 'darwin';
 

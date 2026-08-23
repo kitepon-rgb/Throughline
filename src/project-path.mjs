@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { platform } from 'node:os';
 import { resolve, sep } from 'node:path';
+
+import { foldPathCaseForPlatform } from './os/paths.mjs';
 
 export function normalizeProjectPathForCompare(value) {
   if (!value) return '';
@@ -10,9 +11,8 @@ export function normalizeProjectPathForCompare(value) {
   } catch {
     // Fall back to the lexical path when the filesystem cannot resolve it.
   }
-  let normalized = resolved.split(sep).join('/').replace(/\/+$/, '');
-  if (platform() === 'win32') normalized = normalized.toLowerCase();
-  return normalized;
+  const normalized = resolved.split(sep).join('/').replace(/\/+$/, '');
+  return foldPathCaseForPlatform(normalized);
 }
 
 export function sameProjectPath(a, b) {

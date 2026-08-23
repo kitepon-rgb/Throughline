@@ -12,7 +12,7 @@ import {
   writeCompletedTurnReceipt,
 } from './completed-turn-receipts.mjs';
 import { seedCompletedTurnReceiptStore } from './completed-turn-receipts-test-fixture.mjs';
-import { verifyWindowsPrivateAcl } from './windows-acl-test-helper.mjs';
+import { verifyWindowsPrivateAcl } from './os/windows-acl-test-helper.mjs';
 
 function sandbox() {
   const root = mkdtempSync(join(tmpdir(), 'throughline-completed-receipts-'));

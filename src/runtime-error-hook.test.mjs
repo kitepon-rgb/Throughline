@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultFactoryReporterConfigPath, defaultRuntimeErrorStorePath } from './runtime-error-store.mjs';
-import { applyWindowsPrivateAcl } from './windows-acl-test-helper.mjs';
+import { applyWindowsPrivateAcl } from './os/windows-acl-test-helper.mjs';
 
 const BIN = fileURLToPath(new URL('../bin/throughline.mjs', import.meta.url));
 

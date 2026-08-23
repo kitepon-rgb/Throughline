@@ -1,10 +1,11 @@
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { readHandoffContext, readSessionProjectPath } from './handoff-context.mjs';
+import { shQuote } from '../os/shell.mjs';
+import { appleScriptForTerminalExec, runTerminalScriptDetached } from '../os/macos-terminal.mjs';
 
 export const GROK_CONTINUE_PREAMBLE = 'この発言は直前 Throughline 席の履歴を前提とする。';
 export const GROK_CONTINUE_REQUEST = '直前の作業の自然な続きとして応答すること。';
@@ -27,10 +28,6 @@ export function buildGrokContinuePrompt(context) {
     throw new TypeError('empty context');
   }
   return `${GROK_CONTINUE_PREAMBLE}\n\n${context}\n\n${GROK_CONTINUE_REQUEST}\n\n${GROK_CONTINUE_WAIT}`;
-}
-
-export function shQuote(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 export function resolveGrokBin({
@@ -62,15 +59,8 @@ export function buildLaunchScript({ cwd, grokBin, sessionUuid, promptFile }) {
   ].join('\n');
 }
 
-export function appleScriptForLaunch(launchScriptPath) {
-  return [
-    'tell application "Terminal"',
-    '  activate',
-    `  do script "exec " & quoted form of ${JSON.stringify(launchScriptPath)}`,
-    'end tell',
-    '',
-  ].join('\n');
-}
+// macOS Terminal 起動の実体は os/macos-terminal.mjs (OS 境界)。
+export const appleScriptForLaunch = appleScriptForTerminalExec;
 
 export function buildContinuePlan({
   context,
@@ -113,13 +103,10 @@ export function writeLaunchArtifacts({
   return { promptFile, launchFile };
 }
 
-export function defaultSpawnLaunch({ launchFile, spawnImpl = spawn }) {
-  const child = spawnImpl('osascript', ['-e', appleScriptForLaunch(launchFile)], {
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref?.();
-  return child;
+export function defaultSpawnLaunch({ launchFile, spawnImpl }) {
+  return spawnImpl === undefined
+    ? runTerminalScriptDetached({ launchFile })
+    : runTerminalScriptDetached({ launchFile, spawnImpl });
 }
 
 export function run(argv = [], {

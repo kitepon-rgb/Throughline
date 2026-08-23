@@ -12,9 +12,10 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, existsSync } from 'node:fs';
-import { homedir, platform } from 'node:os';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { CLAUDE_HOST, KNOWN_STATE_HOSTS } from './hosts/identity.mjs';
+import { foldPathCaseForPlatform } from './os/paths.mjs';
 
 const STATE_DIR = join(homedir(), '.throughline', 'state');
 
@@ -32,8 +33,7 @@ export function normalizeProjectPath(p) {
   if (!p) return '';
   let result = resolve(p).replace(/\\/g, '/');
   if (result.length > 1 && result.endsWith('/')) result = result.slice(0, -1);
-  if (platform() === 'win32') result = result.toLowerCase();
-  return result;
+  return foldPathCaseForPlatform(result);
 }
 
 /**

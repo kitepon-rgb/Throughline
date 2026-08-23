@@ -1,4 +1,4 @@
-import { spawnPortableSync } from './portable-spawn-sync.mjs';
+import { spawnPortableSync } from './os/portable-spawn-sync.mjs';
 
 export const CODEX_HANDOFF_MODEL_SMOKE_ENV = 'THROUGHLINE_EXPERIMENTAL_CODEX_HANDOFF_MODEL_SMOKE';
 export const DEFAULT_CODEX_HANDOFF_MODEL_SMOKE_TIMEOUT_MS = 120_000;

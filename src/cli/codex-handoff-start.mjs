@@ -6,7 +6,9 @@ import { buildCodexHandoffModelSmokePrompt } from '../codex-handoff-model-smoke.
 import { runCodexNewThreadHandoff } from '../codex-app-server.mjs';
 import { estimateTokens } from '../token-estimator.mjs';
 import { sameProjectPath } from '../project-path.mjs';
-import { spawnSync } from 'node:child_process';
+import { shQuote } from '../os/shell.mjs';
+import { openUrlWithOsHandler } from '../os/open-url.mjs';
+import { runTerminalDoScript } from '../os/macos-terminal.mjs';
 
 async function readStdin() {
   let raw = '';
@@ -319,12 +321,7 @@ function openStartedCodexThread({ threadId, host, cwd }) {
 
   if (resolvedHost === 'desktop' || resolvedHost === 'vscode') {
     const url = resolvedHost === 'desktop' ? desktopUrl : vscodeUrl;
-    const result =
-      process.platform === 'darwin'
-        ? spawnSync('open', [url], { encoding: 'utf8' })
-        : process.platform === 'win32'
-          ? spawnSync('cmd.exe', ['/c', 'start', '', url], { encoding: 'utf8' })
-          : spawnSync('xdg-open', [url], { encoding: 'utf8' });
+    const result = openUrlWithOsHandler(url);
     if (result.status !== 0) {
       return {
         status: 'failed',
@@ -353,14 +350,7 @@ function openStartedCodexThread({ threadId, host, cwd }) {
   if (resolvedHost === 'cli') {
     if (process.platform === 'darwin') {
       const shellCommand = `cd ${shQuote(cwd)} && TERM=xterm-256color codex resume ${shQuote(threadId)} --no-alt-screen`;
-      const result = spawnSync('osascript', [], {
-        input: `tell application "Terminal"
-  activate
-  do script ${appleString(shellCommand)}
-end tell
-`,
-        encoding: 'utf8',
-      });
+      const result = runTerminalDoScript(shellCommand);
       if (result.status !== 0) {
         return {
           status: 'failed',
@@ -407,14 +397,6 @@ end tell
     vscodeUrl,
     resumeCommand,
   };
-}
-
-function shQuote(value) {
-  return `'${String(value).replaceAll("'", "'\\''")}'`;
-}
-
-function appleString(value) {
-  return `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
 export async function run(args) {
