@@ -14,6 +14,7 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, existsSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CLAUDE_HOST, KNOWN_STATE_HOSTS } from './hosts/identity.mjs';
 
 const STATE_DIR = join(homedir(), '.throughline', 'state');
 
@@ -155,8 +156,8 @@ function stateFilename(sessionId) {
 }
 
 function normalizeHost(host) {
-  if (host === undefined || host === null || host === '') return 'claude';
-  if (host === 'claude' || host === 'codex') return host;
+  if (host === undefined || host === null || host === '') return CLAUDE_HOST;
+  if (KNOWN_STATE_HOSTS.includes(host)) return host;
   return 'unknown';
 }
 

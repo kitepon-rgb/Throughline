@@ -1,23 +1,19 @@
 import { parseCodexRolloutFile } from './codex-rollout-memory.mjs';
 import { defaultCodexHome, findCodexThreadCandidate } from './codex-thread-index.mjs';
+import {
+  CODEX_SESSION_PREFIX,
+  buildCodexThroughlineSessionId,
+  codexSessionIdToThreadId,
+  isCodexSessionId,
+} from './hosts/identity.mjs';
 
-export const CODEX_SESSION_PREFIX = 'codex:';
-
-export function buildCodexThroughlineSessionId(threadId) {
-  if (typeof threadId !== 'string' || threadId.trim().length === 0) {
-    throw new Error('threadId is required');
-  }
-  return `${CODEX_SESSION_PREFIX}${threadId.trim()}`;
-}
-
-export function isCodexThroughlineSessionId(sessionId) {
-  return typeof sessionId === 'string' && sessionId.startsWith(CODEX_SESSION_PREFIX);
-}
-
-export function codexSessionIdToThreadId(sessionId) {
-  if (!isCodexThroughlineSessionId(sessionId)) return null;
-  return sessionId.slice(CODEX_SESSION_PREFIX.length) || null;
-}
+// session identity の正本は hosts/identity.mjs。既存 import 面のため再 export する。
+export {
+  CODEX_SESSION_PREFIX,
+  buildCodexThroughlineSessionId,
+  codexSessionIdToThreadId,
+};
+export const isCodexThroughlineSessionId = isCodexSessionId;
 
 export function captureCodexRolloutToDb(
   db,

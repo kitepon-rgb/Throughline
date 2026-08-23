@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildBodyRowsFromActiveTurns } from './codex-capture.mjs';
+import { isCodexSessionId } from './hosts/identity.mjs';
 import { parseCodexRolloutFile } from './codex-rollout-memory.mjs';
 import { getLogicalTurnGroups } from './transcript-reader.mjs';
 import { hashAuditorBody, normalizeAuditorBody } from './body-digest.mjs';
@@ -119,7 +120,7 @@ export function readAuditorContext({
 
     const latest = completed.at(-1);
     const stableTurnIdentityAvailable = Number.isInteger(expectedTurnNumber) && expectedTurnNumber >= 0;
-    const codexPairIdentity = sessionId.startsWith('codex:') && expectedOriginSessionId === sessionId;
+    const codexPairIdentity = isCodexSessionId(sessionId) && expectedOriginSessionId === sessionId;
     const expectationComplete =
       typeof expectedOriginSessionId === 'string' && expectedOriginSessionId.length > 0 &&
       (stableTurnIdentityAvailable || codexPairIdentity) &&

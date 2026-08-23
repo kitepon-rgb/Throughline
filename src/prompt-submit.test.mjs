@@ -4,9 +4,8 @@ import {
   commandTextFromPrompt,
   isBatonCommand,
   isClearCommand,
-  launchGrokContinueAfterTl,
-  shouldLaunchGrokContinue,
 } from './prompt-submit.mjs';
+import { hostAdapterForSessionId } from './hosts/index.mjs';
 
 test('isBatonCommand: bare /tl', () => {
   assert.equal(isBatonCommand('/tl'), true);
@@ -79,16 +78,34 @@ test('commandTextFromPrompt unwraps Grok user_query and leaves bare Claude text'
   );
 });
 
-test('shouldLaunchGrokContinue is only Grok /tl', () => {
-  assert.equal(shouldLaunchGrokContinue({ sessionId: 'grok:abc', trigger: 'tl' }), true);
-  assert.equal(shouldLaunchGrokContinue({ sessionId: 'grok:abc', trigger: 'clear' }), false);
-  assert.equal(shouldLaunchGrokContinue({ sessionId: 'old-session', trigger: 'tl' }), false);
-  assert.equal(shouldLaunchGrokContinue({ sessionId: 'codex:thread', trigger: 'tl' }), false);
+test('afterBatonWrite launches grok-continue only for Grok /tl', () => {
+  const noLaunch = () => {
+    throw new Error('must not launch');
+  };
+  assert.deepEqual(
+    hostAdapterForSessionId('grok:abc').afterBatonWrite({
+      trigger: 'clear', sessionId: 'grok:abc', cwd: '/work', continueRun: noLaunch,
+    }),
+    { launched: false },
+  );
+  assert.deepEqual(
+    hostAdapterForSessionId('old-session').afterBatonWrite({
+      trigger: 'tl', sessionId: 'old-session', cwd: '/work', continueRun: noLaunch,
+    }),
+    { launched: false },
+  );
+  assert.deepEqual(
+    hostAdapterForSessionId('codex:thread').afterBatonWrite({
+      trigger: 'tl', sessionId: 'codex:thread', cwd: '/work', continueRun: noLaunch,
+    }),
+    { launched: false },
+  );
 });
 
-test('launchGrokContinueAfterTl calls grok-continue with the source session', () => {
+test('Grok afterBatonWrite calls grok-continue with the source session', () => {
   const calls = [];
-  const code = launchGrokContinueAfterTl({
+  const result = hostAdapterForSessionId('grok:abc').afterBatonWrite({
+    trigger: 'tl',
     sessionId: 'grok:abc',
     cwd: '/work/Throughline',
     continueRun: (argv, opts) => {
@@ -96,7 +113,7 @@ test('launchGrokContinueAfterTl calls grok-continue with the source session', ()
       return 0;
     },
   });
-  assert.equal(code, 0);
+  assert.deepEqual(result, { launched: true, exitCode: 0 });
   assert.deepEqual(calls, [{
     argv: ['--session', 'grok:abc'],
     opts: { cwd: '/work/Throughline' },

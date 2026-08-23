@@ -6,7 +6,7 @@ import {
   deriveGrokChatHistoryPath,
   isGrokEnvelope,
   normalizeHookPayload,
-} from './hook-envelope.mjs';
+} from './index.mjs';
 
 test('isGrokEnvelope detects camelCase wire without session_id', () => {
   assert.equal(

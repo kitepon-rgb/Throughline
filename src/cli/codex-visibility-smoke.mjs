@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { CODEX_SESSION_PREFIX, codexSessionIdToThreadId, isCodexSessionId } from '../hosts/identity.mjs';
 
 import { getDb } from '../db.mjs';
 import { buildHandoffRecord } from '../handoff-record.mjs';
@@ -82,10 +83,10 @@ function parseArgs(args) {
   }
 
   if (!out.sessionId && out.codexThreadId) {
-    out.sessionId = `codex:${out.codexThreadId}`;
+    out.sessionId = `${CODEX_SESSION_PREFIX}${out.codexThreadId}`;
   }
-  if (!out.codexThreadId && out.sessionId?.startsWith('codex:')) {
-    out.codexThreadId = out.sessionId.slice('codex:'.length);
+  if (!out.codexThreadId && isCodexSessionId(out.sessionId)) {
+    out.codexThreadId = codexSessionIdToThreadId(out.sessionId);
   }
 
   return out;
@@ -154,7 +155,7 @@ export async function run(args) {
   const db = getDb();
   const sessionId = parsed.sessionId ?? findLatestCodexSessionId(db, process.cwd());
   const codexThreadId =
-    parsed.codexThreadId ?? (sessionId?.startsWith('codex:') ? sessionId.slice('codex:'.length) : null);
+    parsed.codexThreadId ?? codexSessionIdToThreadId(sessionId);
   if (!sessionId || !codexThreadId) {
     process.stderr.write(
       '[codex-visibility-smoke] pass --session codex:<thread-id> or --codex-thread-id <id>.\n',

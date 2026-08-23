@@ -32,7 +32,7 @@ import { logDecision } from './decision-log.mjs';
 import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
-import { normalizeHookPayload } from './hook-envelope.mjs';
+import { NON_CLAUDE_SESSION_PREFIXES, normalizeHookPayload } from './hosts/index.mjs';
 
 const ENV_DISABLE_AUTO_HANDOFF = 'THROUGHLINE_DISABLE_AUTO_HANDOFF';
 
@@ -55,18 +55,26 @@ function isAutoHandoffDisabled(env) {
  * @returns {{ session_id: string } | null}
  */
 function findLatestClaudePredecessor(db, projectPath, currentSessionId) {
+  // Claude 以外の host session (prefix 付き) を前任候補から除外する。
+  // prefix の正本は hosts/identity.mjs。
+  const nonClaudeExclusion = NON_CLAUDE_SESSION_PREFIXES
+    .map(() => 'AND session_id NOT LIKE ?')
+    .join('\n         ');
   const candidates = db
     .prepare(
       `SELECT session_id FROM sessions
        WHERE lower(project_path) = lower(?)
          AND merged_into IS NULL
          AND session_id != ?
-         AND session_id NOT LIKE 'codex:%'
-         AND session_id NOT LIKE 'grok:%'
+         ${nonClaudeExclusion}
        ORDER BY updated_at DESC
        LIMIT 5`,
     )
-    .all(projectPath, currentSessionId);
+    .all(
+      projectPath,
+      currentSessionId,
+      ...NON_CLAUDE_SESSION_PREFIXES.map((prefix) => `${prefix}%`),
+    );
 
   if (candidates.length === 0) return null;
 

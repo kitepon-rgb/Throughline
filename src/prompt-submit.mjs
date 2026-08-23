@@ -42,10 +42,7 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
-import { GROK_SESSION_PREFIX, normalizeHookPayload } from './hook-envelope.mjs';
-import { injectGrokHandoffContext } from './grok-history-inject.mjs';
-import { readTranscript } from './transcript-reader.mjs';
-import { run as runGrokContinue } from './cli/grok-continue.mjs';
+import { hostAdapterForSessionId, normalizeHookPayload } from './hosts/index.mjs';
 
 // Phase 0-5 spike marker (SessionStart の spike-inject.flag とは別)
 const PROMPT_SPIKE_MARKER_PATH = join(homedir(), '.throughline', 'spike-prompt.flag');
@@ -131,14 +128,6 @@ function isNamedSlashCommand(prompt, name) {
   return text === name || text.startsWith(`${name} `) || text.startsWith(`${name}\n`);
 }
 
-function lastUserPromptText(transcriptPath) {
-  const turns = readTranscript(transcriptPath);
-  for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === 'user') return turns[i].content;
-  }
-  return '';
-}
-
 /**
  * プロンプトが /tl バトン発動コマンドか判定する。
  * 許容: "/tl", "/tl\n", "/tl 何か"。Grok の user_query 包装も見る。
@@ -155,20 +144,6 @@ export function isClearCommand(prompt) {
   return isNamedSlashCommand(prompt, '/clear') || isNamedSlashCommand(prompt, '/new');
 }
 
-export function shouldLaunchGrokContinue({ sessionId, trigger }) {
-  return trigger === 'tl'
-    && typeof sessionId === 'string'
-    && sessionId.startsWith(GROK_SESSION_PREFIX);
-}
-
-export function launchGrokContinueAfterTl({
-  sessionId,
-  cwd,
-  continueRun = runGrokContinue,
-}) {
-  return continueRun(['--session', sessionId], { cwd });
-}
-
 export async function run() {
   let raw = '';
   await new Promise((resolve) => {
@@ -181,6 +156,7 @@ export async function run() {
 
   const payload = normalizeHookPayload(JSON.parse(raw));
   const { session_id, cwd, prompt } = payload;
+  const hostAdapter = hostAdapterForSessionId(session_id);
 
   // VSCode 新規プロジェクトへの tasks.json 自動プロビジョニング。
   // SessionStart/Stop に加えここでも呼ぶことで、どれか 1 つでも発火すれば初回メッセージ送信で
@@ -208,16 +184,13 @@ export async function run() {
     });
     if (handoff.attempted) {
       if (handoff.injectionText) {
-        if (session_id.startsWith(GROK_SESSION_PREFIX)) {
-          const injected = injectGrokHandoffContext(
-            payload.transcript_path,
-            handoff.injectionText,
-          );
-          if (!injected.injected) {
-            process.stderr.write(`[prompt-submit] grok chat_history inject skipped: ${injected.reason}\n`);
-          }
-        } else {
-          process.stdout.write(handoff.injectionText + '\n');
+        // 注入の届け方は host 依存 (Claude: stdout / Grok: chat_history 直書き)。
+        const delivery = hostAdapter.deliverHandoffInjection({
+          payload,
+          text: handoff.injectionText,
+        });
+        if (!delivery.delivered) {
+          process.stderr.write(`[prompt-submit] ${delivery.reason}\n`);
         }
       }
       logDecision({
@@ -238,15 +211,13 @@ export async function run() {
     }
   }
 
-  let commandPrompt = prompt;
-  if (
-    typeof session_id === 'string'
-    && session_id.startsWith(GROK_SESSION_PREFIX)
-    && !isBatonCommand(commandPrompt)
-    && !isClearCommand(commandPrompt)
-  ) {
-    commandPrompt = lastUserPromptText(payload.transcript_path);
-  }
+  // slash command の判定材料は host 依存 (Grok は user_query 包装のため
+  // chat_history の最新 user 発話へ fallback する)。
+  const commandPrompt = hostAdapter.resolveCommandPrompt({
+    prompt,
+    payload,
+    isCommandPrompt: (p) => isBatonCommand(p) || isClearCommand(p),
+  });
   const tlMatch = isBatonCommand(commandPrompt);
   const clearMatch = !tlMatch && isClearCommand(commandPrompt);
 
@@ -281,17 +252,14 @@ export async function run() {
     trigger: tlMatch ? 'tl' : 'clear',
   });
 
-  if (shouldLaunchGrokContinue({
-    sessionId: session_id,
+  // バトン書き込み後の副作用は host 依存 (Grok /tl だけ後継セッションを起動する)。
+  const afterBaton = hostAdapter.afterBatonWrite({
     trigger: tlMatch ? 'tl' : 'clear',
-  })) {
-    const code = launchGrokContinueAfterTl({
-      sessionId: session_id,
-      cwd: projectPath,
-    });
-    if (code !== 0) {
-      process.stderr.write(`[prompt-submit] grok-continue exited ${code}\n`);
-    }
+    sessionId: session_id,
+    cwd: projectPath,
+  });
+  if (afterBaton.launched && afterBaton.exitCode !== 0) {
+    process.stderr.write(`[prompt-submit] grok-continue exited ${afterBaton.exitCode}\n`);
   }
 
   process.exit(0);

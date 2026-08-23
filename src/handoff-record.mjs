@@ -6,9 +6,11 @@
  * persisted to DB; adapters can render it for Claude, Codex, or diagnostics.
  */
 
+import { CODEX_SESSION_PREFIX } from './hosts/identity.mjs';
+
 export const HANDOFF_RECORD_VERSION = 1;
 export const N_RECENT_L2 = 20;
-export const CODEX_SESSION_PREFIX = 'codex:';
+export { CODEX_SESSION_PREFIX };
 
 const DEFAULT_INTENT = 'continue implementation';
 const DEFAULT_CONSTRAINTS = [

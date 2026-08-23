@@ -28,6 +28,7 @@ import { buildCodexMonitorUsage } from './codex-usage.mjs';
 import { listCodexThreadCandidates } from './codex-thread-index.mjs';
 import { readLatestUsage } from './transcript-usage.mjs';
 import { startSizeQuery } from './terminal-size.mjs';
+import { CODEX_HOST, CODEX_SESSION_PREFIX, codexSessionIdToThreadId } from './hosts/identity.mjs';
 
 const REFRESH_MS = 1000;
 // データ変化が無くても N ms ごとに再描画して「(24m ago)」表示を進める。
@@ -292,7 +293,7 @@ export function resolveColumns() {
 function formatLine({ state, usage, isActive, now = Date.now() }) {
   const project = basename(state.projectPath || '?');
   const shortId = formatShortSessionId(state);
-  const host = state.host === 'codex' ? 'Codex' : state.host === 'unknown' ? 'Unknown' : 'Claude';
+  const host = state.host === CODEX_HOST ? 'Codex' : state.host === 'unknown' ? 'Unknown' : 'Claude';
   const tokens = usage?.tokens ?? 0;
   const max = usage?.contextWindowSize ?? 200_000;
   const ratio = max > 0 ? tokens / max : 0;
@@ -337,8 +338,8 @@ function formatLine({ state, usage, isActive, now = Date.now() }) {
 
 function formatShortSessionId(state) {
   const sessionId = String(state?.sessionId ?? '');
-  if (state?.host === 'codex' && sessionId.startsWith('codex:')) {
-    return sessionId.slice('codex:'.length, 'codex:'.length + 8);
+  if (state?.host === CODEX_HOST && sessionId.startsWith(CODEX_SESSION_PREFIX)) {
+    return (codexSessionIdToThreadId(sessionId) ?? '').slice(0, 8);
   }
   return sessionId.slice(0, 8);
 }
@@ -372,7 +373,7 @@ function withLiveActivity(state, now = Date.now()) {
 }
 
 function resolveMonitorUsage(state) {
-  if (state.host === 'codex' && state.rolloutPath) {
+  if (state.host === CODEX_HOST && state.rolloutPath) {
     return buildCodexMonitorUsage(state.rolloutPath) ?? state.usage ?? null;
   }
   if (state.transcriptPath) {
@@ -410,8 +411,8 @@ function discoverCodexSessionStates(args = {}, cwd = process.cwd()) {
 
   lastCodexDiscoveryError = null;
   return candidates.map((candidate) => ({
-    sessionId: `codex:${candidate.id}`,
-    host: 'codex',
+    sessionId: `${CODEX_SESSION_PREFIX}${candidate.id}`,
+    host: CODEX_HOST,
     projectPath: normalizeProjectPath(candidate.cwd ?? cwd),
     transcriptPath: null,
     rolloutPath: candidate.rolloutPath,

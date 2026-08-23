@@ -1,4 +1,5 @@
 import { getDb } from '../db.mjs';
+import { isCodexSessionId } from '../hosts/identity.mjs';
 import {
   L2_WINDOW,
   countDistinctBodyTurns,
@@ -94,7 +95,7 @@ function insertSkeleton(db, { sessionId, originSessionId, turnNumber, summary, c
 }
 
 export function summarizeCodexSession(db, { sessionId, projectPath, max, env = process.env }) {
-  if (!sessionId?.startsWith('codex:')) {
+  if (!isCodexSessionId(sessionId)) {
     throw new Error('codex-summarize requires a codex:<thread-id> session');
   }
 

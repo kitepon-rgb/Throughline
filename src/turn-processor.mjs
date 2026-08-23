@@ -46,7 +46,7 @@ import { readLatestUsage } from './transcript-usage.mjs';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
 import { writeCompletedTurnReceipt } from './completed-turn-receipts.mjs';
-import { normalizeHookPayload } from './hook-envelope.mjs';
+import { hostAdapterForSessionId, normalizeHookPayload } from './hosts/index.mjs';
 
 /** 直近 N ターンは bodies を生で残し、それより古いものだけ L1 要約する。 */
 export const L2_WINDOW = 20;
@@ -205,7 +205,7 @@ export async function run() {
     process.stderr.write(`[vscode-task] ${msg}\n`);
   }
 
-  if (!session_id.startsWith('grok:')) {
+  if (hostAdapterForSessionId(session_id).waitsForStopTranscriptFlush) {
     await waitForClaudeStopTranscriptFlush({
       transcriptPath: transcript_path,
       lastAssistantMessage: last_assistant_message,
