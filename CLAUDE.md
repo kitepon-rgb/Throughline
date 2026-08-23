@@ -219,6 +219,30 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/token-estimator.mjs](src/token-estimator.mjs) | 補助的なトークン数推定 (length/4) |
 | [src/turn-backfill.mjs](src/turn-backfill.mjs) | 共通バックフィルルーチン: 群レベル dedup・junk 代表除外・timestamp `created_at`・`deriveTranscriptPath` |
 
+### host 境界 `src/hosts/`（ベンダー依存の唯一の置き場）
+
+共有コード (hook 入口・monitor・state-file・predecessor 検索) はベンダー分岐を直接書かず、必ずここを参照する。新 host 追加は identity.mjs に prefix、`hosts/<host>.mjs` に adapter を足す。
+
+| ファイル | 役割 |
+|---|---|
+| [src/hosts/identity.mjs](src/hosts/identity.mjs) | session prefix (`codex:` / `grok:`)・`hostOfSessionId`・codex thread id 往復・`NON_CLAUDE_SESSION_PREFIXES`・`KNOWN_STATE_HOSTS` の唯一の正本。codex-capture / handoff-record の旧 export はここへの再 export |
+| [src/hosts/index.mjs](src/hosts/index.mjs) | `normalizeHookPayload` (Grok camelCase envelope の dispatch) と `hostAdapterForSessionId` |
+| [src/hosts/claude.mjs](src/hosts/claude.mjs) | Claude adapter (stdout 注入・flush barrier あり・prompt 素通し) |
+| [src/hosts/codex.mjs](src/hosts/codex.mjs) | Codex adapter。Codex hook 本体は [src/cli/codex-hook.mjs](src/cli/codex-hook.mjs) のままで、ここは共有コード向けの識別と既定挙動の明文化 |
+| [src/hosts/grok.mjs](src/hosts/grok.mjs) | 旧 hook-envelope.mjs を統合。Grok envelope 正規化・chat_history path・chat_history 直書き注入・user_query 包装の command prompt fallback・`/tl` 後の grok-continue 起動・flush barrier 非適用 |
+
+### OS 境界 `src/os/`（OS 依存の唯一の置き場）
+
+| ファイル | 役割 |
+|---|---|
+| [src/os/windows-acl.mjs](src/os/windows-acl.mjs) | Windows owner-only ACL の apply / verify (PowerShell) と `isWindows`。runtime-error-store と completed-turn-receipts に二重実装されていたものを集約 (15 秒 timeout・explicit failure 契約は不変) |
+| [src/os/portable-spawn-sync.mjs](src/os/portable-spawn-sync.mjs) | 旧 src/portable-spawn-sync.mjs。Windows の .cmd/.ps1/.mjs shim 解決つき spawnSync |
+| [src/os/macos-terminal.mjs](src/os/macos-terminal.mjs) | macOS Terminal.app 起動 (detached exec 形 / do script 形)。grok-continue と codex-handoff-start が共用 |
+| [src/os/open-url.mjs](src/os/open-url.mjs) | URL を OS 既定 handler で開く (darwin `open` / win32 `start` / linux `xdg-open`) |
+| [src/os/shell.mjs](src/os/shell.mjs) | `shQuote` / `appleString` (POSIX / AppleScript quote の唯一の正本) |
+| [src/os/paths.mjs](src/os/paths.mjs) | `foldPathCaseForPlatform` — Windows でだけ path を小文字へ畳む判断の集約 (state-file / project-path が共用) |
+| [src/os/windows-acl-test-helper.mjs](src/os/windows-acl-test-helper.mjs) | Windows ACL テスト fixture helper (旧 src/windows-acl-test-helper.mjs) |
+
 ### Hook 実装（CLI 経由で呼ばれる）
 
 | ファイル | サブコマンド | Hook event |
@@ -347,7 +371,7 @@ npm test
 
 ### 削除済み
 
-`src/classifier.mjs`, `src/detail-capture.mjs`, `src/throughline.mjs` は schema v4 で不要化して削除済み。`src/context-injector.mjs` は SessionStart との重複注入を解消するため廃止。CLAUDE.md や docs の旧記述に残っていたら現状と乖離しているサイン。
+`src/classifier.mjs`, `src/detail-capture.mjs`, `src/throughline.mjs` は schema v4 で不要化して削除済み。 `src/hook-envelope.mjs` は 2026-08-23 のリファクタで `src/hosts/grok.mjs` へ統合済み。`src/context-injector.mjs` は SessionStart との重複注入を解消するため廃止。CLAUDE.md や docs の旧記述に残っていたら現状と乖離しているサイン。
 
 ---
 
