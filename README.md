@@ -43,6 +43,13 @@ Grok Desktop is also a first-class host. `throughline install` writes
 `~/.grok/hooks/throughline.json`. On Grok, `/tl` does not inject into the
 current window — it starts a new Terminal seat. See below.
 
+Cursor is also a first-class host. `throughline install` upserts
+`sessionStart` / `beforeSubmitPrompt` / `stop` into `~/.cursor/hooks.json` and
+leaves factory hooks in place. Capture reads Cursor `agent-transcripts` jsonl.
+Handoff injection uses `sessionStart` `additional_context`. `/tl` does not
+auto-launch a successor Cursor chat — the next new conversation drinks the
+baton. See [ADR 0022](docs/adr/0022-cursor-host-capture.md).
+
 <details>
 <summary><b>Also using Codex?</b> Global install registers Codex hooks too — click for details.</summary>
 

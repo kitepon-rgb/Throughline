@@ -6,6 +6,15 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
+**v0.10.3（2026-08-24）**: Cursor を first-class hook host にする。envelope は
+`sessionStart` / `beforeSubmitPrompt` / `stop` と `conversation_id`。session id は
+`cursor:<uuid>`。L2 は payload `transcript_path` または
+`~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl`。
+`throughline install` は `~/.cursor/hooks.json` へ絶対 `node` + `bin/throughline.mjs`
+を upsert し、工場 hook は残す。beforeSubmitPrompt は continue のみなので、
+引き継ぎ注入は sessionStart の `additional_context`。`/tl` 後継の自動起動はしない。
+Claude/Codex/Grok 契約は変えない。正本は [ADR 0022](docs/adr/0022-cursor-host-capture.md)。
+
 **v0.10.1（2026-08-23公開）**: 挙動変更なしの内部リファクタ。ベンダー (hook host) 依存を
 `src/hosts/` へ一元化（`hosts/identity.mjs` が `codex:`/`grok:` prefix の唯一の正本、
 hook 入口3本は `hosts/{claude,codex,grok}.mjs` の adapter 経由に。`hook-envelope.mjs` は
@@ -235,11 +244,12 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 
 | ファイル | 役割 |
 |---|---|
-| [src/hosts/identity.mjs](src/hosts/identity.mjs) | session prefix (`codex:` / `grok:`)・`hostOfSessionId`・codex thread id 往復・`NON_CLAUDE_SESSION_PREFIXES`・`KNOWN_STATE_HOSTS` の唯一の正本。codex-capture / handoff-record の旧 export はここへの再 export |
-| [src/hosts/index.mjs](src/hosts/index.mjs) | `normalizeHookPayload` (Grok camelCase envelope の dispatch) と `hostAdapterForSessionId` |
+| [src/hosts/identity.mjs](src/hosts/identity.mjs) | session prefix (`codex:` / `grok:` / `cursor:`)・`hostOfSessionId`・codex thread id 往復・`NON_CLAUDE_SESSION_PREFIXES`・`KNOWN_STATE_HOSTS` の唯一の正本。codex-capture / handoff-record の旧 export はここへの再 export |
+| [src/hosts/index.mjs](src/hosts/index.mjs) | `normalizeHookPayload` (Grok camelCase / Cursor envelope の dispatch) と `hostAdapterForSessionId` |
 | [src/hosts/claude.mjs](src/hosts/claude.mjs) | Claude adapter (stdout 注入・flush barrier あり・prompt 素通し) |
 | [src/hosts/codex.mjs](src/hosts/codex.mjs) | Codex adapter。Codex hook 本体は [src/cli/codex-hook.mjs](src/cli/codex-hook.mjs) のままで、ここは共有コード向けの識別と既定挙動の明文化 |
 | [src/hosts/grok.mjs](src/hosts/grok.mjs) | 旧 hook-envelope.mjs を統合。Grok envelope 正規化・chat_history path・chat_history 直書き注入・user_query 包装の command prompt fallback・`/tl` 後の grok-continue 起動・flush barrier 非適用 |
+| [src/hosts/cursor.mjs](src/hosts/cursor.mjs) | Cursor envelope 正規化・agent-transcripts path・sessionStart `additional_context` 注入・flush barrier 非適用・後継自動起動なし |
 
 ### OS 境界 `src/os/`（OS 依存の唯一の置き場）
 

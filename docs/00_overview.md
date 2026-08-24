@@ -40,6 +40,7 @@
 - [ADR 0003](adr/0003-observer-completed-chain-cursor.md): Observer cursorをhost固有のcompleted pair chainとprefix検証へ束縛する。
 - [ADR 0020](adr/0020-windows-ci-release-latency.md): Windows ACL契約を維持し、境界fixtureと実ACL検証を分離する。
 - [ADR 0021](adr/0021-grok-host-capture.md): Grok を first-class hook host にし、`/tl` 後の記憶再開は `grok-continue` に固定する。
+- [ADR 0022](adr/0022-cursor-host-capture.md): Cursor を first-class hook host にし、注入は sessionStart の `additional_context`、hook は `~/.cursor/hooks.json` への upsert。
 
 Observerの公開境界は`throughline observer-read`／`throughline observer-wait`のJSON-only CLIである。
 ThroughlineはClaude Stop receiptとCodex rolloutの`task_complete`だけからcompleted cursorを構築し、

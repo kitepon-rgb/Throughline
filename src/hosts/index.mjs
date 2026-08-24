@@ -5,26 +5,35 @@
  * `normalizeHookPayload` と `hostAdapterForSessionId` だけを使い、
  * ベンダー分岐を直接書かない。
  */
-import { hostOfSessionId, CLAUDE_HOST, CODEX_HOST, GROK_HOST } from './identity.mjs';
+import { hostOfSessionId, CLAUDE_HOST, CODEX_HOST, GROK_HOST, CURSOR_HOST } from './identity.mjs';
 import { claudeHostAdapter } from './claude.mjs';
 import { codexHostAdapter } from './codex.mjs';
 import { grokHostAdapter, isGrokEnvelope, normalizeGrokHookPayload } from './grok.mjs';
+import { cursorHostAdapter, isCursorEnvelope, normalizeCursorHookPayload } from './cursor.mjs';
 
 export * from './identity.mjs';
 export { isGrokEnvelope, deriveGrokChatHistoryPath, normalizeGrokHookPayload } from './grok.mjs';
+export {
+  isCursorEnvelope,
+  encodeCursorProjectDir,
+  deriveCursorTranscriptPath,
+  normalizeCursorHookPayload,
+} from './cursor.mjs';
 
 const ADAPTERS = Object.freeze({
   [CLAUDE_HOST]: claudeHostAdapter,
   [CODEX_HOST]: codexHostAdapter,
   [GROK_HOST]: grokHostAdapter,
+  [CURSOR_HOST]: cursorHostAdapter,
 });
 
 /**
  * hook stdin payload を Claude snake_case 契約へ正規化する。
- * 現状 camelCase envelope を送るのは Grok だけ (v0.10.0 / ADR 0021)。
+ * Grok は camelCase wire、Cursor は hook_event_name が sessionStart 等。
  */
 export function normalizeHookPayload(payload, options = {}) {
   if (isGrokEnvelope(payload)) return normalizeGrokHookPayload(payload, options);
+  if (isCursorEnvelope(payload)) return normalizeCursorHookPayload(payload, options);
   return payload;
 }
 

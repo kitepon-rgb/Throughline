@@ -32,7 +32,8 @@ import { logDecision } from './decision-log.mjs';
 import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { recordRuntimeErrorBestEffort } from './runtime-error-store.mjs';
-import { NON_CLAUDE_SESSION_PREFIXES, normalizeHookPayload } from './hosts/index.mjs';
+import { hostAdapterForSessionId, NON_CLAUDE_SESSION_PREFIXES, normalizeHookPayload } from './hosts/index.mjs';
+import { executeFirstPromptHandoff } from './handoff-executor.mjs';
 
 const ENV_DISABLE_AUTO_HANDOFF = 'THROUGHLINE_DISABLE_AUTO_HANDOFF';
 
@@ -160,6 +161,28 @@ export async function run() {
     intent_note: intentNote,
     pending_registered: true,
   });
+
+  // Cursor は beforeSubmitPrompt が additional_context を持たない。
+  // 新規 composer 会話の sessionStart が公式の注入口なので、ここで第二相を実行する。
+  // Claude の幽霊 SessionStart 問題はこの host では sessionStart = 会話作成のため適用しない。
+  // クラウド / background agent は baton を奪わない。
+  const hostAdapter = hostAdapterForSessionId(session_id);
+  if (hostAdapter.consumesHandoffAtSessionStart === true && payload.is_background_agent !== true) {
+    const handoff = executeFirstPromptHandoff(db, {
+      sessionId: session_id,
+      projectPath,
+      now,
+    });
+    if (handoff.attempted && handoff.injectionText) {
+      const delivery = hostAdapter.deliverHandoffInjection({
+        payload,
+        text: handoff.injectionText,
+      });
+      if (!delivery.delivered) {
+        process.stderr.write(`[session-start] ${delivery.reason}\n`);
+      }
+    }
+  }
 
   process.exit(0);
 }

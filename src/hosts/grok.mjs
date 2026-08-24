@@ -88,6 +88,7 @@ export const grokHostAdapter = Object.freeze({
     return lastUserPromptText(payload.transcript_path);
   },
   // Grok `/tl` 成功後だけ、源セッションの project_path で後継の対話 grok を立てる。
+  consumesHandoffAtSessionStart: false,
   afterBatonWrite({ trigger, sessionId, cwd, continueRun = runGrokContinue }) {
     if (trigger !== 'tl') return { launched: false };
     const code = continueRun(['--session', sessionId], { cwd });

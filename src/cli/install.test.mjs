@@ -10,8 +10,10 @@ import {
   buildCodexUserPromptSubmitHookCommand,
   buildGrokHookCommand,
   createGrokHooksFile,
+  createCursorHookEntries,
   isEquivalentCodexHookCommand,
   isThroughlineCodexHookCommand,
+  isThroughlineCursorHookCommand,
   parseCodexHookCommand,
   resolveCodexHookNodePath,
   run,
@@ -90,6 +92,28 @@ test('global install copies Throughline slash commands to ~/.claude/commands/', 
     ]);
     for (const command of grokCommands) {
       assert.match(command, /throughline\.mjs/);
+      assert.doesNotMatch(command, /^throughline /);
+    }
+    const cursorHooks = JSON.parse(readFileSync(join(home.dir, '.cursor', 'hooks.json'), 'utf8'));
+    assert.equal(cursorHooks.version, 1);
+    assert.equal(
+      cursorHooks.hooks.sessionStart[0].command,
+      createCursorHookEntries().sessionStart[0].command,
+    );
+    assert.equal(
+      cursorHooks.hooks.beforeSubmitPrompt[0].command,
+      createCursorHookEntries().beforeSubmitPrompt[0].command,
+    );
+    assert.equal(
+      cursorHooks.hooks.stop[0].command,
+      createCursorHookEntries().stop[0].command,
+    );
+    for (const command of [
+      cursorHooks.hooks.sessionStart[0].command,
+      cursorHooks.hooks.beforeSubmitPrompt[0].command,
+      cursorHooks.hooks.stop[0].command,
+    ]) {
+      assert.equal(isThroughlineCursorHookCommand(command), true);
       assert.doesNotMatch(command, /^throughline /);
     }
   } finally {
@@ -190,6 +214,39 @@ test('Grok hook commands are absolute node + throughline.mjs on every platform',
   assert.equal(file.hooks.UserPromptSubmit[0].hooks[0].command, '/usr/bin/node /pkg/bin/throughline.mjs prompt-submit');
   assert.equal(file.hooks.Stop[0].hooks[0].command, '/usr/bin/node /pkg/bin/throughline.mjs process-turn');
   assert.equal(file.hooks.Stop[0].hooks[0].async, true);
+});
+
+test('Cursor install upserts product hooks and keeps factory commands', async () => {
+  const home = makeTempHome();
+  if (home.resolved !== home.dir) {
+    home.restore();
+    return;
+  }
+  const unsilence = silence();
+  try {
+    mkdirSync(join(home.dir, '.cursor'), { recursive: true });
+    writeFileSync(join(home.dir, '.cursor', 'hooks.json'), `${JSON.stringify({
+      version: 1,
+      hooks: {
+        sessionStart: [{ command: '/tmp/cursor-todo-gate-hook session-start', timeout: 10 }],
+      },
+    }, null, 2)}\n`);
+    await run([]);
+    const installed = JSON.parse(readFileSync(join(home.dir, '.cursor', 'hooks.json'), 'utf8'));
+    assert.equal(installed.hooks.sessionStart[0].command, '/tmp/cursor-todo-gate-hook session-start');
+    assert.equal(isThroughlineCursorHookCommand(installed.hooks.sessionStart[1].command), true);
+    assert.equal(isThroughlineCursorHookCommand(installed.hooks.beforeSubmitPrompt[0].command), true);
+    assert.equal(isThroughlineCursorHookCommand(installed.hooks.stop[0].command), true);
+    await run(['--uninstall']);
+    const after = JSON.parse(readFileSync(join(home.dir, '.cursor', 'hooks.json'), 'utf8'));
+    assert.equal(after.hooks.sessionStart.length, 1);
+    assert.equal(after.hooks.sessionStart[0].command, '/tmp/cursor-todo-gate-hook session-start');
+    assert.equal(after.hooks.beforeSubmitPrompt, undefined);
+    assert.equal(after.hooks.stop, undefined);
+  } finally {
+    unsilence();
+    home.restore();
+  }
 });
 
 test('Codex hook builders use the PowerShell call operator on Windows only', () => {

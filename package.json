@@ -1,12 +1,13 @@
 {
   "name": "throughline",
-  "version": "0.10.2",
-  "type": "module",
-  "description": "Persistent memory hooks for Claude Code, Codex, and Grok (/clear-safe context compression)",
-  "keywords": [
-    "claude-code",
-    "codex",
-    "grok",
+    "version": "0.10.3",
+    "type": "module",
+    "description": "Persistent memory hooks for Claude Code, Codex, Grok, and Cursor (/clear-safe context compression)",
+    "keywords": [
+      "claude-code",
+      "codex",
+      "grok",
+      "cursor",
     "hooks",
     "context-compression",
     "llm"
@@ -40,7 +41,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --import ./src/test-env.mjs --test scripts/verify-release-commit.test.mjs src/*.test.mjs src/cli/*.test.mjs",
+    "test": "node --import ./src/test-env.mjs --test scripts/verify-release-commit.test.mjs src/*.test.mjs src/cli/*.test.mjs src/hosts/*.test.mjs",
     "verify:release-commit": "node scripts/verify-release-commit.mjs",
     "prepublishOnly": "npm run verify:release-commit && npm test"
   },

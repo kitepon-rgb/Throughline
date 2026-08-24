@@ -21,6 +21,7 @@ export const claudeHostAdapter = Object.freeze({
   resolveCommandPrompt({ prompt }) {
     return prompt;
   },
+  consumesHandoffAtSessionStart: false,
   afterBatonWrite() {
     return { launched: false };
   },

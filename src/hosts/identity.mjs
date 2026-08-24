@@ -1,7 +1,7 @@
 /**
  * hosts/identity.mjs — harness (hook host) 識別の唯一の正本
  *
- * Throughline は Claude / Codex / Grok の 3 hook host を同じ SQLite に保存する。
+ * Throughline は Claude / Codex / Grok / Cursor の hook host を同じ SQLite に保存する。
  * host の見分け方は session_id prefix だけであり、その prefix 定義と判定関数を
  * このファイルに一元化する。共有コード (hook 入口・monitor・state-file・
  * predecessor 検索) は文字列リテラルを直接持たず、必ずここを参照する。
@@ -13,9 +13,11 @@
 export const CLAUDE_HOST = 'claude';
 export const CODEX_HOST = 'codex';
 export const GROK_HOST = 'grok';
+export const CURSOR_HOST = 'cursor';
 
 export const CODEX_SESSION_PREFIX = 'codex:';
 export const GROK_SESSION_PREFIX = 'grok:';
+export const CURSOR_SESSION_PREFIX = 'cursor:';
 
 /**
  * Claude session は prefix を持たない。auto handoff の前任検索 (Claude 専用) は
@@ -24,6 +26,7 @@ export const GROK_SESSION_PREFIX = 'grok:';
 export const NON_CLAUDE_SESSION_PREFIXES = Object.freeze([
   CODEX_SESSION_PREFIX,
   GROK_SESSION_PREFIX,
+  CURSOR_SESSION_PREFIX,
 ]);
 
 /**
@@ -40,14 +43,19 @@ export function isGrokSessionId(sessionId) {
   return typeof sessionId === 'string' && sessionId.startsWith(GROK_SESSION_PREFIX);
 }
 
+export function isCursorSessionId(sessionId) {
+  return typeof sessionId === 'string' && sessionId.startsWith(CURSOR_SESSION_PREFIX);
+}
+
 /**
  * session_id から hook host を返す。prefix なしは Claude。
  * @param {string} sessionId
- * @returns {'claude'|'codex'|'grok'}
+ * @returns {'claude'|'codex'|'grok'|'cursor'}
  */
 export function hostOfSessionId(sessionId) {
   if (isCodexSessionId(sessionId)) return CODEX_HOST;
   if (isGrokSessionId(sessionId)) return GROK_HOST;
+  if (isCursorSessionId(sessionId)) return CURSOR_HOST;
   return CLAUDE_HOST;
 }
 
@@ -68,4 +76,13 @@ export function grokBareSessionId(sessionId) {
   return sessionId.startsWith(GROK_SESSION_PREFIX)
     ? sessionId.slice(GROK_SESSION_PREFIX.length)
     : sessionId;
+}
+
+export function cursorBareSessionId(sessionId) {
+  if (typeof sessionId !== 'string' || sessionId.length === 0) return null;
+  let bare = sessionId.startsWith(CURSOR_SESSION_PREFIX)
+    ? sessionId.slice(CURSOR_SESSION_PREFIX.length)
+    : sessionId;
+  if (bare.startsWith('bc-')) bare = bare.slice(3);
+  return bare.length > 0 ? bare : null;
 }

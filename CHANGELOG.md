@@ -10,6 +10,22 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.3] — 2026-08-24
+
+### Added
+
+- Cursor を first-class hook host にする（工場 Cursor harness campaign Wave 6）。
+  - envelope は `hook_event_name=sessionStart|beforeSubmitPrompt|stop` と
+    `conversation_id` / `cursor_version`。session id は `cursor:<uuid>`。
+  - L2 は payload の `transcript_path`、無ければ
+    `~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl`。
+  - `throughline install` は `~/.cursor/hooks.json` へ絶対 `node` +
+    `bin/throughline.mjs` の sessionStart / beforeSubmitPrompt / stop を upsert
+    する。工場 hook（`cursor-*-hook`）は残す。bare `throughline` は書かない。
+  - beforeSubmitPrompt は continue のみなので、引き継ぎ注入は sessionStart の
+    `additional_context`。`/tl` 後継の自動起動はしない。
+  - Claude / Codex / Grok 契約は変えない。
+
 ## [0.10.2] — 2026-08-24
 
 ### Changed
@@ -1304,7 +1320,9 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.3...HEAD
+[0.10.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.2...v0.10.3
+[0.10.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.9.0...v0.9.1

@@ -39,8 +39,14 @@ throughline install     # hook / Codex skill / VS Code monitor task を登録
 `/clear` を経由しない新規 chat / VS Code 再起動では `/tl` で前任を指名できる。
 
 Grok Desktop も first-class host である。`throughline install` は
-`~/.grok/hooks/throughline.json` を書く。Grok の `/tl` は今の窓へ注入せず、
-Terminal に新席を立てる（詳細は下）。
+`~/.grok/hooks/throughline.json` を書く。Grok では `/tl` は今の窓へ注入せず、
+新しい Terminal 席を立てる。
+
+Cursor も first-class host である。`throughline install` は `~/.cursor/hooks.json`
+へ sessionStart / beforeSubmitPrompt / stop を upsert し、工場 hook は残す。
+capture は Cursor の `agent-transcripts` jsonl。注入は sessionStart の
+`additional_context`。`/tl` 後継の自動起動はしない。
+[ADR 0022](docs/adr/0022-cursor-host-capture.md) を正とする。
 
 <details>
 <summary><b>Grok も併用する場合</b> Grok hooks も登録される — クリックで詳細</summary>

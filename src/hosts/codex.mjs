@@ -22,6 +22,7 @@ export const codexHostAdapter = Object.freeze({
   resolveCommandPrompt({ prompt }) {
     return prompt;
   },
+  consumesHandoffAtSessionStart: false,
   afterBatonWrite() {
     return { launched: false };
   },

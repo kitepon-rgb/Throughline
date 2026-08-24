@@ -11,6 +11,12 @@
 import { readFileSync, existsSync } from 'fs';
 import { DETAIL_KIND } from './constants.mjs';
 
+function entryKind(entry) {
+  if (typeof entry?.type === 'string' && entry.type.length > 0) return entry.type;
+  if (typeof entry?.role === 'string' && entry.role.length > 0) return entry.role;
+  return undefined;
+}
+
 /**
  * content 配列からテキスト部分だけを結合する。
  * thinking ブロックは除外。
@@ -51,8 +57,9 @@ export function readTranscript(transcriptPath) {
       continue;
     }
 
-    // user / assistant エントリのみ対象
-    if (entry.type !== 'user' && entry.type !== 'assistant') continue;
+    // user / assistant エントリのみ対象。Claude は type、Cursor jsonl は role。
+    const kind = entryKind(entry);
+    if (kind !== 'user' && kind !== 'assistant') continue;
 
     // subagent の sidechain エントリは主会話ではないので除外。現行 CC は主 transcript に
     // 書かない（400 transcript 実測ゼロ件）が、将来変更への安価な防御 (docs/12 B-1)
@@ -60,7 +67,7 @@ export function readTranscript(transcriptPath) {
 
     const msg = entry.message;
     const grokContent = entry.content;
-    const role = msg?.role ?? entry.type;
+    const role = msg?.role ?? kind;
     const rawContent = msg?.content ?? grokContent;
     if (!role || rawContent == null) continue;
 
@@ -258,7 +265,7 @@ export function sliceCurrentTurnEntries(entries) {
   let lastAssistantTextIdx = -1;
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
-    if (e.type !== 'assistant') continue;
+    if (entryKind(e) !== 'assistant') continue;
     const blocks = e.message?.content;
     if (!Array.isArray(blocks)) continue;
     if (blocks.some((b) => b && b.type === 'text' && typeof b.text === 'string' && b.text.length > 0)) {
@@ -272,7 +279,7 @@ export function sliceCurrentTurnEntries(entries) {
   let userTextIdx = -1;
   for (let i = lastAssistantTextIdx - 1; i >= 0; i--) {
     const e = entries[i];
-    if (e.type !== 'user') continue;
+    if (entryKind(e) !== 'user') continue;
     const blocks = e.message?.content;
     if (Array.isArray(blocks)) {
       if (blocks.some((b) => b && b.type === 'text' && typeof b.text === 'string' && b.text.length > 0)) {
@@ -319,7 +326,7 @@ export function extractDetailBlocks(turnEntries) {
   const toolNameById = new Map();
 
   for (const e of turnEntries) {
-    if (e.type === 'assistant') {
+    if (entryKind(e) === 'assistant') {
       const blocks = e.message?.content;
       if (!Array.isArray(blocks)) continue;
       for (let i = 0; i < blocks.length; i++) {
@@ -355,7 +362,7 @@ export function extractDetailBlocks(turnEntries) {
         }
         // text は扱わない
       }
-    } else if (e.type === 'user') {
+    } else if (entryKind(e) === 'user') {
       const blocks = e.message?.content;
       if (!Array.isArray(blocks)) continue;
       for (const b of blocks) {

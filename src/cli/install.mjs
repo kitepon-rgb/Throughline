@@ -11,6 +11,7 @@
  * script path で登録する。
  * Grok-facing hook も Desktop の GUI PATH に throughline が無いため、同じ絶対
  * node + CLI script path で ~/.grok/hooks/throughline.json に書く。
+ * Cursor-facing hook は ~/.cursor/hooks.json へ upsert する（工場 hook は残す）。
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, rmSync, realpathSync } from 'node:fs';
@@ -27,6 +28,7 @@ const CODEX_SKILL_NAMES = ['throughline'];
 const CODEX_HOOKS_RELATIVE_PATH = ['.codex', 'hooks.json'];
 const CODEX_CONFIG_RELATIVE_PATH = ['.codex', 'config.toml'];
 const GROK_HOOKS_RELATIVE_PATH = ['.grok', 'hooks', 'throughline.json'];
+const CURSOR_HOOKS_RELATIVE_PATH = ['.cursor', 'hooks.json'];
 
 // Throughline が管理する hook コマンド一覧
 // schema v4 以降: PostToolUse (capture-tool) は廃止。Stop 内で L2/L3 を一括処理する。
@@ -297,6 +299,16 @@ export function buildGrokHookCommand(subcommand, {
   return `${quoteCommandPath(nodePath)} ${quoteCommandPath(cliScriptPath)} ${subcommand}`;
 }
 
+export function buildCursorHookCommand(subcommand, options = {}) {
+  return buildGrokHookCommand(subcommand, options);
+}
+
+export function isThroughlineCursorHookCommand(command) {
+  return typeof command === 'string'
+    && command.includes('throughline.mjs')
+    && /\b(session-start|prompt-submit|process-turn)\b/.test(command);
+}
+
 export function createGrokHooksFile(options = {}) {
   return {
     hooks: {
@@ -332,6 +344,74 @@ function uninstallGrokHooks() {
   if (!existsSync(hooksPath)) return { hooksPath, removed: 0 };
   unlinkSync(hooksPath);
   return { hooksPath, removed: 1 };
+}
+
+function resolveCursorHooksPath() {
+  return join(homedir(), ...CURSOR_HOOKS_RELATIVE_PATH);
+}
+
+export function createCursorHookEntries(options = {}) {
+  return {
+    sessionStart: [
+      { command: buildCursorHookCommand('session-start', options), timeout: 10 },
+    ],
+    beforeSubmitPrompt: [
+      { command: buildCursorHookCommand('prompt-submit', options), timeout: 30 },
+    ],
+    stop: [
+      { command: buildCursorHookCommand('process-turn', options), timeout: 300 },
+    ],
+  };
+}
+
+function readCursorHooksFile(hooksPath) {
+  if (!existsSync(hooksPath)) return { version: 1, hooks: {} };
+  const parsed = JSON.parse(readFileSync(hooksPath, 'utf8'));
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${hooksPath} は object である必要があります`);
+  }
+  if (parsed.hooks == null) parsed.hooks = {};
+  if (typeof parsed.hooks !== 'object' || Array.isArray(parsed.hooks)) {
+    throw new Error(`${hooksPath} の hooks は object である必要があります`);
+  }
+  return parsed;
+}
+
+function installCursorHooks() {
+  const hooksPath = resolveCursorHooksPath();
+  mkdirSync(dirname(hooksPath), { recursive: true });
+  const current = readCursorHooksFile(hooksPath);
+  current.version = 1;
+  const wanted = createCursorHookEntries();
+  for (const [event, entries] of Object.entries(wanted)) {
+    const existing = Array.isArray(current.hooks[event]) ? current.hooks[event] : [];
+    const kept = existing.filter((entry) => !isThroughlineCursorHookCommand(entry?.command));
+    current.hooks[event] = [...kept, ...entries];
+  }
+  writeFileSync(hooksPath, `${JSON.stringify(current, null, 2)}\n`);
+  return { hooksPath };
+}
+
+function uninstallCursorHooks() {
+  const hooksPath = resolveCursorHooksPath();
+  if (!existsSync(hooksPath)) return { hooksPath, removed: 0 };
+  const current = readCursorHooksFile(hooksPath);
+  let removed = 0;
+  for (const [event, list] of Object.entries(current.hooks ?? {})) {
+    if (!Array.isArray(list)) continue;
+    const kept = list.filter((entry) => {
+      if (isThroughlineCursorHookCommand(entry?.command)) {
+        removed += 1;
+        return false;
+      }
+      return true;
+    });
+    if (kept.length > 0) current.hooks[event] = kept;
+    else delete current.hooks[event];
+  }
+  if (removed === 0) return { hooksPath, removed: 0 };
+  writeFileSync(hooksPath, `${JSON.stringify(current, null, 2)}\n`);
+  return { hooksPath, removed };
 }
 
 function installSlashCommands(commandsDir) {
@@ -589,6 +669,7 @@ export async function run(args = []) {
     const removedCommands = uninstallSlashCommands(commandsDir);
     const codex = args.includes('--project') ? null : uninstallCodexHooks();
     const grok = args.includes('--project') ? null : uninstallGrokHooks();
+    const cursor = args.includes('--project') ? null : uninstallCursorHooks();
     const removedCodexSkills = args.includes('--project') ? [] : uninstallCodexSkills(codexSkillsDir);
     console.log('Throughline hooks を削除しました。');
     console.log(`  ${settingsPath}`);
@@ -600,6 +681,9 @@ export async function run(args = []) {
     }
     if (grok?.removed > 0) {
       console.log(`  Grok hooks 削除: ${grok.removed} (${grok.hooksPath})`);
+    }
+    if (cursor?.removed > 0) {
+      console.log(`  Cursor hooks 削除: ${cursor.removed} (${cursor.hooksPath})`);
     }
     if (removedCodexSkills.length > 0) {
       console.log(`  Codex skills 削除: ${removedCodexSkills.join(', ')} (${codexSkillsDir})`);
@@ -624,6 +708,7 @@ export async function run(args = []) {
   const { installed: installedCommands, skipped } = installSlashCommands(commandsDir);
   const codex = args.includes('--project') ? null : installCodexHooks();
   const grok = args.includes('--project') ? null : installGrokHooks();
+  const cursor = args.includes('--project') ? null : installCursorHooks();
   const codexSkills = args.includes('--project') ? { installed: [], skipped: null } : installCodexSkills(codexSkillsDir);
   const monitorTask = ensureMonitorTaskFile({
     cwd: process.cwd(),
@@ -643,6 +728,9 @@ export async function run(args = []) {
   if (grok) {
     console.log(`  ${grok.hooksPath}`);
   }
+  if (cursor) {
+    console.log(`  ${cursor.hooksPath}`);
+  }
   console.log('');
   console.log('有効な hooks:');
   console.log('  SessionStart     → throughline session-start  (セッション記録・バトン消費・引き継ぎ注入)');
@@ -655,6 +743,9 @@ export async function run(args = []) {
   }
   if (grok) {
     console.log('  Grok SessionStart / UserPromptSubmit / Stop → ~/.grok/hooks/throughline.json');
+  }
+  if (cursor) {
+    console.log('  Cursor sessionStart / beforeSubmitPrompt / stop → ~/.cursor/hooks.json（工場hookは残す）');
   }
   console.log('');
   if (installedCommands.length > 0) {
