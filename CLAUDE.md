@@ -6,7 +6,7 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
-**v0.10.3（2026-08-24）**: Cursor を first-class hook host にする。envelope は
+**v0.10.3（2026-08-24公開）**: Cursor を first-class hook host にする。envelope は
 `sessionStart` / `beforeSubmitPrompt` / `stop` と `conversation_id`。session id は
 `cursor:<uuid>`。L2 は payload `transcript_path` または
 `~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl`。
@@ -14,6 +14,11 @@
 を upsert し、工場 hook は残す。beforeSubmitPrompt は continue のみなので、
 引き継ぎ注入は sessionStart の `additional_context`。`/tl` 後継の自動起動はしない。
 Claude/Codex/Grok 契約は変えない。正本は [ADR 0022](docs/adr/0022-cursor-host-capture.md)。
+公開commit `88982ca`、CI `32687818474`（macos/linux/windows/wsl2 green）、npm
+`throughline@0.10.3`、shasum `e1afa30d616ce18a3013ad564c85edc894d9039b`、tag `v0.10.3`、
+GitHub Release、このMacのregistry由来global install（`throughline --version` = 0.10.3）。
+`~/.cursor/hooks.json` に sessionStart / beforeSubmitPrompt / stop の絶対パスを確認し、
+工場 `cursor-*-hook` は残っている。新規 Cursor session の capture 受入は別 H。
 
 **v0.10.1（2026-08-23公開）**: 挙動変更なしの内部リファクタ。ベンダー (hook host) 依存を
 `src/hosts/` へ一元化（`hosts/identity.mjs` が `codex:`/`grok:` prefix の唯一の正本、
