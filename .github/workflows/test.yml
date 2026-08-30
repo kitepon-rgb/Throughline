@@ -42,7 +42,8 @@ jobs:
     uses: ./.github/workflows/product-full-ci.yml
     with:
       environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'all' }}
-      documentation-command: npm run verify:docs
+      dependency-command: npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+      documentation-command: npm install --ignore-scripts --no-package-lock --no-audit --no-fund && npm run verify:docs
       full-command: >-
         node --version &&
         npm test &&
