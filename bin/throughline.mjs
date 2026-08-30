@@ -16,6 +16,7 @@
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
  *   throughline migrate --json # Migrate the existing Throughline database only
+ *   throughline self-update # Update package, integrations, database, and verify the result
  *   throughline runtime-errors enable --json # Enable product-owned runtime error collection
  *   throughline runtime-errors snapshot --json # Read product-owned runtime error aggregates
  *   throughline codex-capture # Capture active Codex rollout turns into Throughline DB
@@ -114,6 +115,11 @@ switch (cmd) {
     if (exitCode !== 0) process.exitCode = exitCode;
     break;
   }
+  case 'self-update': {
+    const exitCode = (await import('../src/cli/self-update.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
   case 'runtime-errors': {
     const exitCode = (await import('../src/cli/runtime-errors.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
@@ -187,6 +193,15 @@ switch (cmd) {
     console.log(pkg.version);
     break;
   }
+  case '--self-update-identity': {
+    if (rest.length > 0) {
+      process.exitCode = 2;
+      break;
+    }
+    const { buildSelfUpdateIdentity } = await import('../src/cli/self-update.mjs');
+    console.log(JSON.stringify(buildSelfUpdateIdentity()));
+    break;
+  }
   default:
     await showHelp();
 }
@@ -236,6 +251,10 @@ Usage:
                               session/prompt bodies, secrets, absolute paths, or raw state
   throughline migrate --json  Migrate the existing Throughline database only.
                               Does not create a missing database and emits a versioned JSON result
+  throughline self-update [--json]
+                              Update the official npm package, reapply product-owned
+                              integrations, migrate an existing database, and verify
+                              the installed version and public diagnostics in one call
   throughline runtime-errors enable --json
                               Enable product-owned local runtime error collection.
                               Also supports disable, snapshot, diagnostics, ack <cursor>,

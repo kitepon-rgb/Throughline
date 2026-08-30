@@ -10,6 +10,18 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+### Added
+
+- `throughline self-update` now owns the complete product update path: official
+  npm package update, integration reapplication, existing-database migration,
+  installed-version verification, and public diagnostics. Factory callers no
+  longer need to interpret Throughline's migration schema. It resolves the new
+  CLI from npm's global root, rejects old-CLI help or malformed handshakes even
+  when they exit zero, requires overall diagnostics readiness, preserves child
+  errors, and uses `npm.cmd` through PowerShell 7 on Windows. It also refuses a
+  mixed-prefix update when the public `throughline` on PATH does not resolve to
+  the newly installed CLI and version.
+
 ## [0.10.4] — 2026-08-30
 
 ### Changed

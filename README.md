@@ -828,6 +828,7 @@ under the same explicit-failure and local-only contracts.
 | ---------------------------------------------- | ------------------------------------------------------------ |
 | `throughline install`                          | Register Claude user hooks/slash commands, the global Codex UserPromptSubmit/PostToolUse/Stop hooks, the global `$throughline` Codex skill, `~/.grok/hooks/throughline.json`, and the current VS Code monitor task when applicable |
 | `throughline install --project`                | Register Claude hooks/slash commands in this repo only       |
+| `throughline self-update [--json]`             | Update the official npm package, verify that public PATH resolves to that new CLI/version, reapply product-owned integrations, migrate an existing database, and verify public diagnostics in one call |
 | `throughline uninstall`                        | Remove Throughline-managed Claude hooks/slash commands, only the Throughline-managed Codex hook, and the `$throughline` Codex skill |
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
 | `throughline monitor --diag`                   | Dump TTY/columns/env diagnostics (for debugging monitor render bugs) |

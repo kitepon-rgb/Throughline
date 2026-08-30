@@ -27,13 +27,18 @@ Throughline は次の入口を自分で所有し、dotagentsが無くても利�
 | 診断 | `throughline doctor`、host別doctor、`factory-diagnostics --json` |
 | runtime error収集 | `throughline runtime-errors enable\|disable --json`。製品所有configへ保存する |
 | 復旧 | READMEのTroubleshootingと、診断が返す明示的な修復手順 |
-| 更新 | `npm install -g throughline@latest` → `throughline install` → `throughline migrate --json` → `throughline doctor` |
+| 更新 | `throughline self-update`。公式package更新、更新先global rootと公開PATHが同じ新CLI・versionを指すことの確認、host配線の再適用、既存DB migration、公開diagnosticsの`ready`確認までを一回で行う |
 | 削除 | `throughline uninstall`。Throughline管理面だけを除去する |
 | release判断 | この文書のrelease gateと `scripts/verify-release-commit.mjs` |
 
 dotagentsは工場への配線と統合結果を所有するが、ThroughlineのDB、schema、migration、
 設定、診断、復旧、releaseを代行・制御しない。runtime error collectionはThroughline所有configで
 既定OFFとし、工場側は公開`runtime-errors ... --json`契約だけを利用する。
+
+Windows nativeの更新はPowerShell 7から公式`npm.cmd`を呼び、`npm.ps1`や
+Windows PowerShell 5.1へ切り替えない。更新前CLIを再利用せず、更新先global rootから解決した
+新CLI、公開PATHから起動したCLI、そのversion、`throughline.self_update.v1`成功結果がすべて
+一致した場合だけ完了とする。複数npm prefixが混在して公開PATHが旧実体を指す場合は失敗する。
 
 ## 明示的失敗の契約
 

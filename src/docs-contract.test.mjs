@@ -138,3 +138,16 @@ test('documentation parser follows CommonMark code, reference, entity, and HTML 
     ],
   );
 });
+
+test('current product docs expose one self-update entry instead of a manual update sequence', () => {
+  const root = new URL('..', import.meta.url);
+  const read = (path) => readFileSync(new URL(path, root), 'utf8');
+  for (const path of ['README.md', 'README.ja.md', 'docs/04_public_release_plan.md']) {
+    assert.match(read(path), /throughline self-update/u, `${path} is missing the product update entry`);
+  }
+  const releaseContract = read('docs/04_public_release_plan.md');
+  assert.doesNotMatch(
+    releaseContract,
+    /npm install -g throughline@latest.*throughline install.*throughline migrate.*throughline doctor/su,
+  );
+});
