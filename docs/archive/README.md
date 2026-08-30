@@ -20,6 +20,7 @@
 | [16_readonly_handoff_context_plan.md](16_readonly_handoff_context_plan.md) | read-only handoff-context v0.9.0設計・受入 |
 | [BUGHUB_RUNTIME_ERROR_STORE_PLAN.md](BUGHUB_RUNTIME_ERROR_STORE_PLAN.md) | local runtime error store実装計画 |
 | [plan_grok-successor-launch.md](plan_grok-successor-launch.md) | Grok successor launch v0.10.0設計・受入 |
+| [room-log_throughline_20260830-155052.md](room-log_throughline_20260830-155052.md) | Grok successor launch時のPeertable円卓ログ |
 
 ## 置換済みの初期資料
 
