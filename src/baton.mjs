@@ -2,19 +2,21 @@
  * baton.mjs — 引き継ぎバトン管理
  *
  * バトン方式の設計 (docs/02_clear_auto_handoff_plan.md):
- *   - 新仕様では `/clear` 自動引継ぎがデフォルト ON。バトンは「/clear 自動引継ぎを
- *     使わずに明示的に引き継ぎたい」ユーザーのための逃げ道。
+ *   - `/tl` は前任 session id を確定指名する。VS Code `/clear` の auto path は
+ *     SessionStart source='clear' から transcript-backed predecessor を凍結する。
+ *     Claude Desktop `/clear` は source='clear' を送らないため、事前 `/tl` を使う。
  *   - ユーザーが旧セッションで `/tl` スラッシュコマンドを打つ → UserPromptSubmit hook が
  *     baton テーブルに (project_path, session_id, created_at) を INSERT OR REPLACE
- *   - 新セッションの SessionStart hook が baton を atomic に消費 (BEGIN IMMEDIATE 内で
- *     SELECT + DELETE)。TTL 1 時間以内なら前任として merge、超過は破棄。
- *   - 注入する curated memory は L1 + L2 + L3 refs のみ (memo / thinking なし)。
+ *   - SessionStart は pending intent だけを登録し、新セッションの最初の
+ *     UserPromptSubmit が baton を atomic に消費する。TTL 1時間以内なら前任として
+ *     mergeし、超過は破棄する (ADR 0014)。
+ *   - 注入は現在地 + 取得案内 + 予算内の直近L2全文。L1/L3はpullする (ADR 0016)。
  *
  * 履歴: もともと VSCode 拡張で SessionStart payload の source が /clear 後も
  *       "startup" に潰される問題 (#49937) に対する明示意思マーカーとして導入。
- *       2026-05-08 時点で Claude Code 2.1.128 で source='clear' は reliable に
- *       なったため auto path 中心の設計に変わったが、明示意思の signal として
- *       baton 仕組み自体は残す。詳細は docs/02_clear_auto_handoff_plan.md。
+ *       VS Codeでは source='clear' auto pathが成立する一方、Desktopでは成立しない。
+ *       batonはhost差を越える明示意思のsignalとして残す。詳細は
+ *       docs/02_clear_auto_handoff_plan.md。
  */
 
 /**
@@ -24,7 +26,7 @@
 export const BATON_TTL_MS = 60 * 60 * 1000; // 1 時間
 
 /**
- * 現在セッション (= /tl を発動したセッション) を次回 SessionStart で merge 対象に指名する。
+ * 現在セッション (= /tl を発動したセッション) を次の実セッションのmerge対象に指名する。
  * 同 project_path の既存バトンがあれば session_id / created_at を上書き。
  *
  * @param {import('node:sqlite').DatabaseSync} db

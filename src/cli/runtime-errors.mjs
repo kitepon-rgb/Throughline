@@ -5,13 +5,14 @@ import {
   readRuntimeErrorSnapshot,
   reopenRuntimeError,
   resolveRuntimeError,
+  setRuntimeErrorCollectionEnabled,
 } from '../runtime-error-store.mjs';
 
-const USAGE = 'usage: throughline runtime-errors <snapshot|diagnostics|ack|resolve|reopen|compact> [arguments] --json';
+const USAGE = 'usage: throughline runtime-errors <enable|disable|snapshot|diagnostics|ack|resolve|reopen|compact> [arguments] --json';
 
 export function parseArgs(argv = []) {
   const command = argv[0];
-  if (!['snapshot', 'diagnostics', 'ack', 'resolve', 'reopen', 'compact'].includes(command)) {
+  if (!['enable', 'disable', 'snapshot', 'diagnostics', 'ack', 'resolve', 'reopen', 'compact'].includes(command)) {
     throw new TypeError(USAGE);
   }
   const options = { command, json: false, afterCursor: 0, limit: 256, value: null };
@@ -47,7 +48,12 @@ export function run(argv = [], dependencies = {}) {
   try {
     const env = dependencies.env ?? process.env;
     let result;
-    if (options.command === 'snapshot') {
+    if (options.command === 'enable' || options.command === 'disable') {
+      result = (dependencies.configure ?? setRuntimeErrorCollectionEnabled)(
+        options.command === 'enable',
+        { env },
+      );
+    } else if (options.command === 'snapshot') {
       result = (dependencies.readSnapshot ?? readRuntimeErrorSnapshot)({
         env,
         afterCursor: options.afterCursor,

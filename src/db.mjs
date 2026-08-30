@@ -181,7 +181,7 @@ function initSchema(db) {
   // v5 → v6: handoff_batons テーブル追加（/tl スラッシュコマンドによる明示的引き継ぎ指名用）
   // - project_path ごとに最新 1 件のみ (PRIMARY KEY)
   // - SessionStart で読み出し、TTL 以内なら merge して DELETE
-  // - docs/03_inheritance_on_clear_only.md 参照: 案 D (時間差) 撤去、バトン方式へ移行
+  // - docs/archive/03_inheritance_on_clear_only.md 参照: 案 D (時間差) 撤去、バトン方式へ移行
   if (version < 6) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS handoff_batons (

@@ -2,16 +2,16 @@
  * resume-context.mjs — 引継ぎ注入テキストを組み立てる共有モジュール
  *
  * 呼び出し元:
- *   - session-start.mjs (auto path / baton path どちらでも同じ注入)
+ *   - handoff-executor.mjs（最初のUserPromptSubmitでauto path / baton path共通注入）
  *
  * 設計 (docs/02_clear_auto_handoff_plan.md):
- *   - 注入順: ヘッダ + 読み方 → 現在地アンカー → L1 要約 → L2 本文（一番下）
+ *   - 予算付き注入: ヘッダ + 現在地アンカー + pull案内を固定部とし、残りへ
+ *     直近L2ターン全文を新しい順にターン原子で詰める。L1は直接注入しない。
  *   - 「現在地」アンカーは直前の user / assistant turn をヘッダ直下に再掲して
  *     最初の注意を最新ターンに固定する。L2 末尾アンカーは補強として残す。
  *     （L2 が長くなると末尾アンカーだけでは前半の古いターンに注意が固着し、
  *      話の流れを取り違える事例があった）
- *   - L3 は別セクションを設けず、対応する L1 / L2 行にインラインで
- *     `[→ throughline detail HH:MM:SS (kind …)]` ヒントを付ける
+ *   - L3は本文を注入せず、`throughline detail HH:MM:SS`でpullする
  *   - L2 全文があれば最後の assistant turn 自体に「次に何をしようとしていたか」が
  *     含まれるため、memo / thinking / 末尾の再開指示は注入しない
  *   - 各行頭に [HH:MM:SS] 時刻プレフィックス（L2 は body の created_at、

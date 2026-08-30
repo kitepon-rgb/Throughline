@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultFactoryReporterConfigPath, defaultRuntimeErrorStorePath } from './runtime-error-store.mjs';
+import { defaultRuntimeErrorConfigPath, defaultRuntimeErrorStorePath } from './runtime-error-store.mjs';
 import { applyWindowsPrivateAcl } from './os/windows-acl-test-helper.mjs';
 
 const BIN = fileURLToPath(new URL('../bin/throughline.mjs', import.meta.url));
@@ -20,13 +20,11 @@ function createEnabledEnvironment(prefix) {
     XDG_CONFIG_HOME: join(root, 'config'),
     XDG_STATE_HOME: join(root, 'state'),
   };
-  const configPath = defaultFactoryReporterConfigPath(env);
+  const configPath = defaultRuntimeErrorConfigPath(env);
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, JSON.stringify({
-    schema_version: '1.0',
-    host: { id: 'test-host', profile: process.platform === 'win32' ? 'windows-native' : 'mac' },
+    schema: 'throughline.runtime_error_config.v1',
     collection: { enabled: true },
-    reporting: { enabled: false },
   }));
   applyWindowsPrivateAcl(configPath);
   return { root, env };
@@ -90,7 +88,7 @@ test('store failure preserves product failure and emits only fixed storage diagn
 
 test('FIFO config cannot block the original hook failure', { skip: process.platform === 'win32' }, () => {
   const { env } = createEnabledEnvironment('throughline-runtime-hook-fifo-');
-  const config = defaultFactoryReporterConfigPath(env);
+  const config = defaultRuntimeErrorConfigPath(env);
   execFileSync('rm', ['-f', config]);
   execFileSync('mkfifo', [config]);
   const started = Date.now();

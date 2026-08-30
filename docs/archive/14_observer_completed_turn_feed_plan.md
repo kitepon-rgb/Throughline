@@ -38,7 +38,7 @@ MCP serverはObserverが所有する。Throughlineは既存の外部依存ゼロ
 - `src/codex-rollout-memory.mjs`は`task_complete`を解釈し、`includeInFlightTurn:false`で進行中turnを除外できる。
 - `src/codex-thread-index.mjs`はproject配下のrollout候補を解決できるが、現在の並び順はmtimeであり、feedの親選択には使わない。
 - `src/auditor-context.mjs`はread-only DB、schema v8、project、origin session、user / assistant hashによるfreshness照合を持つ。
-- Claude transcript／sessionと既存Stop hookはfirst-classのまま維持し、Observer用の「完了turn」境界は[ADR 0002](adr/0002-observer-claude-completion-receipt.md)のThroughline所有Stop receiptへ固定した。
+- Claude transcript／sessionと既存Stop hookはfirst-classのまま維持し、Observer用の「完了turn」境界は[ADR 0002](../adr/0002-observer-claude-completion-receipt.md)のThroughline所有Stop receiptへ固定した。
 - 現行DB projectionは進行中turnを含みうるため、`sessions.updated_at`、body ID、body件数をcursorにできない。
 
 ## 公開CLI
@@ -157,7 +157,7 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
 - [x] rollbackでordinalが変わってもpair hash prefixで検出できるtestを置く。
 - [x] project配下cwdと別projectの候補分離を固定する。
 - [x] Claude transcript、Throughline DB projection、Stop hookの順序を実hostで観測し、完了turnを進行中turnから分ける正式証拠を裁定する。
-  - Claude Code 2.1.207／Haiku 4.5／plan権限で、final assistant後にStop hooksが走ることを実hostで確認した。final assistant、process exit、mtimeを証拠にせず、Throughline Stop hookがpair capture成功後に書く製品所有receiptを採用する。正本は[ADR 0002](adr/0002-observer-claude-completion-receipt.md)。
+  - Claude Code 2.1.207／Haiku 4.5／plan権限で、final assistant後にStop hooksが走ることを実hostで確認した。final assistant、process exit、mtimeを証拠にせず、Throughline Stop hookがpair capture成功後に書く製品所有receiptを採用する。正本は[ADR 0002](../adr/0002-observer-claude-completion-receipt.md)。
 - [x] Claudeのthread identity、project解決、continuation後の完了境界、再起動／resumeをfixtureと実測で固定する。
   - headless `result/end_turn`と同じ`session_id`の`--resume`、`SessionStart:resume`を確認した。backgroundは`--print`と両立せず、`claude --bg '<task>'`がjob handleを返す。`agents --json`、`logs`、`stop`で`busy/working → idle/done → stop`を回収できた。
 - [x] ClaudeとCodexの候補が同じprojectにある場合のhost switchと曖昧性を固定する。
@@ -217,7 +217,7 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     `observer-o1-live-fixture-adr-20260715` revision 3。可変planを参照した旧receiptは使わない。
 - [x] Claude hook、Codex capture、auditor-context、token monitorの回帰を通す。
   - 関連6 test fileを一度だけ実行し、130/130 green、失敗・skip・cancel・todo各0、807.298ms。
-    受入は[ADR 0009](adr/0009-observer-integration-regression-and-docs.md)へ固定した。
+    受入は[ADR 0009](../adr/0009-observer-integration-regression-and-docs.md)へ固定した。
 - [x] README、CLAUDE.md、docs overview、CHANGELOGを実装済み挙動に同期する。
   - commit `fb558d7`。JSON-only CLI、opaque cursor、read/wait状態、3600秒上限、host固有completed証拠、
     DB/WAL/rollout直接監視へfallbackしない境界を同期した。Control `observer-feed-20260715` revision 60で
@@ -231,10 +231,10 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     commit `02a809f`、focused gate 28/28成功。
   - [x] P2: Codex project resolverでPOSIX pathのcaseを保持する。
     commit `88fafaf`、focused gate 28/28成功。
-  - Phase受入Decisionは[ADR 0010](adr/0010-observer-o1-phase-acceptance.md)。
+  - Phase受入Decisionは[ADR 0010](../adr/0010-observer-o1-phase-acceptance.md)。
   - 監査修正Control `observer-feed-o1-audit-fixes-20260715`はbehavior-change revision 15、
     元Control `observer-feed-20260715`はclosure revision 78でfinalizeした。lane境界は
-    [ADR 0011](adr/0011-observer-o1-control-lane-reconciliation.md)。
+    [ADR 0011](../adr/0011-observer-o1-control-lane-reconciliation.md)。
 
 ### Phase 4: queue 19e live defect correction
 
@@ -247,7 +247,7 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     永続化されたことを確定するbounded barrierにだけ使う。古い同文answer、前turn、DB本文へfallbackしない。
   - markerがあるStopでdeadlineまで一致しなければ`HOOK_PROCESS_TURN_FAILED`として明示失敗し、
     completionなしへ丸めない。markerを持たない旧hostだけは既存one-shot parser契約を維持する。
-  - 正本Decisionは[ADR 0012](adr/0012-claude-stop-transcript-flush-barrier.md)。
+  - 正本Decisionは[ADR 0012](../adr/0012-claude-stop-transcript-flush-barrier.md)。
 - [x] delayed assistant append、古い同文answer＋current user-only、deadline、通常同期flushをfocused testで固定する。
   - `node --test src/turn-processor.test.mjs`: 14/14成功。
   - `node --test --test-name-pattern='process-turn subprocess' src/hook-entrypoints.test.mjs`: 2/2成功。
@@ -259,7 +259,7 @@ turn本文は既存auditor projectionと同様に件数、各body、総文字数
     私有driverでも同じ書込み瞬間の単発nonzeroを再現した。
   - completed projectionのread-only接続だけにbounded SQLite busy waitを設定する。lock解消後の同じ
     snapshotを読むか、上限超過なら従来どおりDB I/O hard failureとする。stale本文、別DB、CLI再spawnへ
-    fallbackしない。正本Decisionは[ADR 0013](adr/0013-observer-read-busy-writer-gate.md)。
+    fallbackしない。正本Decisionは[ADR 0013](../adr/0013-observer-read-busy-writer-gate.md)。
   - [x] `readCompletedPairProjection`だけに1秒のSQLite busy timeoutを設定した。別processのexclusive
     writerを200ms後に解放するfocused testは修正前15/16、修正後16/16。Observer read／wait、
     auditor、receipt、Codex hook／captureのrelated gateは78/78、構文・新規ADR lint・diff checkはgreen。

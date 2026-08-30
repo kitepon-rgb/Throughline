@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/og.png" alt="Throughline — a whale family carrying direction and memory across changing boundaries" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/Throughline/main/.github/og.png" alt="Throughline — a whale family carrying direction and memory across changing boundaries" width="100%">
   <br>
   <sub><em>This image represents continuity that preserves relationships, direction, and memory even as environments and boundaries change.</em></sub>
 </p>
@@ -9,7 +9,7 @@
 [![npm version](https://img.shields.io/npm/v/throughline.svg?color=cb3837&logo=npm)](https://www.npmjs.com/package/throughline)
 [![license](https://img.shields.io/npm/l/throughline.svg?color=blue)](LICENSE)
 [![node](https://img.shields.io/node/v/throughline.svg?color=339933&logo=node.js&logoColor=white)](https://nodejs.org)
-[![CI](https://github.com/kitepon-rgb/Throughline/actions/workflows/test.yml/badge.svg)](https://github.com/kitepon-rgb/Throughline/actions/workflows/test.yml)
+[![CI](https://github.com/kitepon/Throughline/actions/workflows/test.yml/badge.svg)](https://github.com/kitepon/Throughline/actions/workflows/test.yml)
 
 **English** · [日本語](README.ja.md)
 
@@ -20,10 +20,12 @@ Built and maintained by [Quo](https://x.com/QLyun35332) at [kitepon.dev](https:/
 
 ## Ownership boundary
 
-This repository owns the database, migrations, capture contracts, release, and
-diagnostics. Cross-product installation and host integration are handled by
-[dotagents](https://github.com/kitepon-rgb/dotagents), the internal development
-toolchain behind kitepon.dev's products.
+This repository owns installation, configuration, state, schema and migrations,
+diagnostics, recovery, updates, and release decisions. Throughline works on its
+own through the documented CLI and does not require a factory controller.
+[dotagents](https://github.com/kitepon/dotagents) may wire Throughline into the
+kitepon.dev development factory, but it integrates the product rather than
+owning its state or controlling its lifecycle.
 MarkItDown is a separately managed third-party CLI.
 
 ## In 30 seconds
@@ -34,10 +36,11 @@ throughline install     # registers hooks/skills and provisions the VS Code moni
 ```
 
 That's it. Open any Claude Code session and your turns flow into
-`~/.throughline/throughline.db` automatically. After 50 turns of work, just
-type `/clear` — the new session resumes mid-thought instead of starting from
-zero. (For non-`/clear` boundaries such as a brand-new chat or a VSCode
-restart, type `/tl` first to mark the predecessor.)
+`~/.throughline/throughline.db` automatically. In VS Code, `/clear` resumes
+through the `SessionStart source='clear'` auto path. Claude Desktop does not
+emit that source, so type `/tl` before `/clear` there. Use `/tl` before any
+other boundary, such as a brand-new chat or a VS Code restart, when you want
+to name the predecessor exactly.
 
 Grok Desktop is also a first-class host. `throughline install` writes
 `~/.grok/hooks/throughline.json`. On Grok, `/tl` does not inject into the
@@ -114,7 +117,7 @@ one or two turns, then `/tl`.
 | **Memory after the boundary** | ✅ recent turns verbatim (whole, budget-packed) + everything older via `recall` pull + L3 on demand | ❌ zero | △ lossy single summary | △ lossy summary |
 | **Tool I/O handling** | retired to L3, retrievable by `/sc-detail HH:MM:SS` | gone | folded into summary, unreadable | folded into summary |
 | **Coding-assistant fit** | high — tool I/O is the heavy 80% | low — you lose the thread | medium — but irreversible | medium |
-| **Auto-inheritance risk** | low (typed `/clear` / `/tl` names the predecessor) | n/a | n/a | high |
+| **Auto-inheritance risk** | low (`/tl` names the predecessor; VS Code `/clear` freezes one transcript-backed candidate) | n/a | n/a | high |
 | **Runtime deps** | **zero** (Node 22.13+ built-in `node:sqlite`) | n/a | n/a | many |
 | **Multi-session token monitor** | ✅ real `message.usage` / Codex rollout `token_count` | — | — | — |
 
@@ -231,18 +234,19 @@ of tool inputs, tool outputs, and hook output captured at L3 for that turn.
 
 ---
 
-## Inheritance: typed `/clear` and `/tl` write a baton, source-`clear` is the fallback
+## Inheritance: `/tl` writes a baton; VS Code `/clear` uses `source='clear'`
 
-Throughline 0.4.1+ supports two inheritance paths. The **baton path is the
-primary route**; the source-`clear` auto path is the fallback for cases where
-the user's `/clear` does not reach the `UserPromptSubmit` hook (for example
-the VSCode extension's menu-driven `/clear`).
+Throughline supports two inheritance paths. A `/tl` baton names one predecessor
+exactly. If no eligible baton exists, the VS Code `/clear` path can use the
+`SessionStart source='clear'` signal to freeze one transcript-backed predecessor.
+The baton is checked first.
 
 ```mermaid
 flowchart LR
-    U["User types<br/>/clear or /tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
+    U["User types<br/>/tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
     W --> B[("handoff_batons<br/>SQLite")]
-    M["VSCode menu<br/>clear"] -->|no UserPromptSubmit| X["no baton"]
+    M["VS Code<br/>/clear"] -->|SessionStart source='clear'| X["freeze predecessor<br/>no baton"]
+    D["Claude Desktop<br/>/clear"] -->|source='startup'| N["no automatic handoff<br/>use /tl first"]
     NS["Next SessionStart<br/>(registers intent only)"] --> FP["First user prompt<br/>(proof the session is real)"]
     FP --> C{"baton<br/>present?"}
     B -.-> C
@@ -261,10 +265,10 @@ flowchart LR
     class P3,INJ neutral
 ```
 
-### baton path (primary): typed `/clear` or `/tl` → deterministic inheritance
+### baton path: `/tl` → deterministic inheritance
 
-When the user types `/clear` or `/tl` in the prompt, the `UserPromptSubmit`
-hook writes a handoff baton with **that session's `session_id`** into the
+When the user types `/tl`, the `UserPromptSubmit` hook writes a handoff baton
+with **that session's `session_id`** into the
 `handoff_batons` table. The next new session consumes the baton **at its
 first user prompt** (eligibility: the session must have been born within the
 1-hour TTL after the baton was written) and merges that exact predecessor's
@@ -281,28 +285,29 @@ started empty. Deferring consumption to the first user prompt closes this:
 a ghost never submits a prompt, so it can never take the baton (ADR 0014).
 
 This path is deterministic: it names the predecessor by id rather than
-guessing, so multi-window scenarios where "most recently updated session"
-does not equal "the session you just `/clear`-ed" still inherit correctly.
+guessing, so it is the explicit path for multi-window work and for hosts that
+do not emit `source='clear'`.
 
 ```
-typed /clear: Session A → /clear → Session B (consumes A's baton, merges A)
-typed /tl:    Session A → /tl    → (new chat / restart) → Session B (consumes baton, merges A)
+/tl: Session A → /tl → (/clear, new chat, or restart) → Session B (consumes A's baton)
 ```
 
-### auto path (fallback): `source='clear'` → heuristic inheritance
+### auto path: VS Code `source='clear'` → frozen predecessor
 
-Since Claude Code 2.1.128, the SessionStart hook receives `source='clear'`
-reliably after `/clear`. When no baton is present (for example because the
-`/clear` was triggered by the VSCode extension's menu and never reached
-`UserPromptSubmit`), Throughline resolves the most recent unmerged session
+The built-in `/clear` command does **not** reach `UserPromptSubmit` on the
+tested Claude Code clients. VS Code instead sends `SessionStart source='clear'`.
+When no baton is present, Throughline resolves the most recent unmerged session
 for the same project **at `SessionStart` time** (freezing that choice, and
 skipping candidates that have no transcript — i.e. ghosts) and performs the
 merge + injection at the session's first user prompt.
 
 Set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` in your environment to opt out of
-this fallback. **The env var only affects the fallback**; typed `/clear` and
-`/tl` still write a baton and inherit because the user explicitly signalled
-"continue this work".
+this path. The env var does not disable explicit `/tl` batons.
+
+Claude Desktop neither forwards built-in `/clear` to `UserPromptSubmit` nor
+emits `SessionStart source='clear'`; use `/tl` before `/clear` there. The
+cross-client measurements and upstream report are recorded in the archived
+[`docs/12_desktop_clear_handoff_plan.md`](docs/archive/12_desktop_clear_handoff_plan.md).
 
 ### What gets injected
 
@@ -335,7 +340,8 @@ pinning the latest exchange at the top of the injection prevents that drift.
 Each merged row keeps its `origin_session_id`, so repeated handoffs
 accumulate memory through chains:
 
-```
+```text
+VS Code:
 S1 (4 turns) --/clear--> S2 (auto-merges S1, adds 3 turns) --/clear--> S3 (auto-merges S2, adds 5 turns)
                          origin=S1×4                                   origin=S1×4, S2×3, S3×5
 ```
@@ -454,9 +460,10 @@ rollout text, not an exact host tokenizer measurement. If rollback candidate
 turns are `0`, there is no current trim saving under the active keep-recent
 setting.
 
-Claude-side rewind UI itself is not driven by Throughline. The auto-handoff
-flow is `/clear` → new session → automatic injection of curated memory at the
-session's first user prompt.
+Claude-side rewind UI itself is not driven by Throughline. In VS Code, the
+auto-handoff flow is `/clear` → new session → automatic injection of curated
+memory at the session's first user prompt. Claude Desktop requires `/tl`
+before `/clear`.
 Throughline does not invoke `/rewind` or any Claude Code internal command.
 
 Codex-primary setup has an installed Stop hook after global
@@ -810,12 +817,12 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**v0.9.0 was published on 2026-08-04.** It adds the versioned, read-only
-`handoff-context` boundary for local launchers. The command opens only an
-existing database and leaves baton state, session ownership, and memory rows
-unchanged. Existing factory diagnostics, Observer, runtime-error, capture, and
-normal handoff behavior remain available under the same explicit-failure and
-local-only contracts.
+**The current release is v0.10.4.** Throughline supports Claude Code, Codex,
+Grok, and Cursor as documented host adapters. The versioned, read-only
+`handoff-context` boundary opens only an existing database and leaves baton
+state, session ownership, and memory rows unchanged. Factory diagnostics,
+Observer, runtime-error, capture, and normal handoff behavior remain available
+under the same explicit-failure and local-only contracts.
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
@@ -834,7 +841,9 @@ local-only contracts.
 | `throughline doctor --codex`                   | Diagnose Codex primary entry state, captured DB sessions, context-refresh memory contract, new-thread handoff readiness, safe continuation status, and host primitive audit |
 | `throughline factory-diagnostics --json`       | Versioned read-only native factory readiness JSON for database schema/migration, connector hooks, and representative capture/restore/handoff; does not emit bodies, secrets, absolute paths, or raw state |
 | `throughline migrate --json`                   | Migrate only an existing Throughline database to the current schema and emit a versioned bounded result; a missing database is not created, while future schemas and migration failures exit non-zero |
-| `throughline runtime-errors snapshot --json`   | Read the bounded product-owned runtime error aggregate. Collection occurs only when canonical dotagents config explicitly sets `collection.enabled: true`; this command performs no network I/O |
+| `throughline runtime-errors enable --json`     | Enable product-owned local runtime error collection in Throughline's own config; default is disabled |
+| `throughline runtime-errors disable --json`    | Disable product-owned local runtime error collection |
+| `throughline runtime-errors snapshot --json`   | Read the bounded product-owned runtime error aggregate; this command performs no network I/O |
 | `throughline runtime-errors diagnostics --json` | Read bounded collection/store status without exposing the state path or raw errors |
 | `throughline runtime-errors ack <cursor> --json` | Explicitly acknowledge records through a monotonic cursor; unacknowledged records are never compacted |
 | `throughline runtime-errors resolve <fingerprint> --json` | Explicitly resolve an aggregate; observing the same fingerprint again reopens it |
@@ -865,6 +874,24 @@ local-only contracts.
 | `throughline status`                           | Print DB statistics (sessions, skeletons, bodies, details)   |
 | `throughline --version`                        | Print the installed version                                  |
 
+### Product-owned runtime error collection
+
+Collection is off by default. Enable it through Throughline's own CLI:
+
+```bash
+throughline runtime-errors enable --json
+throughline runtime-errors diagnostics --json
+```
+
+The product-owned config is
+`$XDG_CONFIG_HOME/throughline/runtime-errors.config.json` on macOS/Linux
+(`~/.config/throughline/...` when `XDG_CONFIG_HOME` is unset) and
+`%LOCALAPPDATA%\throughline\runtime-errors.config.json` on Windows. The CLI
+writes the versioned `throughline.runtime_error_config.v1` shape with private
+permissions. `disable --json` changes only this product config. Throughline
+does not read dotagents configuration; factory integration consumes the public
+`runtime-errors ... --json` contract.
+
 ### Read-only handoff context for local launchers
 
 Use this boundary when a local launcher needs Throughline memory without
@@ -886,21 +913,19 @@ Slash commands (invoked by the user in Claude Code):
 
 | Command       | What it does                                                      |
 | ------------- | ----------------------------------------------------------------- |
-| `/tl`         | Write a handoff baton (explicit inheritance signal across non-`/clear` boundaries — new chat / VSCode restart). On Grok, also launches `grok-continue` after a successful baton write |
-| `/clear`      | Built-in Claude Code reset. Throughline's `UserPromptSubmit` hook also writes a baton so the next session inherits the cleared session's memory |
+| `/tl`         | Write a handoff baton that names the predecessor exactly (use before a new chat, restart, or Claude Desktop `/clear`). On Grok, also launches `grok-continue` after a successful baton write |
+| `/clear`      | Built-in Claude Code reset. VS Code can auto-inherit through `SessionStart source='clear'`; Claude Desktop requires `/tl` first |
 | `/sc-detail <time>` | Retrieve L2 body text and L3 tool I/O for a past turn       |
 
-> Since v0.4.1, both `/clear` and `/tl` typed in the prompt write a baton
-> identifying the current session, so the next new session deterministically
-> inherits that exact predecessor (merge + injection happen at that session's
-> first user prompt — see ADR 0014). The `source='clear'` auto path remains as a
-> fallback for `/clear` triggered outside `UserPromptSubmit` (for example via
-> the VSCode extension menu); `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` only opts
-> out of that fallback.
+> Built-in `/clear` does not reach the tested clients' `UserPromptSubmit` hook.
+> `/tl` is the deterministic baton path. VS Code `/clear` uses the separate
+> `source='clear'` auto path; `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` disables only
+> that auto path.
 
 Hook subcommands (invoked by Claude Code, not by humans):
 `session-start` (SessionStart), `process-turn` (Stop),
-`prompt-submit` (UserPromptSubmit — detects `/tl` and `/clear` and writes a baton; Grok `/tl` also launches `grok-continue`).
+`prompt-submit` (UserPromptSubmit — executes pending handoff and writes `/tl`
+batons; Grok `/tl` also launches `grok-continue`).
 
 ### Observer completed-turn feed (development)
 
@@ -998,13 +1023,13 @@ plain `.mjs` files.
     └── <session_id>.json     Per-session activity state for the monitor
 ```
 
-Schema v8:
+Schema v9:
 
 - `sessions` — one row per `session_id`, with `project_path` and `merged_into`
 - `skeletons` — L1 one-liners, keyed by `(session_id, origin_session_id, turn, role)`
 - `bodies` — L2 verbatim text (user + assistant), same key shape
 - `details` — L3 records with `kind` column (`tool_input` / `tool_output` / `system` / `image` / `thinking`) and `source_id` for idempotent re-processing
-- `handoff_batons` — one row per `project_path`, with `session_id` and `created_at`. Written by the `UserPromptSubmit` hook when the user types `/tl` or `/clear`. Consumed and deleted at the next new session's **first user prompt**, if that session was born within the 1-hour TTL. (v8 dropped the `memo_text` column when memo was retired in v0.4.0.)
+- `handoff_batons` — one row per `project_path`, with `session_id` and `created_at`. Written by the `UserPromptSubmit` hook for `/tl`. A compatibility `/clear` branch remains in the hook, but tested built-in `/clear` commands are not forwarded to it. The next new session consumes and deletes an eligible baton at its **first user prompt**, if it was born within the 1-hour TTL. (v8 dropped the `memo_text` column when memo was retired in v0.4.0.)
 - `pending_handoffs` — one row per newborn session (`session_id` PK, `project_path`, `source`, `auto_predecessor_id`, `created_at`). Registered by `SessionStart`, consumed exactly once by the session's first `UserPromptSubmit`. Rows belonging to ghost sessions are never consumed and stay behind harmlessly (a few hundred bytes each). Added in v9 (ADR 0014).
 - `injection_log` — audit trail of injection events
 
@@ -1161,23 +1186,21 @@ and `~/.throughline/state/*.json`. A fresh database with schema v9 is created on
 the next hook fire.
 
 **New session didn't inherit memory from the previous one**
-Since v0.4.1, both typed `/clear` and `/tl` write a baton, and the auto path
-falls back on `source='clear'` for menu-driven `/clear`. If inheritance still
-did not happen, the most likely cause is one of: (a) the previous session was
-never recorded (no Stop hook fired — check `throughline status`), (b) the
-1-hour baton TTL expired before the new session opened, (c) the new session's
-`project_path` (cwd) differs from the previous one, so they live in different
-session chains, or (d) you set `THROUGHLINE_DISABLE_AUTO_HANDOFF=1` and the
-`/clear` came from the VSCode menu which never reaches `UserPromptSubmit`.
-Memory is still in SQLite — you can retrieve specific turns with
-`/sc-detail <time>`.
+Use `/tl` before the boundary when you need deterministic inheritance. VS Code
+`/clear` can also use the `source='clear'` auto path; Claude Desktop cannot, so
+it requires `/tl` before `/clear`. Other likely causes are: (a) the previous
+session was never recorded (no Stop hook fired — check `throughline status`),
+(b) the 1-hour baton TTL expired before the new session opened, (c) the new
+session's `project_path` (cwd) differs from the previous one, or (d)
+`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` disabled the VS Code auto path. Memory is
+still in SQLite — retrieve specific turns with `/sc-detail <time>`.
 
 ---
 
 ## Development
 
 ```bash
-git clone https://github.com/kitepon-rgb/Throughline.git
+git clone https://github.com/kitepon/Throughline.git
 cd Throughline
 npm link                              # Put `throughline` on PATH (dev only)
 throughline install --project         # Register hooks for this repo only
@@ -1203,9 +1226,8 @@ the first generation to pick up the auto-start task.
 - [`docs/01_l1_l2_l3_redesign.md`](docs/01_l1_l2_l3_redesign.md) — **core design
   spec** for the L1/L2/L3 differential layer model (schema v4 base + v5 L3
   classification extension). Authoritative for the memory layering rules.
-- [`docs/03_inheritance_on_clear_only.md`](docs/03_inheritance_on_clear_only.md) —
-  design record for the `/tl` baton handoff system (schema v6–v7). Explains
-  why the current inheritance is opt-in rather than heuristic.
+- [`docs/02_clear_auto_handoff_plan.md`](docs/02_clear_auto_handoff_plan.md) —
+  current `/clear` and `/tl` handoff contract.
 - [`docs/08_codex_dual_support.md`](docs/08_codex_dual_support.md) —
   architecture brief for adding Codex support without replacing the Claude
   Code hook/slash-command path.
@@ -1215,17 +1237,15 @@ the first generation to pick up the auto-start task.
 - [`docs/05_codex_first_roadmap.md`](docs/05_codex_first_roadmap.md) —
   current next-phase TODO plan: Codex primary first, Codex rewind-compatible
   trim next, Claude rewind finalization after that.
-- [`docs/07_codex_trim_implementation_plan.md`](docs/07_codex_trim_implementation_plan.md) —
-  historical integrated TODO plan and implementation record for Claude/Codex
-  dual support and rollback trim.
 - [`docs/04_public_release_plan.md`](docs/04_public_release_plan.md) — public
   release plan, implementation status by version, § 0 fallback rule, and
   remaining tasks.
-- [`docs/15_windows_ci_release_latency_plan.md`](docs/15_windows_ci_release_latency_plan.md) —
-  Windows CI performance gate and the ACL-preserving release workflow.
-- [`docs/archive/`](docs/archive/) — superseded design documents kept for
-  historical reference (original CONCEPT, session-linking experiments,
-  pre-publish action list).
+- [`docs/archive/12_desktop_clear_handoff_plan.md`](docs/archive/12_desktop_clear_handoff_plan.md) —
+  historical Claude Desktop measurements, NO-GO decision, and backfill acceptance.
+- [`docs/00_overview.md`](docs/00_overview.md) — current/history/evidence map and
+  document lifecycle rules.
+- [`docs/archive/`](docs/archive/) — completed plans and superseded designs,
+  kept only for historical reference.
 
 ---
 

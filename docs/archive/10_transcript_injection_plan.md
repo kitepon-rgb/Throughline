@@ -81,10 +81,10 @@ Anthropic Messages API 公式 docs ([Working with Messages](https://platform.cla
 
 本計画の transcript inject は **Claude session** (= 非 `codex:*` の session_id) の `~/.claude/projects/<proj-slug>/<session-id>.jsonl` への append のみを扱う。Codex session (`codex:<thread_id>`) は対象外。理由:
 
-- Codex は SessionStart hook を持たない ([src/cli/install.mjs](../src/cli/install.mjs) の Codex hook 登録は `UserPromptSubmit` / `PostToolUse` / `Stop` のみ)。よって `/clear` 後の hook タイミングで append する経路自体が存在しない
+- Codex は SessionStart hook を持たない ([src/cli/install.mjs](../../src/cli/install.mjs) の Codex hook 登録は `UserPromptSubmit` / `PostToolUse` / `Stop` のみ)。よって `/clear` 後の hook タイミングで append する経路自体が存在しない
 - Codex rollout JSONL の format は Anthropic Messages API 互換ではなく `event_msg` / `function_call` 系の独自構造で、user/assistant role 復元の対象として扱えない
 - Codex の context refresh は既に `trim --execute --host codex` の rollback + memory inject 経路で別解決されている (現行 v0.4.x の仕組みを維持)
-- Claude predecessor lookup は元から `session_id NOT LIKE 'codex:%'` で Codex を除外しているため ([src/session-start.mjs:53-67](../src/session-start.mjs#L53-L67))、Claude session と Codex session が相互に merge されることはない
+- Claude predecessor lookup は元から `session_id NOT LIKE 'codex:%'` で Codex を除外しているため ([src/session-start.mjs:53-67](../../src/session-start.mjs#L53-L67))、Claude session と Codex session が相互に merge されることはない
 
 **ドキュメント反映**: Phase 3-1 で CHANGELOG / README に「v0.5.0 の transcript inject は Claude session 限定。Codex session の引き継ぎは v0.4.x と同じ rollout-based refresh を継続」を明示する。
 
@@ -114,7 +114,7 @@ Anthropic Messages API 公式 docs ([Working with Messages](https://platform.cla
 - [ ] Phase 0-2: `/clear` 直後 SessionStart hook タイミングでの append spike (本計画の根本条件)
   - [ ] 検証用の throwaway Throughline DB session 1 件を仕込む (user turn 1 件 + assistant turn 1 件)
   - [ ] Throughline session-start.mjs に spike モードの分岐を一時追加: 「stdout 注入の代わりに transcript_path へ user/assistant turn を append する」
-  - [ ] **spike モードの起動方法**: 環境変数は使わない (Claude Code が VSCode 拡張から起動された場合、ユーザーシェルの env が hook プロセスに伝播しない既知の問題 — [src/cli/install.mjs](../src/cli/install.mjs) で PATH 解決に苦労した経緯と同根)。代わりに marker file `~/.throughline/spike-inject.flag` の存在で判定する (cwd / parent process と独立)
+  - [ ] **spike モードの起動方法**: 環境変数は使わない (Claude Code が VSCode 拡張から起動された場合、ユーザーシェルの env が hook プロセスに伝播しない既知の問題 — [src/cli/install.mjs](../../src/cli/install.mjs) で PATH 解決に苦労した経緯と同根)。代わりに marker file `~/.throughline/spike-inject.flag` の存在で判定する (cwd / parent process と独立)
   - [ ] 実 Claude Code セッションで marker file を作成し、その状態で **`/clear` を実行**、新セッションの SessionStart hook が走るタイミングで append される状態を作る
   - [ ] 新セッション開始直後に「続きよろしく」など短い prompt を送り、Claude が **append した前回 turn を自分の過去発話として認識する** か確認
   - [ ] (補助) throwaway session で「append → 同 session 内 user prompt」も比較として実行し、`/clear` 経路と挙動が一致するか比較する。**判定の主軸は `/clear` 経路の方**
@@ -139,11 +139,11 @@ Anthropic Messages API 公式 docs ([Working with Messages](https://platform.cla
 Phase 0 が go の場合のみ着手。
 
 - [ ] Phase 1-0: `HandoffRecord` の拡張 (前提タスク、Phase 1-1 より先)
-  - [ ] 現行 [src/handoff-record.mjs](../src/handoff-record.mjs) の `references.l3` は `kind` / `toolName` / `sourceId` / `originSessionId` / `turnNumber` / `createdAt` / `detailCommand` のメタのみで、tool_use の `input` JSON / tool_result の出力テキスト / image base64 などの **payload 本体は含まれていない**
+  - [ ] 現行 [src/handoff-record.mjs](../../src/handoff-record.mjs) の `references.l3` は `kind` / `toolName` / `sourceId` / `originSessionId` / `turnNumber` / `createdAt` / `detailCommand` のメタのみで、tool_use の `input` JSON / tool_result の出力テキスト / image base64 などの **payload 本体は含まれていない**
   - [ ] L3 を transcript JSONL に復元するため、新フィールド `references.l3Payloads` (または `references.l3` 内に `inputText` / `outputText` を opt-in 追加) として projection を新設。`tool_use.id` ↔ `tool_result.tool_use_id` の対応関係 (= `source_id` の chain) も含める
   - [ ] `handoff-record.test.mjs` の既存テストを破壊しない範囲で拡張 (追加フィールドの opt-in)
   - [ ] payload を持つ projection は **transcript inject 経路でのみ使う**。Codex projection 等の他の利用先は既存 shape を維持する
-  - [ ] **既存利用先の test 追加**: [src/codex-handoff.mjs:130, 259, 352](../src/codex-handoff.mjs) は `record.references.l3` を `groupL3ByTurn` / `toDetailReference` に渡しているため、`src/l3-summary.mjs` の `groupL3ByTurn` が新フィールドを無視することを `codex-handoff.test.mjs` または `l3-summary` の専用 test で固定する
+  - [ ] **既存利用先の test 追加**: [src/codex-handoff.mjs:130, 259, 352](../../src/codex-handoff.mjs) は `record.references.l3` を `groupL3ByTurn` / `toDetailReference` に渡しているため、`src/l3-summary.mjs` の `groupL3ByTurn` が新フィールドを無視することを `codex-handoff.test.mjs` または `l3-summary` の専用 test で固定する
 - [ ] Phase 1-1: `src/transcript-writer.mjs` 新規作成
   - [ ] 引数: `targetJsonlPath`, `record: HandoffRecord`, `newSessionId`, `cwd`, `version`, `gitBranch`
   - [ ] `HandoffRecord` の L2 (`recentBodies`) を user/assistant の JSONL 行に変換
@@ -154,7 +154,7 @@ Phase 0 が go の場合のみ着手。
   - [ ] **idempotency**: 既に同 `origin_session_id` の turn が target JSONL に存在すれば no-op (重複 inject 防止)
 - [ ] Phase 1-2: `src/session-start.mjs` の改修 (Phase 0-4 結果が go の場合のみ着手、純機能追加)
   - [ ] **Phase 0-4 が go (= hook が書いた行が Claude Code 側で保持され、chain 設計が成立) でない限り、Phase 1-2 には着手しない**。NG なら §4 撤退条件を発動し本計画 v0.5 は終了する
-  - [ ] 現行 [src/session-start.mjs:91](../src/session-start.mjs) では `payload` から `transcript_path` を destructure していない。Phase 1-2 で取得を追加する
+  - [ ] 現行 [src/session-start.mjs:91](../../src/session-start.mjs) では `payload` から `transcript_path` を destructure していない。Phase 1-2 で取得を追加する
   - [ ] **実装順序の厳守** (現行 v0.4.12 体験を 100% 保証するため):
     1. 先に `process.stdout.write(text + '\n')` を**完全に**実行する (現行 v0.4.12 と完全同一の stdout 出力。L2 verbatim を含む全部)
     2. その**後**で `transcriptWriter.injectInto(transcript_path, record, session_id, ...)` を呼ぶ
@@ -215,12 +215,12 @@ Phase 0 が go の場合のみ着手。
 
 ## 5. 関連 docs
 
-- [docs/02_clear_auto_handoff_plan.md](02_clear_auto_handoff_plan.md) — v0.4 系の baton/auto path 現行仕様 (本計画で部分上書きされる)
-- [docs/01_l1_l2_l3_redesign.md](01_l1_l2_l3_redesign.md) — L1/L2/L3 記憶レイヤー設計 (本計画で SessionStart 注入の分担が変わる)
-- [docs/04_public_release_plan.md](04_public_release_plan.md) — §0 フォールバック禁止ルール、CLI 設計
-- [src/resume-context.mjs](../src/resume-context.mjs) — 現行の system 側注入 builder (**v0.5 で変更なし**)
-- [src/session-start.mjs](../src/session-start.mjs) — 注入の呼び出し元 (v0.5 で transcript writer 呼び出しを stdout 注入の直後に追加)
-- [src/handoff-record.mjs](../src/handoff-record.mjs) — 注入の中間表現 (v0.5 で L3 payload を opt-in 追加)
+- [docs/02_clear_auto_handoff_plan.md](../02_clear_auto_handoff_plan.md) — v0.4 系の baton/auto path 現行仕様 (本計画で部分上書きされる)
+- [docs/01_l1_l2_l3_redesign.md](../01_l1_l2_l3_redesign.md) — L1/L2/L3 記憶レイヤー設計 (本計画で SessionStart 注入の分担が変わる)
+- [docs/04_public_release_plan.md](../04_public_release_plan.md) — §0 フォールバック禁止ルール、CLI 設計
+- [src/resume-context.mjs](../../src/resume-context.mjs) — 現行の system 側注入 builder (**v0.5 で変更なし**)
+- [src/session-start.mjs](../../src/session-start.mjs) — 注入の呼び出し元 (v0.5 で transcript writer 呼び出しを stdout 注入の直後に追加)
+- [src/handoff-record.mjs](../../src/handoff-record.mjs) — 注入の中間表現 (v0.5 で L3 payload を opt-in 追加)
 
 ---
 

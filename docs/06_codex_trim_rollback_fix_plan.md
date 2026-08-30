@@ -78,7 +78,7 @@ controlled marker では VS Code restart 後の model-visible 復活も再現し
 
 - `CLAUDE.md`
 - `docs/05_codex_first_roadmap.md`
-- `docs/07_codex_trim_implementation_plan.md`
+- `docs/archive/07_codex_trim_implementation_plan.md`
 - `docs/09_rollback_context_trim_insight.md`
 - `docs/04_public_release_plan.md`
 - `docs/audit-2026-05/codex-trim-rollback-incident-report.md`

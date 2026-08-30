@@ -1,7 +1,7 @@
 /**
  * SPIKE ONLY — Phase 0-2 / 0-4 検証用。本実装ではない。
  *
- * docs/10_transcript_injection_plan.md Phase 0-2 で
+ * docs/archive/10_transcript_injection_plan.md Phase 0-2 で
  * 「`/clear` 直後の SessionStart hook 内で transcript_path に L2 を user/assistant
  *  role 付きで append すると、Claude が次の short prompt の文脈として読むか」を実機検証する。
  *

@@ -10,7 +10,7 @@ Observerは監査対象の完了turnを複数pageで読む。一回のread serie
 転用できる。
 
 この裁定はControlのDecision証拠に使うため、追記可能な
-`docs/14_observer_completed_turn_feed_plan.md`へ契約本文を追加せず、wave専用の不変ADRとして置く。
+`docs/archive/14_observer_completed_turn_feed_plan.md`へ契約本文を追加せず、wave専用の不変ADRとして置く。
 
 ## Decision
 

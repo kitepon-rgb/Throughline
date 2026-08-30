@@ -8,7 +8,7 @@ plan: `grok-successor-launch`
 
 実装はしていない。起動核の契約を次の2ファイルへ固定した。
 
-- `docs/plan_grok-successor-launch.md`
+- `docs/archive/plan_grok-successor-launch.md`
 - `docs/adr/0021-grok-host-capture.md` の現在地
 
 固定した内容:

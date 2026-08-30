@@ -10,21 +10,31 @@ Throughline は Claude Code を主軸として育ってきたプロジェクト�
 
 作業前に、最低限次を読むこと。
 
-1. [CLAUDE.md](CLAUDE.md)
+1. [CLAUDE.md](CLAUDE.md) と [docs/00_overview.md](docs/00_overview.md)
 2. 変更対象の source / test
 3. Codex 両対応や context trim に関わる作業なら:
    - [docs/05_codex_first_roadmap.md](docs/05_codex_first_roadmap.md)
    - [docs/08_codex_dual_support.md](docs/08_codex_dual_support.md)
    - [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md)
 4. DB記憶を別プロセスへ渡す作業なら:
-   - [docs/16_readonly_handoff_context_plan.md](docs/16_readonly_handoff_context_plan.md)
+   - [README.md](README.md) の `handoff-context` 契約
+   - [docs/adr/0018-product-owned-database-migration.md](docs/adr/0018-product-owned-database-migration.md)
 5. Grok host / `/tl` 後継なら:
    - [docs/adr/0021-grok-host-capture.md](docs/adr/0021-grok-host-capture.md)
-   - [docs/plan_grok-successor-launch.md](docs/plan_grok-successor-launch.md)
 6. Cursor host なら:
    - [docs/adr/0022-cursor-host-capture.md](docs/adr/0022-cursor-host-capture.md)
 
 `CLAUDE.md` と実装が食い違う場合は、まず実装を直接確認する。必要なら `CLAUDE.md` 側を更新する。
+
+完了済みの計画・実装記録は [docs/archive/](docs/archive/) に置く。通常作業では読まず、
+設計判断の経緯や過去の受入証拠が必要なときだけ参照する。
+
+## 製品の所有境界
+
+Throughline は単独で install、設定、状態保存と schema migration、診断、復旧、更新、
+release 判定まで完結する。正規入口は本repositoryの README、CLI、source、release手順である。
+dotagents は工場全体の統合契約と配線を担うが、Throughline の状態やschemaを所有・制御せず、
+単独運用の前提にもならない。外部連携は公開CLI・JSON契約だけを使い、SQLiteを直接操作しない。
 
 Grok は first-class host である。capture は `chat_history.jsonl`、hook は
 `~/.grok/hooks/throughline.json` の絶対パス。Grok `/tl` の記憶再開は
@@ -92,7 +102,7 @@ rollout 上の新 rollback event と injected active-work memory evidence で判
 Claude 側 `/rewind` UX / 自動化 surface は次段階で、Codex current-thread trim を
 新規 thread handoff に置き換えない。
 
-[docs/07_codex_trim_implementation_plan.md](docs/07_codex_trim_implementation_plan.md) は旧統合計画と実装履歴として参照する。
+[docs/archive/07_codex_trim_implementation_plan.md](docs/archive/07_codex_trim_implementation_plan.md) は旧統合計画と実装履歴として、必要なときだけ参照する。
 
 作業量や複雑さを理由に理想を下げない。ただし、未検証の host behavior を確定仕様として実装しない。
 
@@ -101,5 +111,6 @@ Claude 側 `/rewind` UX / 自動化 surface は次段階で、Codex current-thre
 - フォールバックや silent recovery で失敗を隠さない。互換モードを使う場合は条件と理由を明示する。
 - 新しい Markdown を増やす前に、既存 docs に追記できないか確認する。
 - 進捗を計画書と `CLAUDE.md` の該当箇所にそろえて残す。README はユーザー向け仕様なので、実装済み behavior だけを載せる。
+- 完了した計画・実装記録は `docs/archive/` へ移し、同じ意味の現行契約は既存の現行文書へ統合する。履歴を通常の必読経路へ戻さない。
 - source が正、docs は追従物。判断に迷ったらコードを読む。
 - テストは `CLAUDE.md` の推奨コマンドを基準に、変更範囲に応じて追加する。

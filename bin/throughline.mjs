@@ -16,10 +16,11 @@
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
  *   throughline migrate --json # Migrate the existing Throughline database only
- *   throughline runtime-errors snapshot --json # Product-owned runtime error aggregates
+ *   throughline runtime-errors enable --json # Enable product-owned runtime error collection
+ *   throughline runtime-errors snapshot --json # Read product-owned runtime error aggregates
  *   throughline codex-capture # Capture active Codex rollout turns into Throughline DB
- *   throughline codex-hook user-prompt-submit # Codex current-session auto-refresh prompt hook
- *   throughline codex-hook post-tool-use # Codex current-session auto-refresh tool-loop hook
+ *   throughline codex-hook user-prompt-submit # Codex rollout capture + monitor state hook
+ *   throughline codex-hook post-tool-use # Codex tool-loop capture + monitor state hook
  *   throughline codex-hook stop # Codex native Stop hook (capture + L1 summarize)
  *   throughline codex-summarize # Summarize captured Codex L2 turns into L1 via Codex CLI
  *   throughline codex-resume # Render Codex active-work context from DB
@@ -235,22 +236,21 @@ Usage:
                               session/prompt bodies, secrets, absolute paths, or raw state
   throughline migrate --json  Migrate the existing Throughline database only.
                               Does not create a missing database and emits a versioned JSON result
-  throughline runtime-errors snapshot --json
-                              Read bounded local runtime error aggregates. Also supports
-                              diagnostics, ack <cursor>, resolve <fingerprint>, and compact
+  throughline runtime-errors enable --json
+                              Enable product-owned local runtime error collection.
+                              Also supports disable, snapshot, diagnostics, ack <cursor>,
+                              resolve <fingerprint>, reopen <fingerprint>, and compact
   throughline codex-capture     Capture active Codex rollout turns into DB
                               (requires --codex-thread-id or env thread id)
   throughline codex-hook user-prompt-submit
-                              Codex UserPromptSubmit hook: capture rollout and,
-                              at 75%, inject current-session $throughline
-                              instruction from verified rollout token_count
+                              Codex UserPromptSubmit hook: capture rollout and
+                              write monitor state; automatic refresh is disabled
   throughline codex-hook post-tool-use
                               Codex PostToolUse hook: during tool loops, capture
-                              rollout and inject the same 75% $throughline
-                              instruction from verified rollout token_count
+                              rollout and write monitor state; no instruction injection
   throughline codex-hook stop   Codex native Stop hook: capture rollout,
-                              summarize old L2 turns into L1, and run guarded
-                              auto-refresh when verified usage reaches 75%
+                              summarize old L2 turns into L1, and write monitor state;
+                              automatic current-thread refresh is disabled
   throughline codex-summarize   Summarize captured Codex L2 into L1 via Codex CLI
                               (requires a codex:<thread-id> session)
   throughline codex-resume      Render Codex active-work context from DB

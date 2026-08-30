@@ -12,7 +12,7 @@
 |---|---|
 | [05_codex_first_roadmap.md](05_codex_first_roadmap.md) | 2026-05-06 以降の次フェーズ計画。Codex primary 実用化を先行する |
 | [06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) | 2026-05-06 incident 後の修正計画。2026-05-08 の controlled smoke 後、過剰な Codex trim blocker は解除し、restore-safety / host primitive audit は diagnostics として扱う |
-| [07_codex_trim_implementation_plan.md](07_codex_trim_implementation_plan.md) | この文書と rollback trim の気づきを統合した旧計画と実装履歴。完了済み根拠として参照する |
+| [archive/07_codex_trim_implementation_plan.md](archive/07_codex_trim_implementation_plan.md) | この文書と rollback trim の気づきを統合した旧計画と実装履歴。完了済み根拠として参照する |
 | [09_rollback_context_trim_insight.md](09_rollback_context_trim_insight.md) | conversation-only rollback を「model-visible context の delete primitive」と見る設計メモ |
 
 この文書は Codex adapter / sidecar integration の方針を定義する。今後の実装順は [05_codex_first_roadmap.md](05_codex_first_roadmap.md) を優先する。

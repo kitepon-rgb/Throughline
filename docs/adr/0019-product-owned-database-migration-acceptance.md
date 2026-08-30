@@ -18,7 +18,7 @@ Accepted — 2026-07-20
 - full test: 実装受入時の `npm test` green
 - GitHub CI: run `29724249940`、Node 22.13.0／22.x／24.x × macOS／Ubuntu／Windowsの9/9 green
 - clean pack: 208 files、`src/cli/migrate.mjs`を収録し、並行作業の
-  `docs/15_windows_ci_release_latency_plan.md`を含まないことを機械確認
+  `docs/archive/15_windows_ci_release_latency_plan.md`を含まないことを機械確認
 
 ## 公開証拠
 

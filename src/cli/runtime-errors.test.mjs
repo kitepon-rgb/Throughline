@@ -1,16 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, run } from './runtime-errors.mjs';
-import { defaultFactoryReporterConfigPath } from '../runtime-error-store.mjs';
-import { applyWindowsPrivateAcl } from '../os/windows-acl-test-helper.mjs';
 
 test('runtime-errors CLI: strict command surface accepts no raw payload options', () => {
+  assert.equal(parseArgs(['enable', '--json']).command, 'enable');
+  assert.equal(parseArgs(['disable', '--json']).command, 'disable');
   assert.deepEqual(parseArgs(['snapshot', '--after-cursor', '2', '--limit', '3', '--json']), {
     command: 'snapshot', json: true, afterCursor: 2, limit: 3, value: null,
   });
@@ -52,16 +52,16 @@ test('runtime-errors CLI: snapshot and diagnostics are JSON-only and contain no 
     XDG_CONFIG_HOME: join(root, 'config'),
     XDG_STATE_HOME: join(root, 'state'),
   };
-  const configPath = defaultFactoryReporterConfigPath(env);
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify({
-    schema_version: '1.0',
-    host: { id: 'test-host', profile: process.platform === 'win32' ? 'windows-native' : 'mac' },
-    collection: { enabled: true },
-    reporting: { enabled: false },
-  }));
-  applyWindowsPrivateAcl(configPath);
   const bin = new URL('../../bin/throughline.mjs', import.meta.url);
+  const enabled = spawnSync(process.execPath, [fileURLToPath(bin), 'runtime-errors', 'enable', '--json'], {
+    env,
+    encoding: 'utf8',
+  });
+  assert.equal(enabled.status, 0, enabled.stderr);
+  assert.deepEqual(JSON.parse(enabled.stdout), {
+    schema: 'throughline.runtime_error_config.v1',
+    collection: { enabled: true },
+  });
   for (const args of [
     ['runtime-errors', 'snapshot', '--json'],
     ['runtime-errors', 'diagnostics', '--json'],

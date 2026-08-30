@@ -13,7 +13,7 @@
 > メニュー由来 `/clear` のように UserPromptSubmit に届かない経路のための
 > fallback で、`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` で OFF にできる (typed
 > `/clear` / `/tl` は env と無関係に引き続き発火する)。詳細は
-> [02_clear_auto_handoff_plan.md](02_clear_auto_handoff_plan.md)。
+> [02_clear_auto_handoff_plan.md](../02_clear_auto_handoff_plan.md)。
 >
 > 本書は当時のバトン採用判断を残す履歴ドキュメント。「結局 baton primary に
 > 戻った」という結末は皮肉だが、当時の判断は VSCode 拡張側 source バグへの
@@ -29,7 +29,7 @@
 - **案 C 不成立**: SessionStart 発火時点で transcript ファイルは未作成
 - **案 D（時間差ヒューリスティック）: 撤回**。誤爆の可能性を排除できず、ユーザー明示指名の方が決定論的で意図が明確
 - **採用: バトン方式（案 E）**: 旧セッションで `/tl` スラッシュコマンドを打つと UserPromptSubmit hook が `handoff_batons` テーブルに session_id を書き込み、次の新規セッションの SessionStart が TTL 1 時間以内のバトンを消費して merge する
-  - 実装: [src/baton.mjs](../src/baton.mjs), [src/prompt-submit.mjs](../src/prompt-submit.mjs), [src/session-start.mjs](../src/session-start.mjs), [src/session-merger.mjs](../src/session-merger.mjs) (`mergeSpecificPredecessor`), [.claude/commands/tl.md](../.claude/commands/tl.md)
+  - 実装: [src/baton.mjs](../../src/baton.mjs), [src/prompt-submit.mjs](../../src/prompt-submit.mjs), [src/session-start.mjs](../../src/session-start.mjs), [src/session-merger.mjs](../../src/session-merger.mjs) (`mergeSpecificPredecessor`), [.claude/commands/tl.md](../../.claude/commands/tl.md)
   - Bash tool サブプロセスには `$CLAUDE_SESSION_ID` 相当の env が無いため、session_id は UserPromptSubmit hook payload から取得する
 - **GitHub issue**: [anthropics/claude-code#49937](https://github.com/anthropics/claude-code/issues/49937) 提出済み。修正されれば source ベースに戻す余地は残る
 
@@ -44,17 +44,17 @@ Throughline の SessionStart フックは現在 **同一 project_path の未合�
 
 ## Findings (2026-04-17 時点)
 
-### 現行実装 (根拠: [src/session-start.mjs](../src/session-start.mjs), [src/session-merger.mjs](../src/session-merger.mjs))
+### 現行実装 (根拠: [src/session-start.mjs](../../src/session-start.mjs), [src/session-merger.mjs](../../src/session-merger.mjs))
 
-- [src/session-start.mjs:33](../src/session-start.mjs#L33) で payload の `source` を **読み捨てている**
-- [src/session-start.mjs:48-51](../src/session-start.mjs#L48-L51) で無条件に `mergePredecessorInto` を呼ぶ
-- [src/session-merger.mjs:68-78](../src/session-merger.mjs#L68-L78) の前任選定は「同 project_path・未合流・自分より created_at が古い・最新 updated_at」のみで、source や時間窓は見ていない
+- [src/session-start.mjs:33](../../src/session-start.mjs#L33) で payload の `source` を **読み捨てている**
+- [src/session-start.mjs:48-51](../../src/session-start.mjs#L48-L51) で無条件に `mergePredecessorInto` を呼ぶ
+- [src/session-merger.mjs:68-78](../../src/session-merger.mjs#L68-L78) の前任選定は「同 project_path・未合流・自分より created_at が古い・最新 updated_at」のみで、source や時間窓は見ていない
 
 ### 過去ログは参考扱い
 
 - `C:\Users\kite_\.throughline\spike\session-start.log` の 93 件は Opus 4.6 以前の採取で、モデル更新（現 4.7）と Claude Code バージョン更新を跨いでいる
 - 「startup 76 / resume 16 / clear 1」の分布はあくまで参考値で、現行環境の挙動として採用しない
-- コメント [src/session-start.mjs:7-10](../src/session-start.mjs#L7-L10) の「/clear 後も source='startup'」も当時の観察で、現行環境で再検証する
+- コメント [src/session-start.mjs:7-10](../../src/session-start.mjs#L7-L10) の「/clear 後も source='startup'」も当時の観察で、現行環境で再検証する
 
 ### 確定したい前提
 
@@ -64,7 +64,7 @@ Throughline の SessionStart フックは現在 **同一 project_path の未合�
 
 ### 案 A: `source === "clear"` のみ引き継ぐ（シンプル案）
 
-- [src/session-start.mjs](../src/session-start.mjs) で `source !== 'clear'` なら `mergePredecessorInto` を呼ばない
+- [src/session-start.mjs](../../src/session-start.mjs) で `source !== 'clear'` なら `mergePredecessorInto` を呼ばない
 - 取りこぼし（startup で来る /clear）は許容
 - ユーザー視点: 「手動新規・VSC 再起動・一部の /clear」で真に新規、それ以外は引き継ぐ
 
@@ -92,7 +92,7 @@ Throughline の SessionStart フックは現在 **同一 project_path の未合�
 
 ### 手順
 
-1. **debug ロガーを [src/session-start.mjs](../src/session-start.mjs) に一時挿入**
+1. **debug ロガーを [src/session-start.mjs](../../src/session-start.mjs) に一時挿入**
    - payload を受け取った直後（L32 の JSON.parse 直後）に `{ ts, source, session_id, transcript_path, cwd }` を `C:\Users\kite_\.throughline\logs\sessionstart-probe.log` に追記
    - 既存のマージ処理には触れない（挙動を変えずに観測だけする）
    - 1 行 1 JSON (JSONL) 形式で append
@@ -107,29 +107,29 @@ Throughline の SessionStart フックは現在 **同一 project_path の未合�
    - ケース 1 に `startup` が混じる / ケース 2 または 3 に `clear` が混じる → 案 B に切り替えて時間差閾値を設計
 
 4. **debug ロガー撤去**
-   - 判定後は [src/session-start.mjs](../src/session-start.mjs) から削除（commit 分離）
+   - 判定後は [src/session-start.mjs](../../src/session-start.mjs) から削除（commit 分離）
 
 ## 実装ステップ（案 A 前提・Phase 0 通過後に実施）
 
-1. **[src/session-start.mjs](../src/session-start.mjs) 修正**
+1. **[src/session-start.mjs](../../src/session-start.mjs) 修正**
    - L33: `const { session_id, source, cwd } = payload` に変更して `source` を取得
    - L7-10 のコメントを実機ログに合わせて更新（「source='clear' のときだけ引き継ぐ。startup で来る /clear は取りこぼす」仕様を明記）
    - L48 付近: `if (source === 'clear') { mergePredecessorInto(...) }` でガード
-   - 引き継がない場合も [src/session-start.mjs:41-45](../src/session-start.mjs#L41-L45) の sessions INSERT は従来通り実行（DB には残す）
+   - 引き継がない場合も [src/session-start.mjs:41-45](../../src/session-start.mjs#L41-L45) の sessions INSERT は従来通り実行（DB には残す）
 
-2. **[src/session-merger.test.mjs](../src/session-merger.test.mjs) にテスト追加**
+2. **[src/session-merger.test.mjs](../../src/session-merger.test.mjs) にテスト追加**
    - `resolveMergeTarget` / `mergePredecessorInto` は現状維持（判定は session-start 側に持たせる）
    - 代わりに session-start.mjs の条件分岐をユニット化する。テストは薄めの統合で:
      - source='clear' → `mergePredecessorInto` が呼ばれ合流する
      - source='startup' → 呼ばれず前任 sessions の merged_into が NULL のまま
      - source='resume' → 同上
-   - 既存 [src/session-merger.test.mjs:121-151](../src/session-merger.test.mjs#L121-L151) の時系列単調性テストは引き続きパスする前提
+   - 既存 [src/session-merger.test.mjs:121-151](../../src/session-merger.test.mjs#L121-L151) の時系列単調性テストは引き続きパスする前提
 
-3. **[src/resume-context.mjs](../src/resume-context.mjs) と注入ヘッダ**
+3. **[src/resume-context.mjs](../../src/resume-context.mjs) と注入ヘッダ**
    - 注入は session-start.mjs 側の `mergeResult.merged` 分岐で既に制御されているので修正不要
    - ただし「同一 session 継続（source='resume'）での注入」が必要か要検討。現状の resume フックは本計画のスコープ外として deferred（別タスクで検討）
 
-4. **[docs/01_l1_l2_l3_redesign.md](01_l1_l2_l3_redesign.md) / [CLAUDE.md](../CLAUDE.md) / [README.md](../README.md) の更新**
+4. **[docs/01_l1_l2_l3_redesign.md](../01_l1_l2_l3_redesign.md) / [CLAUDE.md](https://github.com/kitepon/Throughline/blob/main/CLAUDE.md) / [README.md](../../README.md) の更新**
    - 「記憶張り替えの発火条件は SessionStart source='clear' のみ」を明記
    - CLAUDE.md 冒頭「設計の核」の「`/clear` 後も SQLite はそのまま残る。`SessionStart` フックで前任セッションの全レコードを新 session_id に張り替える」の直後に引き継ぎ条件を追記
 
@@ -154,15 +154,15 @@ Throughline の SessionStart フックは現在 **同一 project_path の未合�
 
 ## 重要ファイル一覧
 
-- [src/session-start.mjs](../src/session-start.mjs) — 主変更箇所
-- [src/session-merger.mjs](../src/session-merger.mjs) — 参照のみ（現状維持）
-- [src/session-merger.test.mjs](../src/session-merger.test.mjs) — テスト追加
-- [src/resume-context.mjs](../src/resume-context.mjs) — 参照のみ
-- [CLAUDE.md](../CLAUDE.md) / [docs/01_l1_l2_l3_redesign.md](01_l1_l2_l3_redesign.md) / [README.md](../README.md) — ドキュメント更新
+- [src/session-start.mjs](../../src/session-start.mjs) — 主変更箇所
+- [src/session-merger.mjs](../../src/session-merger.mjs) — 参照のみ（現状維持）
+- [src/session-merger.test.mjs](../../src/session-merger.test.mjs) — テスト追加
+- [src/resume-context.mjs](../../src/resume-context.mjs) — 参照のみ
+- [CLAUDE.md](https://github.com/kitepon/Throughline/blob/main/CLAUDE.md) / [docs/01_l1_l2_l3_redesign.md](../01_l1_l2_l3_redesign.md) / [README.md](../../README.md) — ドキュメント更新
 
 ## Non-Goals (本計画では扱わない)
 
 - VSC 拡張側の source 送信挙動の調査・修正（Claude Code 本体のスコープ）
-- 並行セッション X-1 問題の解決（[docs/archive/SESSION_LINKING_DESIGN.md:194](archive/SESSION_LINKING_DESIGN.md#L194) で受容済み）
+- 並行セッション X-1 問題の解決（[docs/archive/SESSION_LINKING_DESIGN.md:194](SESSION_LINKING_DESIGN.md#L194) で受容済み）
 - source='startup' で来る /clear の取りこぼし対策（案 B/C は fallback として deferred）
 - token-monitor / sc-detail 系 CLI への影響調査（本計画と独立）

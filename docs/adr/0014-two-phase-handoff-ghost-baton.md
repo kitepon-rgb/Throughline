@@ -75,7 +75,7 @@ Accepted（実装済み・live acceptance 済み — 本ADR末尾の記録参照
 ### 廃止・撤去
 
 - SessionStart の注入経路と、それにぶら下がっていた Phase 0-2 spike /
-  Phase 0-6 `initialUserMessage` テスト分岐（docs/10 で両 no-go 確定済みの実験残骸）。
+  Phase 0-6 `initialUserMessage` テスト分岐（docs/archive/10 で両 no-go 確定済みの実験残骸）。
 - 「UserPromptSubmit は注入しない」規約 — 理由だった「SessionStart との二重注入」が
   SessionStart 注入の廃止で消滅したため、注入責務ごと UserPromptSubmit へ移す。
 

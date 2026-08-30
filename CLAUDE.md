@@ -6,186 +6,20 @@
 
 **Throughline** は Claude Code の hooks プラグインで、会話ターンを 3 層 (L1/L2/L3) に分解して SQLite に保存し、`/clear` 後も記憶を復元します。加えてマルチセッション対応のトークンモニター CLI も同梱しています。
 
-**v0.10.3（2026-08-24公開）**: Cursor を first-class hook host にする。envelope は
-`sessionStart` / `beforeSubmitPrompt` / `stop` と `conversation_id`。session id は
-`cursor:<uuid>`。L2 は payload `transcript_path` または
-`~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl`。
-`throughline install` は `~/.cursor/hooks.json` へ絶対 `node` + `bin/throughline.mjs`
-を upsert し、工場 hook は残す。beforeSubmitPrompt は continue のみなので、
-引き継ぎ注入は sessionStart の `additional_context`。`/tl` 後継の自動起動はしない。
-Claude/Codex/Grok 契約は変えない。正本は [ADR 0022](docs/adr/0022-cursor-host-capture.md)。
-公開commit `88982ca`、CI `32687818474`（macos/linux/windows/wsl2 green）、npm
-`throughline@0.10.3`、shasum `e1afa30d616ce18a3013ad564c85edc894d9039b`、tag `v0.10.3`、
-GitHub Release、このMacのregistry由来global install（`throughline --version` = 0.10.3）。
-`~/.cursor/hooks.json` に sessionStart / beforeSubmitPrompt / stop の絶対パスを確認し、
-工場 `cursor-*-hook` は残っている。新規 Cursor session の capture 受入は別 H。
+Throughline は単独で install、設定、状態保存とschema migration、診断、復旧、更新、
+release判定まで完結する。dotagentsは工場への配線と統合契約を担当するが、Throughlineの
+状態や製品寿命を所有・制御しない。runtime-error collectionはThroughline自身の
+`runtime-errors enable|disable --json`と製品所有configが管理し、工場側は公開JSON契約だけを使う。
 
-**v0.10.1（2026-08-23公開）**: 挙動変更なしの内部リファクタ。ベンダー (hook host) 依存を
-`src/hosts/` へ一元化（`hosts/identity.mjs` が `codex:`/`grok:` prefix の唯一の正本、
-hook 入口3本は `hosts/{claude,codex,grok}.mjs` の adapter 経由に。`hook-envelope.mjs` は
-`hosts/grok.mjs` へ統合）し、OS 依存を `src/os/` へ集約（二重実装だった Windows owner-only
-ACL を `os/windows-acl.mjs` に統一、macOS Terminal 起動・URL open・quote・path case 畳み・
-portable spawn を移設）。schema・注入契約・CLI 面は不変、full regression 761 pass。
-公開commit `f3f183a`、npm `throughline@0.10.1`、shasum
-`49f90d0589d1e4310755c96d8232d92f3205b806`、tag `v0.10.1`、GitHub Release、
-このMacのregistry由来global install（`throughline --version` = 0.10.1）まで確認済み。
-
-**v0.10.0（2026-08-17公開）**: Grok を first-class hook host にする。camelCase envelope は
-`grok:<id>` に正規化し、L2 は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`
-から回収する。`throughline install` は `~/.grok/hooks/throughline.json` に絶対 `node` +
-`bin/throughline.mjs` の SessionStart / UserPromptSubmit / Stop を書く（bare `throughline` は書かない）。
-Grok は UserPromptSubmit stdout をモデルへ渡さない。Grok `/tl` 成功後だけ
-`throughline grok-continue --session grok:<id>` が源セッションの `project_path` で
-macOS Terminal の対話 grok を立てる。初手は前文 + handoff-context 本文 + 続き + 待機。
-context / `project_path` 失敗では spawn しない。`--rules` / aiterm / `--from` は使わない。
-Claude / Codex `/tl` と Grok `/clear` では起動しない。一覧の正は session ディレクトリ。
-Desktop Inactive は成功条件にしない。L2 が無い源（`merged_into` の空席など）では起動しない。
-v0.9.1 の GF04 no-op は撤回。正本は [ADR 0021](docs/adr/0021-grok-host-capture.md) と
-[plan_grok-successor-launch.md](docs/plan_grok-successor-launch.md)。Claude/Codex 契約は変えない。
-公開commit `26d2d5a`、npm `throughline@0.10.0`、tag `v0.10.0`、GitHub Release、
-shasum `d2662b45915564ad2c2a6d821b238180b71f7e68`、このMacのregistry由来global install
-（`throughline --version` = 0.10.0、Grok hook は
-`/opt/homebrew/lib/node_modules/throughline/bin/throughline.mjs`）。
-
-**v0.9.1（2026-08-14公開）**: 当時は Claude用SessionStart、UserPromptSubmit、Stopへ流入した
-非ClaudeのcamelCase envelopeを副作用前に無出力・exit 0で終了していた。Grok正式host化でこのno-opは撤回。
-
-**v0.9.0（2026-08-04公開）**: 同一端末内の別ベンダーランチャー向けに
-`throughline handoff-context --session <id> --json` を追加した。既存DBをread-onlyで開き、
-SessionStartと同じ`buildBudgetedResumeContext(..., isInheritance: true)`の本文を返す。
-DB作成・migration・merge・baton消費・session推測は行わず、記憶行の`session_id`と
-`sessions.merged_into`を変更しない。成功schemaは`throughline.handoff_context.v1`。
-focused契約testと全回帰は729 pass／1 skip／0 fail。npm、tag、GitHub Release、global install、
-AIterm v0.23.0からのCodex source→Claude target実smokeまで受入済み。設計と非目標は
-[docs/16](docs/16_readonly_handoff_context_plan.md)を正とする。
-
-**v0.6.1 (published 2026-07-13)**: Spotter向けのversioned read-only `auditor-context` projectionを追加。
-exact session/projectとfreshな完了L2 pairだけをbounded JSONで返し、DB作成・migration・書き込みはしない。
-公開commit `089235f`のCIは6/6 green、npm `latest`、tag / GitHub Release、このMacのregistry由来global
-installを0.6.1へ同期した。Spotter側の送信はproject opt-inであり、Throughline単独では外部送信しない。
-
-**v0.6.2（2026-07-13公開）**: factory diagnostics と opt-in の local runtime
-error store を追加した。collection は canonical dotagents config の
-`collection.enabled: true` が明示された場合だけ有効で、既定OFF、network I/O は行わない。
-公開commit `e6ce6e3`、CI `29238704750`、npm `latest`、tag / GitHub Release、registry由来の
-隔離installから `--version`・factory diagnostics・runtime snapshotまで確認済み。
-
-**v0.6.3（2026-07-14公開）**: `factory-diagnostics` の Codex hook 集約を修正する。
-`UserPromptSubmit` / `PostToolUse` / `Stop` がいずれも canonical shape で `ready` の時は
-hooks と Codex connector を `ready` とし、Codex-only snapshot の overall 判定から未検査の
-Claude connector を除外する。Claude connector 自体は従来どおり `unverified` と明示し、
-read-only・privacy・exit 契約は変更しない。
-Windows runtime error observer は同一 mutation 内の重複した PowerShell ACL 検証を除き、
-初回3回・継続4回の distinct transition だけに限定する。5秒上限、既存fileの使用前検証、
-current-SID-only ACL、ACL済みtempからのatomic rename、失敗時の旧store保持は維持する。
-公開commit `fc83ddf`、CI `29284655280`（9/9 green）、npm `throughline@0.6.3`、tag /
-GitHub Release、npm shasum `4f3fcd2598a75f026358dae7f3eb3165242b580b` を確認済み。
-
-**v0.7.0（2026-07-17公開）**: 二相ハンドオフ（[ADR 0014](docs/adr/0014-two-phase-handoff-ghost-baton.md)：幽霊SessionStartの
-バトン奪取排除、schema v9 `pending_handoffs`、注入9,500字予算＋省略行の時刻参照）、
-L1要約の`gpt-5.6-luna`/low/割合1/5化と設定可能化（[ADR 0015](docs/adr/0015-l1-summarizer-model-effort-ratio.md)、Codex CLIへの明示`-m`）、
-Observer completed-turn CLI（observer-read / observer-wait）の初収録。
-公開commit `c0a5feb`のCIは9/9 green（run `29577249733`。Observer一式の初Windows CIで露出した
-8.3短縮名（RUNNER~1）のproject比較不一致とreceipt POSIX permission断言を修理済み）、
-npm `latest`、shasum `4e3e08f72423fedaf8a287201d6eb5840abedb78`、tag / GitHub Release、
-隔離installで二相・L1 backend・observer CLIの収録を確認し、このMacのglobalをregistry 0.7.0へ
-同期した。実機受入れ（合言葉引き継ぎ・decision log二相刻印・自己バトン食い不在・luna経路）は
-ADR 0014/0015に記録。upstream報告は[anthropics/claude-code#78455](https://github.com/anthropics/claude-code/issues/78455)。
-
-**v0.8.0（2026-07-18公開）**: push/pull注入の再設計（[ADR 0016](docs/adr/0016-push-pull-recall-injection.md)：L2ターン原子詰め・
-L1非注入・案内セクション焼き込み）と read-only `throughline recall --l2|--l1` の初収録、
-Windows ACL PowerShell timeout の 3秒→15秒緩和（windows-latest でコールドスタート実測
-3.0〜3.2秒が3秒capに衝突し、docs-onlyコミット含む2 run連続でflakeした。explicit failure
-契約は不変）。公開commit `7633769`のCIは9/9 green（run `29629255464`）、npm `latest`、
-shasum `946f934baa0849a86e1379bf4ef80bb41d8da042`、tag / GitHub Release、隔離installで
-`--version`・`recall` のDB不在明示エラー（作成なし）を確認し、このMacのglobalをregistry
-0.8.0へ同期した。**新注入形式の実機E2Eは2026-07-18に完了**：`/tl`→新セッション（baton path、
-47ターン引き継ぎ）で新形式注入（L1非注入・現在地アンカー・L2ターン原子詰め・案内セクション
-焼き込み）を目視確認し、焼き込まれた `recall --l2`（境界より古い11ターン全文、注入分と連続・
-重複欠落なし）と `recall --l1`（全9ターン、要約済み7/未要約2の正直表示＋detail誘導）を
-新セッション側からそのまま実行して動作を確認した。
-
-**v0.8.1／v0.8.2（2026-07-19〜20公開）**: native `factory-diagnostics` のDB compatibility
-labelをDB migration正本 `CURRENT_VERSION` から導出し、Windows native Codex hook commandの
-quoted Node executableへPowerShell call operator `&`を付けた。v0.8.2は公開commit `15427bf`、
-npm `latest`、tag / GitHub Releaseまで完了済み。
-
-**v0.8.3（2026-07-20公開）**: Codex Desktop起点のfresh-thread handoffを環境から識別し、
-`codex://threads/<thread-id>` deep linkで新taskをDesktop内に開く。`--open-host desktop`を追加し、
-VS Code／CLIの既存経路は維持する。CLIとCodex hookの並行起動ではSQLite busy timeoutを5秒に固定し、
-既にWALならjournal modeを再設定しない。公開commitは `8e8db4d`、GitHub CI run `29704886111` は
-9/9 green。npm `latest` は0.8.3、shasumは `cf4f71fa4cba2158bb1224d38b7f55cc459ab9e5`。
-tag / GitHub Releaseとregistry由来global install（`throughline --version` = 0.8.3）まで確認済み。
-
-**v0.8.4（2026-07-20公開）**: Codexの `$throughline` skillは、現在のCodex UI surfaceを
-shell／永続PTYの継承環境から推測せず、Desktop／VS Code／CLIに対応する`--open-host`を明示する。
-`codex-handoff-start`は既存`openHost`を維持しつつrequested / resolved hostをJSONとtextで報告する。
-古いVS Code由来PTYからCodex Desktop handoffを実行した事故形と、配布skillの明示host契約を
-focused testで固定した。Claude-facing hook、`/tl`、baton、resume契約は変更しない。公開commitは
-`5b840b6`、GitHub CI run `29721583754` は9/9 green。npm `latest` は0.8.4、shasumは
-`1f2c39a22e45f3e02e8739ee5fd6ceefc6a71034`。tag / GitHub Releaseとregistry由来global install
-（`throughline --version` = 0.8.4）、配置skillのrepo／公開package一致、`doctor --codex` exit 0まで確認済み。
-判断と検証証拠は [ADR 0017](docs/adr/0017-codex-handoff-host-boundary.md) に固定する。
-
-**v0.8.6（2026-07-20公開）**: `throughline migrate --json` を追加し、package更新直後に
-既存DBだけを製品所有のproduction migrationで現行schemaへ移行できるようにした。DB不在は作成せず
-`not_applicable`、現行は`already_current`、future schemaとmigration failureは非0で明示する。
-`factory-diagnostics`はread-onlyのまま維持する。設計判断は
-[ADR 0018](docs/adr/0018-product-owned-database-migration.md) を正とする。0.8.5はrelease dry-run後に
-別作業の未コミット文書が混入したためdeprecateし、同一runtimeをclean worktreeから0.8.6として再公開した。
-
-**v0.8.7（2026-07-20公開）**: Windows completed-turn receiptの256件境界testは
-正規fixtureから最後の1 mutationだけ公開APIを通し、
-本体ACL処理は初回3回・継続4回のdistinct transitionへ限定した。temporary ACL失敗時の旧store保持と
-directory／lock／final storeのnative owner-only ACLは専用testで維持する。CIは9 matrixを維持し、
-event／ref単位concurrency、unit test 5分SLO／8分timeoutとする。判断は
-[ADR 0020](docs/adr/0020-windows-ci-release-latency.md) を正とする。
-
-**v0.8.8（2026-08-02 release準備）**: Codex `hooks.json` の hook deadline は
-Codexが解釈する秒単位の `timeout` keyへ修正した。従来の `timeoutSec` は無視されて
-既定600秒になっていたため、再install時にcommand identityで3 managed hookをcanonical化する。
-`doctor --codex`は旧keyを要再installと明示し、factory diagnosticsは`timeout`だけをreadyとする。
-0.8.8はnpmへ2026-08-02T00:43Zに公開し、tag / GitHub Releaseは0.8.9公開時に遡って作成した。
-
-**v0.8.9（2026-08-02公開）**: Codex hook診断が呼び出し元の`PATH`に依存する欠陥を修理した。
-期待hook commandは毎回`resolveCodexHookNodePath`で組み立てられ、PATH上に同一nodeがあれば
-その表記（`/opt/homebrew/bin/node`）、無ければ`process.execPath`（`.../Cellar/node/<ver>/bin/node`）
-を返す。これを登録済みcommandと文字列比較していたため、launchd等の最小PATHから走る
-factory reporterでは正規登録が「legacy command」と誤判定され、`codex_hooks`が恒常的に
-`not_ready`になっていた（BugHub `factory::mac-kite::throughline` high issue、2026-07-18初観測）。
-比較を解析済みidentity（node実体のrealpath一致＋CLI script realpath一致＋event一致）へ変更した。
-別installを指すhook、別event、旧PATH解決型、realpathを解決できないpathは従来どおり要再install扱いとする。
-公開commit `5dbd3af`、CI run `30731697079` 9/9 green、npm `latest` 0.8.9、shasum
-`780f8e72d9bd4b0c4a331db48116a415a4bde34b`、tag / GitHub Release、registry由来global installまで確認済み。
-launchd相当の最小PATHで`factory-diagnostics`が`ready`になること、factory reporterの`codex_hooks`が`pass`へ
-変わること、BugHub側でissueが`resolved_by: 0.8.9`として閉じることを実機で確認した。
-
-**Observer completed-turn feed（2026-07-16実装・受入完了）**: Claude private receiptとCodex
-`task_complete`からhash-only completed chain／opaque cursorを構築し、read-only DBのorigin・user・
-assistant SHA-256を順序付きで全件照合する。DB/session/pair不足は`projection_pending`で本文を一切
-返さず、schema/project/I/O異常はhard failure、本文bound時もturn recordとdigestを保持する。
-pagination、JSON-only `observer-read` / `observer-wait` CLI、最大3600秒wait、Claude／Codex別projectの
-65秒超live E2Eは実装済み。**v0.7.0（2026-07-17公開）で npm 公開版へ初収録**した。
-MCP transportはObserver所有、ThroughlineはCLI境界だけを提供する。
-2026-07-16のObserver queue 19e実Claudeでは、async Stop hookがfinal assistant行のtranscript
-可視化前にbackfillして正常no-opとなるflush raceを再現した。`last_assistant_message`を本文ではなく
-latest logical groupのbounded flush barrierにだけ使う修理はcommit `a46b915`で完了した。
-正本は[ADR 0012](docs/adr/0012-claude-stop-transcript-flush-barrier.md)／docs 14 Phase 4。Observer queue 19eの
-candidate再梱包・live再検証は未完である。
-同日の実Codexでは、2件目Stop captureと同時の`observer-read`が一時SQLite lockをDB I/O hard
-failureにしてObserver callerを終了させる競合も再現した。completed projectionのread-only接続だけに
-1秒のbounded busy waitを追加し、Spotter auditorの既存lock failure、schema／project／上限超過の
-hard failure、`projection_pending`契約は変更していない。focused 16/16、related 78/78はgreen。
-正本は[ADR 0013](docs/adr/0013-observer-read-busy-writer-gate.md)／docs 14 Phase 4。修理済みcandidateの
-実Codex r11で親completed-turn 2件、Observer completed cycle 2件、65秒超継続、正常停止を受け入れた。
+**現行版は v0.10.4（schema v9）**。Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。現行host契約はREADMEとADR 0021／0022、release gateはdocs/04_public_release_plan.mdを正とする。版ごとの変更・公開commit・CI・npm・tag・smoke履歴はCHANGELOG.mdとdocs/archive/, evidence/に置き、この常時読込正本へ複製しない。
 
 **設計の核** (v0.4.0 以降 + ADR 0014 二相化、docs/02_clear_auto_handoff_plan.md)
 
 - `/clear` 後も SQLite はそのまま残る。前任セッションの全レコードを新 session_id に張り替える（記憶張り替え方式）
 - **二相ハンドオフ (ADR 0014)**: Claude Code は同一 project に短時間で複数の SessionStart を発火させることがあり、一部は transcript を生成しない**幽霊セッション**になる。SessionStart 時点では実体と幽霊を判別できない（本物の transcript も hook より数百 ms 遅れて作られる）ため、**SessionStart は `pending_handoffs` への intent 登録のみ**を行い、**merge + 注入は最初の UserPromptSubmit（= 実体の証明。幽霊はプロンプトを発火しない）で実行**する。2026-07-17 に幽霊がバトンを先取りして実セッションが記憶ゼロで始まる incident が同日 2 回発生した（実測・機序は [ADR 0014](docs/adr/0014-two-phase-handoff-ghost-baton.md)）
 - **引き継ぎ発火条件は 2 経路 (baton path 優先)**:
-  1. **baton path**: 旧セッションで `/tl` または `/clear` を打つと UserPromptSubmit hook が `handoff_batons` テーブルに**そのセッションの** session_id を書き込み、次の新規セッションが初回プロンプト時に消費して merge。適格性は**セッション誕生時刻基準**で `0 ≤ (誕生 − baton書込) ≤ TTL 1h`。負 age（誕生後に書かれた baton）は消さずに残す＝走行中セッションが横取りしない。`source` 値関係なく発火、最も確定的な指名方法
-  2. **auto path (フォールバック)**: baton が無く SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ `findLatestClaudePredecessor`（**transcript 実在フィルタ付き** — 幽霊 twin を前任に選ばない）で前任を SessionStart 時点で解決・凍結し、初回プロンプト時に merge + 注入。Desktop クライアントは `source="clear"` を送らないため auto path は VS Code 系のみで発火する（Desktop は `/tl` 運用。経緯と実測は [docs/12](docs/12_desktop_clear_handoff_plan.md)、upstream: [anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704)）
+  1. **baton path**: 旧セッションで `/tl` を実行すると UserPromptSubmit hook が `handoff_batons` テーブルに**そのセッションの** session_id を書き込み、次の新規セッションが初回プロンプト時に消費して merge。適格性は**セッション誕生時刻基準**で `0 ≤ (誕生 − baton書込) ≤ TTL 1h`。負 age（誕生後に書かれた baton）は消さずに残す＝走行中セッションが横取りしない。`source` 値関係なく発火する確定指名方法
+  2. **auto path**: baton が無く SessionStart で `source='clear'` を受け取ったとき、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` が `'1'` でなければ `findLatestClaudePredecessor`（**transcript 実在フィルタ付き** — 幽霊 twin を前任に選ばない）で前任を SessionStart 時点で解決・凍結し、初回プロンプト時に merge + 注入。組み込み `/clear` は実測したどのクライアントでも UserPromptSubmit に届かない。VS Code は `source='clear'` を送るため auto path、Desktop は送らないため `/tl` を先に使う（経緯と実測は [archive docs/12](docs/archive/12_desktop_clear_handoff_plan.md)、upstream: [anthropics/claude-code#76704](https://github.com/anthropics/claude-code/issues/76704)）
   3. baton 消費が auto 判定より先発なので両者は構造上同時成立しない
 - **注入内容 (ADR 0016, 2026-07-18〜)**: push は「現在地」だけ — ヘッダ + 現在地アンカー + 案内セクション（無条件表示）+ **L2 を新しい順に丸ごと入るターンだけ全文**（ターン原子・固定 N なし）。**L1 は注入しない**。窓 (20 ターン) の残りは `throughline recall --l2`、それより古い全ターンは `recall --l1`（要約 or 未要約明示）、一点掘りは `throughline detail <時刻>` の pull 三段構成。範囲・境界 (ISO ms strict less-than)・件数・session は全部注入時に案内コマンドへ焼き込み、recall 側は窓を再計算しない。memo / thinking は注入しない
 - **注入予算 (ADR 0014)**: hook stdout は約 10k 字超で `<persisted-output>`（path + 先頭 2KB preview）に file 化されモデル可視が劣化する（実測 9,501 字 inline / 15,286 字 file 化。10k 判定は per context string で multi-hook なら突破可能と実測済みだが構造的想定外として不採用 — ADR 0016）。注入は `buildBudgetedResumeContext`（上限 9,500 字）で行う
@@ -204,20 +38,15 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 |---|---|
 | [docs/00_overview.md](docs/00_overview.md) | docs/ の全体地図。連番正典、ADR、監査、archive、RAG の入口 |
 | [docs/01_l1_l2_l3_redesign.md](docs/01_l1_l2_l3_redesign.md) | **L1/L2/L3 記憶レイヤーの設計仕様**。ブロック分類ルール、Haiku 呼び出し方針、実装順序、進捗表。schema v4 基盤 + v5 L3 分類拡張まで。以後の v6/v7 追加は本文書とは独立 |
-| [docs/03_inheritance_on_clear_only.md](docs/03_inheritance_on_clear_only.md) | 2026-04 段階のバトン方式採用経緯（履歴扱い）。VSCode `source='clear'` バグの当時の検証記録。現行仕様は [docs/02_clear_auto_handoff_plan.md](docs/02_clear_auto_handoff_plan.md) を参照 |
-| [docs/02_clear_auto_handoff_plan.md](docs/02_clear_auto_handoff_plan.md) | **v0.4.0 の現行設計仕様** + 実装 TODO。auto path (`source='clear'`) + baton path (`/tl`) の 2 経路、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` |
-| [docs/04_public_release_plan.md](docs/04_public_release_plan.md) | 公開配布化プラン（§0 フォールバック禁止ルール、CLI 設計、バージョン別実装ステータス、E2E 検証手順、未完タスク） |
+| [docs/02_clear_auto_handoff_plan.md](docs/02_clear_auto_handoff_plan.md) | handoffの現行契約。VS Codeのauto path (`source='clear'`) + 明示baton path (`/tl`) の2経路、Desktop制約、env `THROUGHLINE_DISABLE_AUTO_HANDOFF` |
+| [docs/04_public_release_plan.md](docs/04_public_release_plan.md) | 現行の単独運用入口、明示的失敗、release gate、host配線契約 |
 | [docs/05_codex_first_roadmap.md](docs/05_codex_first_roadmap.md) | **次フェーズの実装順 / TODO**。Codex primary 実用化、Codex Rewind 互換、Claude 側 finalization の順で進める |
 | [docs/06_codex_trim_rollback_fix_plan.md](docs/06_codex_trim_rollback_fix_plan.md) | Codex rollback / inject incident の調査・修正履歴。controlled user marker の rollback 後 model-visible reproduction は、fresh app-server verify と VS Code reload/reconnect 後 verify の両方で未再現。ただし live token_count 削減が同一 thread で持続しない実測を受け、Codex hooks からの automatic current-thread refresh は無効化し、`$throughline` は app-server 新スレッド handoff に戻す。明示 `trim --execute --host codex` は診断用 current-thread rollback / inject として残す |
-| [docs/07_codex_trim_implementation_plan.md](docs/07_codex_trim_implementation_plan.md) | Codex 両対応 + rollback trim の旧統合実装計画と実装履歴。完了済み成果と根拠として参照する |
 | [docs/08_codex_dual_support.md](docs/08_codex_dual_support.md) | Claude / Codex 両対応の architecture brief。Claude path を置き換えず、Codex support を adapter / projection として追加する方針 |
 | [docs/09_rollback_context_trim_insight.md](docs/09_rollback_context_trim_insight.md) | rollback を model-visible context の delete primitive と見る設計メモ。次フェーズでは Codex Rewind 互換の根拠として扱う |
-| [docs/10_transcript_injection_plan.md](docs/10_transcript_injection_plan.md) | v0.5 系の transcript injection 検証計画と実機ラン結果。Phase 0-2 / 0-5 (D 経路) と Phase 0-6 (`hookSpecificOutput.initialUserMessage` 経路) を実機検証し、両 no-go 確定。plugin scope での完成形は 道 C (v2.1 header + 現在地 anchor) と判定し v0.5.0 として release |
-| [docs/14_observer_completed_turn_feed_plan.md](docs/14_observer_completed_turn_feed_plan.md) | Observer向けcompleted-only project resolver、opaque cursor、JSON read / wait CLIの完了済み設計・受入記録。v0.7.0で公開済み。MCP transportはObserver所有で、Throughlineは外部依存ゼロのlibrary / CLI境界を維持する |
-| [docs/16_readonly_handoff_context_plan.md](docs/16_readonly_handoff_context_plan.md) | SessionStartと同じ継承文脈をDB所有権変更なしで返す、ローカルlauncher向けread-only CLIのv0.9.0設計・受入記録 |
 | [rag/INDEX.md](rag/INDEX.md) | Throughline 設計判断の根拠となる third-party spec 知識ベース。Claude Code hooks reference、Anthropic Messages API、`/clear`/`/compact` 挙動、openclaude の `initialUserMessage` source 抜粋を蓄積。各 finding は実機検証結果と対で更新 |
-| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v8、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
-| [docs/archive/](docs/archive/) | 破棄された旧設計（CONCEPT.md 初期案、session linking 実験記録、npm publish 前のアクションメモ等）。歴史記述用 |
+| [README.md](README.md) | ユーザー向け説明（Quick Start、3 層モデル、CLI、schema v9、VSCode 自動起動、monitor 診断、中断地点からの再開、トラブルシュート） |
+| [docs/archive/](docs/archive/) | 完了済み計画と置換済み設計の履歴。通常は読まず、過去の判断・受入証拠が必要な場合だけ参照 |
 
 ---
 
@@ -229,8 +58,8 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 
 | ファイル | 役割 |
 |---|---|
-| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v8 migration。`node:sqlite` 組み込み、依存ゼロ |
-| [src/auditor-context.mjs](src/auditor-context.mjs) | Spotter 専用の read-only auditor projection。指定 session / project の completed L2 user/assistant pair だけを、最新 pair の origin / turn / SHA-256 freshness と schema v8 で検査し、bounded JSON context を返す。DB 作成・migration・書き込みはしない。Spotter 側の opt-in と送信判断は Throughline の責務外 |
+| [src/db.mjs](src/db.mjs) | SQLite 接続、schema v1 → v9 migration。`node:sqlite` 組み込み、依存ゼロ |
+| [src/auditor-context.mjs](src/auditor-context.mjs) | Spotter 専用の read-only auditor projection。指定 session / project の completed L2 user/assistant pair だけを、最新 pair の origin / turn / SHA-256 freshness と schema v9 で検査し、bounded JSON context を返す。DB 作成・migration・書き込みはしない。Spotter 側の opt-in と送信判断は Throughline の責務外 |
 | [src/observer-turn-feed.mjs](src/observer-turn-feed.mjs) | Observer向けのcompleted-only Claude receipt／Codex `task_complete` projection、opaque cursor、fixed-through pagination。DB/WALを公開せず、host ambiguityとcursor不整合はfail closedにする |
 | [src/transcript-reader.mjs](src/transcript-reader.mjs) | transcript JSONL パーサー |
 | [src/transcript-usage.mjs](src/transcript-usage.mjs) | 最新 assistant の `message.usage` から実測トークン数を抽出、1M context 検出 |
@@ -274,7 +103,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 |---|---|---|
 | [src/session-start.mjs](src/session-start.mjs)<br>二相ハンドオフ第一相: sessions 登録 + pending intent 登録のみ。merge / 注入はしない (ADR 0014) | `throughline session-start` | SessionStart |
 | [src/turn-processor.mjs](src/turn-processor.mjs)<br>全ターン走査バックフィル（`turn-backfill.mjs` 経由、Stop 空振りの永久穴を解消） | `throughline process-turn` | Stop |
-| [src/prompt-submit.mjs](src/prompt-submit.mjs)<br>二相ハンドオフ第二相: 初回プロンプトで pending consume + merge + 予算内注入。加えて `/tl` / `/clear` baton 書き込み。Grok `/tl` 成功後は `grok-continue` を副作用起動（Claude / Codex は起動しない） | `throughline prompt-submit` | UserPromptSubmit |
+| [src/prompt-submit.mjs](src/prompt-submit.mjs)<br>二相ハンドオフ第二相: 初回プロンプトで pending consume + merge + 予算内注入。`/tl` batonを書き、Grok `/tl` 成功後は`grok-continue`を副作用起動する。`/clear`互換分岐は残るが、現行の組み込み`/clear`はこのhookへ届かない | `throughline prompt-submit` | UserPromptSubmit |
 
 上記 hook module は `run()` を export し、直接実行時または [bin/throughline.mjs](bin/throughline.mjs) から呼ばれた時だけ hook body を実行する。import だけでは stdin 待ち、DB 作成、state 書き込みをしない。
 
@@ -282,16 +111,16 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 
 | ファイル | 役割 |
 |---|---|
-| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（`/tl` または `/clear` で書き、newborn セッションの初回 UserPromptSubmit で消費。適格性はセッション誕生時刻 `bornAt` 基準で、負 age の baton は `future_baton` として残置。schema v8 で memo_text 列廃止により `updateBatonMemo` も削除） |
+| [src/baton.mjs](src/baton.mjs) | `writeBaton` / `consumeBaton`（現行利用面では`/tl`で書き、newbornセッションの初回UserPromptSubmitで消費。適格性はセッション誕生時刻`bornAt`基準で、負ageのbatonは`future_baton`として残置。schema v8でmemo_text列と`updateBatonMemo`を削除） |
 | [src/pending-handoff.mjs](src/pending-handoff.mjs) | 二相ハンドオフの intent 管理 (schema v9 `pending_handoffs`)。`registerPendingHandoff` (SessionStart) / `consumePendingHandoff` (初回 UserPromptSubmit、BEGIN IMMEDIATE で 1 回限り) |
 | [src/handoff-executor.mjs](src/handoff-executor.mjs) | 二相ハンドオフ第二相の本体。pending consume → baton path 優先 → auto path の merge → 前任 transcript backfill → `buildBudgetedResumeContext` で予算内注入テキストを組み立てる |
 | [src/decision-log.mjs](src/decision-log.mjs) | inheritance-decision.log の共有 writer。`phase: 'session-start' \| 'prompt-submit'` の 2 種を記録（2026-07-17 incident の一次証拠となった実績のあるログ） |
-| [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と Codex projection が共有する安定した中間表現。DB 永続化はせず、schema v8 の既存テーブルから組み立てる。`codex:<thread_id>` session は `source.adapter = codex` として扱う |
+| [src/handoff-record.mjs](src/handoff-record.mjs) | `HandoffRecord` v1 projection。Claude resume context と Codex projection が共有する安定した中間表現。DB 永続化はせず、現行schema v9の既存テーブルから組み立てる。`codex:<thread_id>` session は `source.adapter = codex` として扱う |
 | [src/session-merger.mjs](src/session-merger.mjs) | `resolveMergeTarget` / `mergeSpecificPredecessor`（BEGIN IMMEDIATE トランザクション） |
 | [src/resume-context.mjs](src/resume-context.mjs) | `HandoffRecord` から「中断地点からの再開」注入テキストを描画。**v0.4.12 以降**: ヘッダーは「現在地参照案内」「直前の対話の自然な続きとして応答」「`Bash` ツールで `throughline detail HH:MM:SS` を実行」の 3 行。本文は **現在地アンカー (最新 user + 最新 assistant turn を再掲、各 600 字で truncate)** → L1 → L2 (末尾 anchor) の順。L2 が長くなると末尾 anchor だけでは注意が前半固着し話の流れを取り違える事例があった (`/clear` 直後に L2 先頭の古いターンを「現在の作業」と誤認するケース) ため、最新ターンをヘッダ直下にも再掲して二重に固定する。L3 は独立セクションを持たず、各 L1/L2 行末尾に `(詳細：…)` inline suffix として集約する。L1 行頭は `bodies.created_at` MIN 時刻 (元 body 時刻) で表示し detail 解決可能にする。**ADR 0016 以降 (2026-07-18)**: 実注入は `buildBudgetedResumeContext`（上限 9,500 字。hook stdout の 10k file 化対策）で、ヘッダ + アンカー + 案内セクション（無条件表示）を固定部として予約し、残り全予算に L2 をターン原子で新しい順に入るだけ詰める。**L1 は注入しない**。案内セクションは `recall --l2/--l1` コマンドに session / ISO ms 境界 / 件数を焼き込む |
 | [src/l3-summary.mjs](src/l3-summary.mjs) | resume-context / codex-handoff 共通の L3 inline suffix ヘルパー。`shortenMcpToolName` / `localizeL3Part` / `groupL3ByTurn` / `buildPartsSummary`。MCP ツール名は末尾関数名に短縮、`tool_output` / hook 出力 (`system`) は noise として suffix から除外、`tool_input` 名 (例: Bash) で turn 内 1 件に集約する |
 | [src/state-file.mjs](src/state-file.mjs) | セッション単位の状態ファイル (`~/.throughline/state/<session_id>.json`)。`host` 無しは旧 Claude state として normalize し、Codex state は `host: "codex"` / `sessionId: "codex:<thread_id>"` / `rolloutPath` を持つ。ファイル名は URL encode し、Windows でも `codex:` session id を保存できる。`usage` フィールド (tokens/model/contextWindowSize) は Stop 完了時の fallback snapshot。monitor はライブ transcript / rollout を優先し、取れない時だけ snapshot を使う。旧フォーマット (usage 無し) も読める |
-| [src/runtime-error-store.mjs](src/runtime-error-store.mjs) | Throughline 所有の local runtime error aggregate。canonical dotagents config の `collection.enabled === true` 時だけ固定 code/template を SHA-256 fingerprint で集約し、private atomic store、monotonic cursor/ack、resolve/reopen、unacked 保護 retention、bounded snapshot/diagnostics を提供する。network I/O、raw exception/stderr/stack/prompt/session/path/context の入力・保存は行わない |
+| [src/runtime-error-store.mjs](src/runtime-error-store.mjs) | Throughline所有のlocal runtime error設定・aggregate。`runtime-errors enable|disable --json`が製品configを管理し、有効時だけ固定code/templateをSHA-256 fingerprintで集約する。private atomic store、monotonic cursor/ack、resolve/reopen、unacked保護retention、bounded snapshot/diagnosticsを提供する。dotagents config、network I/O、raw exception/stderr/stack/prompt/session/path/contextは扱わない |
 | [src/haiku-summarizer.mjs](src/haiku-summarizer.mjs) | L2 → L1 要約。目標量は削減割合（既定 0.2 = 1/5、`THROUGHLINE_L1_RATIO`。不正値は explicit error）で決め、割合から換算した「約N文字」をプロンプトへ渡す。`hostMode: 'claude-primary'` の backend 順序は codex-sidecar (configured 時) → Codex CLI（既定 `gpt-5.6-luna` / effort `low`、`THROUGHLINE_L1_MODEL` / `THROUGHLINE_L1_EFFORT` で変更可。`--ignore-user-config` でもモデルが明示されるよう `-m` を必ず渡す）→ Claude Haiku → raw L2。各段の失敗理由は `sidecarReason` / `codexCliReason` に記録。`hostMode: 'codex-primary'` では Codex CLI backend 一本で、失敗時は fallback せず explicit error。モデル・effort・割合の選定根拠は [ADR 0015](docs/adr/0015-l1-summarizer-model-effort-ratio.md)（実測評価） |
 | [src/trim-model.mjs](src/trim-model.mjs) | `throughline trim --dry-run` の plan builder。captured turns / keep-recent / rollback candidate / host boundary / curated memory preview / context reduction estimate を計算する。`--memo-stdin` の current-work memo を先頭に含められる。Codex guarded execute は live app-server guard までの実装であり、restart-safe 成功とは扱わない |
 | [src/vscode-task.mjs](src/vscode-task.mjs) | VSCode の `.vscode/tasks.json` を自動プロビジョニング（token-monitor の folderOpen 自動起動）。`ensureMonitorTaskFile` は `throughline install` と **SessionStart / Stop / UserPromptSubmit の 3 hook すべて**から呼ばれる。冪等性ガード付きなので重複呼び出し安全。install または 1 つの hook が発火すれば tasks.json が生える。純 JSON は安全にマージ、JSONC は触らず stderr で手動手順を 1 度だけ案内。**v0.3.23 以降**: `findMonitorTaskIndex` + `isMonitorTaskBroken` で「既存タスクの絶対パスが現環境に存在しない」を検知して `command` / `args` だけを差し替え修復する (`action: 'repaired'`)。クロス環境 (Windows ↔ WSL2 / Linux ↔ macOS) で commit された tasks.json が壊れる問題を解消。`label` / `presentation` 等のユーザーカスタマイズは保持する。**v0.3.24 以降**: `shouldRecommendGitignore` で「git リポジトリ内かつ `.gitignore` に `.vscode/tasks.json` 系エントリが無い」を判定し、created/merged/repaired 時に 1 度だけ stdout に `<system-reminder>` で除外推奨を出す（`.throughline-gitignore-noted` marker で再発抑止）|
@@ -311,7 +140,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/cli/auditor-context.mjs](src/cli/auditor-context.mjs) | `auditor-context` — Spotter 専用・JSON-only の read-only projection。`--session` / `--project` と、explicit pair identity/hash または `--host claude\|codex --transcript` を受ける（排他）。`fresh` だけに L2 body を含め、`empty` / `stale` / `session_mismatch` / `unavailable` / `schema_mismatch` は空 turns を返す。DB は create/migrate/write しない |
 | [src/cli/observer-read.mjs](src/cli/observer-read.mjs) | `observer-read` — existing absolute project向けJSON-only completed-turn page。opaque cursorを受け、snapshot / delta / thread・host switch、`resync_required`、`projection_pending`を返す |
 | [src/cli/observer-wait.mjs](src/cli/observer-wait.mjs) | `observer-wait` — opaque after cursorから最大3600秒待機し、`changed` / `timeout` / `resync_required` / `ambiguous_parent`だけをJSONで返す。cancelは成功に丸めない |
-| [src/cli/runtime-errors.mjs](src/cli/runtime-errors.mjs) | `runtime-errors snapshot\|diagnostics\|ack\|resolve\|reopen\|compact --json` — product-owned store の bounded JSON API。snapshot/diagnostics は state path を出さず、mutation API は cursor または fingerprint だけを受け付ける |
+| [src/cli/runtime-errors.mjs](src/cli/runtime-errors.mjs) | `runtime-errors enable\|disable\|snapshot\|diagnostics\|ack\|resolve\|reopen\|compact --json` — product-owned config/store の bounded JSON API。snapshot/diagnostics は state path を出さず、mutation API は cursor または fingerprint だけを受け付ける |
 | [src/cli/migrate.mjs](src/cli/migrate.mjs) | `migrate --json` — 既存の Throughline DB だけを production migration で現行 schema へ移行する正規入口。DB 不在時は作成せず `not_applicable`、現行は `already_current`、future schema と migration failure は非 0 の固定 JSON で明示する |
 | [src/cli/codex-capture.mjs](src/cli/codex-capture.mjs) | `codex-capture` — 明示 Codex thread id の rollout active turns を `codex:<thread_id>` session として DB に保存する。thread id が無い場合は自動推測しない |
 | [src/cli/codex-summarize.mjs](src/cli/codex-summarize.mjs) | `codex-summarize` — captured `codex:<thread_id>` session の古い L2 を Codex CLI backend で L1 skeleton に要約する。Claude Haiku へ fallback しない |
@@ -359,7 +188,7 @@ hard failure、`projection_pending`契約は変更していない。focused 16/1
 | [src/codex-vscode-rollback-smoke.test.mjs](src/codex-vscode-rollback-smoke.test.mjs) | `throughline codex-vscode-rollback-smoke` の restart acknowledgement 必須化、restore-safety risk refusal、CLI JSON 出力 |
 | [src/codex-sidecar.test.mjs](src/codex-sidecar.test.mjs) | `diagnoseCodexSidecar` の disabled / unavailable / configured status と sidecar dry-run request shape |
 | [src/codex-sidecar-cli.test.mjs](src/codex-sidecar-cli.test.mjs) | `throughline codex-sidecar-diagnostics` / `throughline codex-sidecar-dry-run` CLI 出力 |
-| [src/db-schema.test.mjs](src/db-schema.test.mjs) | schema v8 の Claude-facing table / field / index 名固定 |
+| [src/db-schema.test.mjs](src/db-schema.test.mjs) | schema v9 の Claude-facing table / field / index 名固定 |
 | [src/auditor-context.test.mjs](src/auditor-context.test.mjs) | Spotter auditor projection の freshness、role 除外、bound、schema / DB 状態、Claude / Codex transcript freshness、read-only WAL 契約 |
 | [src/cli/auditor-context.test.mjs](src/cli/auditor-context.test.mjs) | `auditor-context` JSON-only CLI、freshness source 排他、固定秘匿 error、bin help / dispatch |
 | [src/runtime-error-store.test.mjs](src/runtime-error-store.test.mjs) | collection fail-closed、privacy reject、固定 fingerprint 集約、cursor/ack、resolve/reopen、retention、private mode、atomic write、bounded diagnostics |
@@ -444,7 +273,7 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - L2 → L1 要約は現行実装で唯一の subagent 的 external model call。backend 順序は codex-sidecar (configured 時) → Codex CLI（既定 `gpt-5.6-luna`@`low`、ADR 0015 の実測評価で選定）→ Claude Haiku → raw L2。削減割合は既定 1/5 で `THROUGHLINE_L1_RATIO` により割合形式のまま変更できる。`/tl` の in-flight memo はメイン Claude が slash command 手順で書くため sidecar 移行対象ではない
 - Claude CLI を実際に呼ぶテスト / smoke は、明示的に必要な場合だけ実行し、モデルは Haiku を使う。他モデルを使う必要がある場合は根拠を残してから実行する
 - 現行 install は Throughline 管理 Codex hook の shape を更新する。同じ `throughline codex-hook stop` command が既にあっても、絶対パス型 command / `timeout` / `async` などを [src/cli/install.mjs](src/cli/install.mjs) の生成値に合わせる。旧 `timeoutSec` entry も command identity で除去し、canonical entryへ置換する。
-- **UserPromptSubmit** は二相ハンドオフ第二相 (pending intent 消費 + merge + 予算内注入) + `/tl` または `/clear` バトン書き込み + VSCode tasks.json 自動プロビジョニングの 3 役 (ADR 0014)。Grok `/tl` のあとだけ `throughline grok-continue --session <id>` を副作用で呼ぶ。Claude / Codex と Grok `/clear` では呼ばない。注入がこの hook に移ったため、SessionStart 側の注入は廃止（旧「二重注入回避」制約は消滅）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
+- **UserPromptSubmit** は二相ハンドオフ第二相 (pending intent 消費 + merge + 予算内注入) + `/tl` バトン書き込み + VSCode tasks.json 自動プロビジョニングの3役 (ADR 0014)。`/clear`互換分岐は残るが、組み込み`/clear`は実測したクライアントからこのhookへ届かない。Grok `/tl` のあとだけ `throughline grok-continue --session <id>` を副作用で呼ぶ。Claude / Codex と Grok `/clear` では呼ばない。注入がこの hook に移ったため、SessionStart 側の注入は廃止（旧「二重注入回避」制約は消滅）。tasks.json 作成は SessionStart / Stop にも同じ呼び出しがあり、どれか 1 つでも発火すれば生成される（冪等）
 - **Claude PostToolUse** は登録しない（schema v4 で廃止）。Codex PostToolUse は別用途で、tool loop 中の rollout capture / monitor state write hook として登録する。current-session refresh instruction は注入しない。
 - **PreCompact** は使っていない（自動コンパクト依存の設計を放棄したため）
 - dev 時に spike 系 hook（`spike/hook-logger.mjs` 等）が並行登録されている場合があるが、動作ログ採取用で実害なし
@@ -463,7 +292,7 @@ global install 時は Codex 側も [src/cli/install.mjs](src/cli/install.mjs) �
 - `details` (L3) — `session_id`, `origin_session_id`, `turn_number`, `tool_name`, `input_text`, `output_text`, `token_count`, `created_at`, `kind`, `source_id`
   - `kind`: `'tool_input' | 'tool_output' | 'system' | 'image' | 'thinking'`
   - `source_id`: `tool_use.id` / `attachment.uuid` / `${entry_uuid}:thinking:${idx}` 等の一意キー。`INSERT OR IGNORE` の冪等性を保証
-- `handoff_batons` (v8) — `project_path (PK)`, `session_id`, `created_at` — `/tl` / `/clear` で書き込み、newborn セッションの初回 UserPromptSubmit が「誕生時刻基準 TTL 1h 以内」なら消費して merge。memo_text 列は v8 で drop (memo 廃止)
+- `handoff_batons` (v8) — `project_path (PK)`, `session_id`, `created_at` — 現行利用面では`/tl`で書き込み、newbornセッションの初回UserPromptSubmitが「誕生時刻基準TTL 1h以内」なら消費してmerge。`/clear`互換分岐は現行クライアントから到達しない。memo_text列はv8でdrop (memo廃止)
 - `pending_handoffs` (v9) — `session_id (PK)`, `project_path`, `source`, `auto_predecessor_id`, `created_at` — 二相ハンドオフの intent。SessionStart が登録し、初回 UserPromptSubmit が 1 回だけ消費。幽霊セッションの行は consume されず無害に残る (ADR 0014)
 - `injection_log` — 監査用（未活用）
 
@@ -555,4 +384,5 @@ EOF
 - **設計書と実装が食い違っていたら、どちらかが古い**。まずソースを確認する。ソースが正。設計書を更新する
 - **進捗を docs に残す**。計画書のチェックボックスと CLAUDE.md のステータス行を同時に更新する。README には実装済み behavior だけを載せる
 - **新しい .md ファイルを作る前に、既存ファイルに追記できないか考える**。docs フォルダが肥大化する原因はほぼこれ
-- **破棄された設計は `docs/archive/` に移動**。現行 docs と歴史記述を同じ階層に混在させない
+- **完了した計画・置換済み設計は `docs/archive/` に物理移動**。現行 docs と歴史記述を同じ階層に混在させず、archiveを必読経路へ置かない
+- **同じ意味の現行契約は既存の現行文書へ統合**し、文書の分類と寿命は [docs/00_overview.md](docs/00_overview.md) を正とする

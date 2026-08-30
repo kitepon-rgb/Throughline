@@ -8,13 +8,14 @@ import { dirname, join } from 'node:path';
 import {
   acknowledgeRuntimeErrors,
   compactRuntimeErrors,
-  defaultFactoryReporterConfigPath,
+  defaultRuntimeErrorConfigPath,
   defaultRuntimeErrorStorePath,
   getRuntimeErrorDiagnostics,
   observeRuntimeError,
   readRuntimeErrorSnapshot,
   reopenRuntimeError,
   resolveRuntimeError,
+  setRuntimeErrorCollectionEnabled,
 } from './runtime-error-store.mjs';
 import { applyWindowsPrivateAcl, verifyWindowsPrivateAcl } from './os/windows-acl-test-helper.mjs';
 
@@ -29,18 +30,16 @@ function sandbox() {
     XDG_CONFIG_HOME: join(root, 'config'),
     XDG_STATE_HOME: join(root, 'state'),
   };
-  const configPath = defaultFactoryReporterConfigPath(env);
+  const configPath = defaultRuntimeErrorConfigPath(env);
   const storePath = defaultRuntimeErrorStorePath(env);
   return { root, env, configPath, storePath };
 }
 
-function enableCollection(box, reporting = { enabled: false }) {
+function enableCollection(box) {
   mkdirSync(dirname(box.configPath), { recursive: true });
   writeFileSync(box.configPath, JSON.stringify({
-    schema_version: '1.0',
-    host: { id: 'test-host', profile: process.platform === 'win32' ? 'windows-native' : 'mac' },
+    schema: 'throughline.runtime_error_config.v1',
     collection: { enabled: true },
-    reporting,
   }));
   applyWindowsPrivateAcl(box.configPath);
 }
@@ -49,8 +48,8 @@ test('runtime error store: missing/false/malformed config is fail-closed and cre
   for (const config of [
     null,
     { collection: { enabled: true } },
-    { collection: { enabled: false } },
-    { collection: { enabled: 'true' } },
+    { schema: 'throughline.runtime_error_config.v1', collection: { enabled: false } },
+    { schema: 'throughline.runtime_error_config.v1', collection: { enabled: 'true' } },
     '{malformed',
   ]) {
     const box = sandbox();
@@ -67,20 +66,48 @@ test('runtime error store: missing/false/malformed config is fail-closed and cre
   }
 });
 
-test('runtime error store: Windows native uses the canonical LocalAppData paths', () => {
+test('runtime error store: Windows native uses product-owned LocalAppData paths', () => {
   const env = {
     OS: 'Windows_NT',
     USERPROFILE: 'C:\\Users\\kite_',
     LOCALAPPDATA: 'C:\\Users\\kite_\\AppData\\Local',
   };
   assert.equal(
-    defaultFactoryReporterConfigPath(env),
-    join(env.LOCALAPPDATA, 'dotagents', 'factory-reporter', 'config.json'),
+    defaultRuntimeErrorConfigPath(env),
+    join(env.LOCALAPPDATA, 'throughline', 'runtime-errors.config.json'),
   );
   assert.equal(
     defaultRuntimeErrorStorePath(env),
     join(env.LOCALAPPDATA, 'throughline', 'runtime-errors.json'),
   );
+});
+
+test('runtime error store: product-owned config enables and disables collection', () => {
+  const box = sandbox();
+  assert.deepEqual(setRuntimeErrorCollectionEnabled(true, { env: box.env }), {
+    schema: 'throughline.runtime_error_config.v1',
+    collection: { enabled: true },
+  });
+  assert.equal(observeRuntimeError({ code: 'HOOK_PROCESS_TURN_FAILED' }, { env: box.env }).status, 'recorded');
+  assert.deepEqual(setRuntimeErrorCollectionEnabled(false, { env: box.env }), {
+    schema: 'throughline.runtime_error_config.v1',
+    collection: { enabled: false },
+  });
+  assert.equal(getRuntimeErrorDiagnostics({ env: box.env }).collection, 'disabled');
+});
+
+test('runtime error store: legacy dotagents config cannot control collection', () => {
+  const box = sandbox();
+  const legacyPath = join(box.env.XDG_CONFIG_HOME, 'dotagents', 'factory-reporter.json');
+  mkdirSync(dirname(legacyPath), { recursive: true });
+  writeFileSync(legacyPath, JSON.stringify({
+    schema_version: '1.0',
+    host: { id: 'test-host', profile: 'mac' },
+    collection: { enabled: true },
+    reporting: { enabled: false },
+  }));
+  assert.equal(observeRuntimeError({ code: 'HOOK_PROCESS_TURN_FAILED' }, { env: box.env }).status, 'disabled');
+  assert.throws(() => statSync(box.storePath), { code: 'ENOENT' });
 });
 
 test('runtime error store: one Windows mutation spends ACL processes only on distinct state transitions', (t) => {
@@ -127,20 +154,26 @@ test('runtime error store: Windows temporary ACL failure leaves the previous ato
   assert.deepEqual(readdirSync(dirname(box.storePath)).filter((name) => name.endsWith('.tmp')), []);
 });
 
-test('runtime error store: reporting config and credentials are ignored and no network API is accepted', () => {
+test('runtime error store: factory reporting fields cannot enable product collection', () => {
   const box = sandbox();
-  enableCollection(box, {
-    enabled: true,
-    endpoint: 'https://should-never-be-read.invalid/private',
-    credential_file: process.platform === 'win32' ? 'C:\\private\\token' : '/private/token',
-  });
+  mkdirSync(dirname(box.configPath), { recursive: true });
+  writeFileSync(box.configPath, JSON.stringify({
+    schema_version: '1.0',
+    host: { id: 'test-host', profile: 'mac' },
+    collection: { enabled: true },
+    reporting: {
+      enabled: true,
+      endpoint: 'https://should-never-be-read.invalid/private',
+      credential_file: '/private/token',
+    },
+  }));
+  applyWindowsPrivateAcl(box.configPath);
   const result = observeRuntimeError(
     { code: 'HOOK_PROCESS_TURN_FAILED', now: '2026-07-13T00:00:00.000Z' },
     { env: box.env, version: '0.6.1', platform: TEST_PLATFORM, arch: 'arm64' },
   );
-  assert.equal(result.status, 'recorded');
-  const bytes = readFileSync(box.storePath, 'utf8');
-  assert.doesNotMatch(bytes, /should-never-be-read|private\/token|endpoint|credential/i);
+  assert.equal(result.status, 'disabled');
+  assert.throws(() => statSync(box.storePath), { code: 'ENOENT' });
 });
 
 test('runtime error store: observation API rejects raw or arbitrary fields', () => {
@@ -292,12 +325,6 @@ test('runtime error store: atomic private store has owner-only modes and bounded
     'pending_count', 'schema', 'status', 'total_count',
   ]);
   assert.doesNotMatch(JSON.stringify(diagnostics), /Users|\\|\.throughline|runtime-errors\.json/);
-});
-
-test('runtime error store: non-canonical reporting values keep collection fail-closed', () => {
-  const box = sandbox();
-  enableCollection(box, { enabled: true, endpoint: 'ftp://invalid', credential_file: '' });
-  assert.deepEqual(observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, { env: box.env }), { status: 'disabled' });
 });
 
 test('runtime error store: unknown top-level fields and future ack are rejected before compaction', () => {

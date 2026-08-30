@@ -10,6 +10,26 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.4] — 2026-08-30
+
+### Changed
+
+- Runtime-error collection is now configured and owned by Throughline itself.
+  `throughline runtime-errors enable|disable --json` writes the private,
+  versioned product config under the Throughline config directory. The runtime
+  no longer reads dotagents factory-reporter configuration; factory integration
+  uses the public `runtime-errors ... --json` boundary.
+- Corrected the documented Claude handoff boundary: built-in `/clear` does not
+  reach `UserPromptSubmit`; VS Code uses `SessionStart source='clear'`, while
+  Claude Desktop requires `/tl` before `/clear`.
+- Moved the completed v0.4 auto-handoff plan into `docs/archive/` and replaced
+  the current path with a concise current contract. Fixed Lattice consumers of
+  other archived plans keep small compatibility entrypoints.
+- Product-owned CI now runs `npm run verify:docs` for Markdown-only changes,
+  checking local links, the document/archive indexes, compatibility stubs, and
+  relative link/image closure inside the actual npm tarball file list.
+- The Windows-native product CI path now uses PowerShell 7 exclusively.
+
 ## [0.10.3] — 2026-08-24
 
 ### Added
@@ -472,7 +492,7 @@ are absent and have no effect on the shipped path.
 
 ### Added
 
-- `docs/10_transcript_injection_plan.md`: full Phase 0 plan and
+- `docs/archive/10_transcript_injection_plan.md`: full Phase 0 plan and
   result log for the D / `initialUserMessage` investigation.
 - `rag/`: third-party spec knowledge base (Claude Code hooks
   reference, Anthropic Messages API, sessions docs, openclaude
@@ -1320,31 +1340,32 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.3...HEAD
-[0.10.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.2...v0.10.3
-[0.10.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.1...v0.10.2
-[0.10.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.10.0...v0.10.1
-[0.10.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.9.1...v0.10.0
-[0.9.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.9.0...v0.9.1
-[0.9.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.9...v0.9.0
-[0.8.9]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.8...v0.8.9
-[0.8.8]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.7...v0.8.8
-[0.8.7]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.6...v0.8.7
-[0.8.6]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.5...v0.8.6
-[0.8.5]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.4...v0.8.5
-[0.8.4]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.3...v0.8.4
-[0.8.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.2...v0.8.3
-[0.8.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.1...v0.8.2
-[0.8.1]: https://github.com/kitepon-rgb/Throughline/compare/v0.8.0...v0.8.1
-[0.8.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.3...v0.7.0
-[0.6.3]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.2...v0.6.3
-[0.6.2]: https://github.com/kitepon-rgb/Throughline/compare/v0.6.1...v0.6.2
-[0.3.22]: https://github.com/kitepon-rgb/Throughline/releases/tag/v0.3.22
-[0.3.21]: https://github.com/kitepon-rgb/Throughline/compare/v0.3.19...v0.3.21
-[0.3.20]: https://github.com/kitepon-rgb/Throughline/compare/v0.3.19...v0.3.20
-[0.3.19]: https://github.com/kitepon-rgb/Throughline/releases/tag/v0.3.19
-[0.3.18]: https://github.com/kitepon-rgb/Throughline/releases/tag/v0.3.18
-[0.3.0]: https://github.com/kitepon-rgb/Throughline/releases/tag/v0.3.0
-[0.2.0]: https://github.com/kitepon-rgb/Throughline/releases/tag/v0.2.0
-[0.1.0]: https://github.com/kitepon-rgb/Throughline/compare/v0.1.0
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.4...HEAD
+[0.10.4]: https://github.com/kitepon/Throughline/compare/v0.10.3...v0.10.4
+[0.10.3]: https://github.com/kitepon/Throughline/compare/v0.10.2...v0.10.3
+[0.10.2]: https://github.com/kitepon/Throughline/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/kitepon/Throughline/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/kitepon/Throughline/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/kitepon/Throughline/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/kitepon/Throughline/compare/v0.8.9...v0.9.0
+[0.8.9]: https://github.com/kitepon/Throughline/compare/v0.8.8...v0.8.9
+[0.8.8]: https://github.com/kitepon/Throughline/compare/v0.8.7...v0.8.8
+[0.8.7]: https://github.com/kitepon/Throughline/compare/v0.8.6...v0.8.7
+[0.8.6]: https://github.com/kitepon/Throughline/compare/v0.8.5...v0.8.6
+[0.8.5]: https://github.com/kitepon/Throughline/compare/v0.8.4...v0.8.5
+[0.8.4]: https://github.com/kitepon/Throughline/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/kitepon/Throughline/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/kitepon/Throughline/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/kitepon/Throughline/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/kitepon/Throughline/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/kitepon/Throughline/compare/v0.6.3...v0.7.0
+[0.6.3]: https://github.com/kitepon/Throughline/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/kitepon/Throughline/compare/v0.6.1...v0.6.2
+[0.3.22]: https://github.com/kitepon/Throughline/releases/tag/v0.3.22
+[0.3.21]: https://github.com/kitepon/Throughline/compare/v0.3.19...v0.3.21
+[0.3.20]: https://github.com/kitepon/Throughline/compare/v0.3.19...v0.3.20
+[0.3.19]: https://github.com/kitepon/Throughline/releases/tag/v0.3.19
+[0.3.18]: https://github.com/kitepon/Throughline/releases/tag/v0.3.18
+[0.3.0]: https://github.com/kitepon/Throughline/releases/tag/v0.3.0
+[0.2.0]: https://github.com/kitepon/Throughline/releases/tag/v0.2.0
+[0.1.0]: https://github.com/kitepon/Throughline/compare/v0.1.0

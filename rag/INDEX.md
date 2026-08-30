@@ -56,7 +56,7 @@ Verified via [openclaude source](04-skills/raw/initialUserMessage-investigation.
 
 → Interactive mode (`/clear` シナリオ) では発火しない。我々の問題には使えない。
 
-**2026-05-24 実機確認**: real Claude Code (v2.1.145) で `~/.throughline/initial-user-message-test.flag` を立てて SessionStart hook を JSON 出力モードに切り替え、`hookSpecificOutput.initialUserMessage` に 8 hex tracer 入りメッセージを乗せて `/clear` 後の cleared-me に「過去発話の tracer を message history だけ見て返して」と尋ねた。ラン (2) 13:33 tracer `9220a79c` (session `0979ad20-…`) → モデル応答 **「ない」**。openclaude のソースコメントが real CC でも妥当であることを実機で確認。詳細: [docs/10_transcript_injection_plan.md §6 Phase 0-6](../docs/10_transcript_injection_plan.md#phase-0-6--hookspecificoutputinitialusermessage-経路-spike)
+**2026-05-24 実機確認**: real Claude Code (v2.1.145) で `~/.throughline/initial-user-message-test.flag` を立てて SessionStart hook を JSON 出力モードに切り替え、`hookSpecificOutput.initialUserMessage` に 8 hex tracer 入りメッセージを乗せて `/clear` 後の cleared-me に「過去発話の tracer を message history だけ見て返して」と尋ねた。ラン (2) 13:33 tracer `9220a79c` (session `0979ad20-…`) → モデル応答 **「ない」**。openclaude のソースコメントが real CC でも妥当であることを実機で確認。詳細: [docs/archive/10_transcript_injection_plan.md §6 Phase 0-6](../docs/archive/10_transcript_injection_plan.md#phase-0-6--hookspecificoutputinitialusermessage-経路-spike)
 
 ### Finding 4: Messages API treats all messages[] entries equally
 
@@ -84,7 +84,7 @@ Verified via [openclaude source](04-skills/raw/initialUserMessage-investigation.
 
 ### Finding 8: SessionEnd has a `clear` reason; built-in `/clear` never reaches UserPromptSubmit (2026-07-11)
 
-SessionEnd reason enum: `clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other`、default timeout 1.5s（/clear にも適用）— [session-end-reasons.md](01-hooks/raw/session-end-reasons.md)。実測: ビルトイン /clear はどのクライアントでも UserPromptSubmit に届かない（同一セッション /tl 対照実験 ×2 + VSCode 2.1.207）。VSCode は `source:"clear"` を送るが Desktop 2.1.205 は `source:"startup"`（クライアント実装差・バージョン交絡棄却済み）。→ Desktop の /clear 検知は SessionEnd(reason='clear') が唯一の hook 経路候補（実機検証は [docs/12](../docs/12_desktop_clear_handoff_plan.md) A Phase 1）。
+SessionEnd reason enum: `clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other`、default timeout 1.5s（/clear にも適用）— [session-end-reasons.md](01-hooks/raw/session-end-reasons.md)。実測: ビルトイン /clear はどのクライアントでも UserPromptSubmit に届かない（同一セッション /tl 対照実験 ×2 + VSCode 2.1.207）。VSCode は `source:"clear"` を送るが Desktop 2.1.205 は `source:"startup"`（クライアント実装差・バージョン交絡棄却済み）。→ Desktop の /clear 検知は SessionEnd(reason='clear') が唯一の hook 経路候補（実機検証は [archive docs/12](../docs/archive/12_desktop_clear_handoff_plan.md) A Phase 1）。
 
 ### Finding 9: hook stdout は ~10k 字で persisted-output に file 化、モデル可視は先頭 2KB のみ (2026-07-17)
 

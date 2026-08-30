@@ -5,20 +5,20 @@
 ## この文書の位置づけ
 
 この文書は **これまでの統合実装計画と実装履歴** です。
-2026-05-06 以降の次フェーズ実装順、TODO、進捗チェックは [05_codex_first_roadmap.md](05_codex_first_roadmap.md) を正として扱う。
+2026-05-06 以降の次フェーズ実装順、TODO、進捗チェックは [05_codex_first_roadmap.md](../05_codex_first_roadmap.md) を正として扱う。
 
 元文書:
 
-- [08_codex_dual_support.md](08_codex_dual_support.md)
-- [09_rollback_context_trim_insight.md](09_rollback_context_trim_insight.md)
+- [08_codex_dual_support.md](../08_codex_dual_support.md)
+- [09_rollback_context_trim_insight.md](../09_rollback_context_trim_insight.md)
 
 関係性:
 
 | 文書 | この計画での扱い |
 |---|---|
-| [05_codex_first_roadmap.md](05_codex_first_roadmap.md) | 2026-05-06 以降の次フェーズ計画。Codex primary 実用化を先行し、Codex Rewind 互換を完成させてから Claude 側を詰める |
-| [08_codex_dual_support.md](08_codex_dual_support.md) | Claude / Codex 両対応の architecture brief。主に Phase 1-5 に対応 |
-| [09_rollback_context_trim_insight.md](09_rollback_context_trim_insight.md) | rollback trim の design insight。主に Phase 6-8 に対応 |
+| [05_codex_first_roadmap.md](../05_codex_first_roadmap.md) | 2026-05-06 以降の次フェーズ計画。Codex primary 実用化を先行し、Codex Rewind 互換を完成させてから Claude 側を詰める |
+| [08_codex_dual_support.md](../08_codex_dual_support.md) | Claude / Codex 両対応の architecture brief。主に Phase 1-5 に対応 |
+| [09_rollback_context_trim_insight.md](../09_rollback_context_trim_insight.md) | rollback trim の design insight。主に Phase 6-8 に対応 |
 
 この計画は両者の合流点であり、Claude contract 固定を先行させる。rollback trim は実測 spike を通るまで本線実装にしない。
 
@@ -45,7 +45,7 @@ rollback trim は最終的な理想に近いが、host primitive の実測が必
 - Claude hooks、slash command、transcript parsing、handoff baton、SessionStart resume behavior を Codex 用に置き換えない。
 - Claude-facing field / command / DB semantics を rename しない。
 - Codex 対応は adapter / projection として足す。
-- `thread/rollback` / `thread/inject_items` は live host primitive として実測済み。2026-05-06 incident 後に Codex guarded execute / auto-refresh は一時停止したが、2026-05-08 の controlled rollback model-visible smoke が再現しなかったため、過剰 blocker は解除済み。現在は [06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) を優先し、DB memory を必須にする。rollout/app-server turn-count mismatch は診断と app-server count 由来の rollback `numTurns` 補正に使う。Claude `/rewind` 自動化はまだ有効化しない。
+- `thread/rollback` / `thread/inject_items` は live host primitive として実測済み。2026-05-06 incident 後に Codex guarded execute / auto-refresh は一時停止したが、2026-05-08 の controlled rollback model-visible smoke が再現しなかったため、過剰 blocker は解除済み。現在は [06_codex_trim_rollback_fix_plan.md](../06_codex_trim_rollback_fix_plan.md) を優先し、DB memory を必須にする。rollout/app-server turn-count mismatch は診断と app-server count 由来の rollback `numTurns` 補正に使う。Claude `/rewind` 自動化はまだ有効化しない。
 - fallback や silent recovery で失敗を隠さない。互換モードは条件と理由を明示する。
 
 ## 運用ルール
@@ -370,7 +370,7 @@ Phase 6 result (2026-05-06):
 - `thread/rollback` は persisted thread を直接対象にすると `thread not found` を返す。`thread/resume` で loaded thread にしてから呼ぶ必要がある。
 - 検証 thread `019dfaba-f87e-7f41-a144-d5ca7c6dd7f9` で、1 turn を `thread/rollback { numTurns: 1 }` し、`thread/read includeTurns:true` が 0 turns を返すことを確認した。
 - `thread/inject_items` に raw Responses API item `{ type: "message", role: "developer", content: [{ type: "input_text", text: "..." }] }` を渡し、次の `turn/start` で injected memory が model-visible になることを確認した。marker `TL_PHASE6_INJECT_OK` を正しく返した。
-- その後の Codex primary 実装で、`codex-resume` が描画する active-work developer message も実 Codex host で model-visible になることを確認した。marker `TL_CODEX_VISIBLE_REAL_20260506_C` が `item/agentMessage/delta` に出た。詳細な実測値は [05_codex_first_roadmap.md](05_codex_first_roadmap.md) の Phase 3 result を正とする。
+- その後の Codex primary 実装で、`codex-resume` が描画する active-work developer message も実 Codex host で model-visible になることを確認した。marker `TL_CODEX_VISIBLE_REAL_20260506_C` が `item/agentMessage/delta` に出た。詳細な実測値は [05_codex_first_roadmap.md](../05_codex_first_roadmap.md) の Phase 3 result を正とする。
 - さらに `thread/inject_items` 後にもう一度 `thread/resume` してから `turn/start` を呼ぶ smoke も追加し、実 Codex host で marker `TL_CODEX_RESUME_AFTER_INJECT_REAL_20260506` が `item/agentMessage/delta` に出ることを確認した。
 - Codex host primitive は live app-server 上では実測済み。ただし restart-safe durability は未証明。現在は明示 `--codex-thread-id` または env thread identity と Throughline DB memory が live mutation の最低条件であり、rollout/app-server turn-count mismatch は診断と rollback `numTurns` 補正に使う。durable success は別分類で扱う。2026-05-06 incident 後はいったん Codex Stop hook 後の automatic refresh mutation を blocked としたが、2026-05-08 unblock 後は guarded rollback / inject を試行する。2026-05-09 以降は Codex native auto-compact より先に Throughline refresh を走らせるため、verified usage 75% 以上を既定閾値にする。
 - Claude `/rewind conversation only` は手動 UX として扱う。外部ツールからの自動化 surface は未確認。Claude host の automatic rollback / inject は `manual-only`。

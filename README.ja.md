@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/og.png" alt="Throughline — 環境や境界が変わっても方向と記憶を保って進むクジラの群れ" width="100%">
+  <img src="https://raw.githubusercontent.com/kitepon/Throughline/main/.github/og.png" alt="Throughline — 環境や境界が変わっても方向と記憶を保って進むクジラの群れ" width="100%">
   <br>
   <sub><em>この画像は、環境や境界が変わっても、関係・方向・記憶を失わずに進み続ける連続性を表しています。</em></sub>
 </p>
@@ -9,7 +9,7 @@
 [![npm version](https://img.shields.io/npm/v/throughline.svg?color=cb3837&logo=npm)](https://www.npmjs.com/package/throughline)
 [![license](https://img.shields.io/npm/l/throughline.svg?color=blue)](LICENSE)
 [![node](https://img.shields.io/node/v/throughline.svg?color=339933&logo=node.js&logoColor=white)](https://nodejs.org)
-[![CI](https://github.com/kitepon-rgb/Throughline/actions/workflows/test.yml/badge.svg)](https://github.com/kitepon-rgb/Throughline/actions/workflows/test.yml)
+[![CI](https://github.com/kitepon/Throughline/actions/workflows/test.yml/badge.svg)](https://github.com/kitepon/Throughline/actions/workflows/test.yml)
 
 [English](README.md) · **日本語**
 
@@ -21,9 +21,10 @@
 
 ## 所有境界
 
-本repositoryはdatabase、migration、capture契約、release、diagnosticsを所有します。
-製品横断の導入とhost統合は、kitepon.devの製品開発を支える内部基盤
-[dotagents](https://github.com/kitepon-rgb/dotagents)が担当します。
+本repositoryは導入、設定、状態、schemaとmigration、診断、復旧、更新、release判断を
+所有します。Throughlineは文書化したCLIだけで単独運用でき、工場の制御装置を必要としません。
+[dotagents](https://github.com/kitepon/dotagents)はkitepon.dev開発工場への配線と統合契約を
+担当しますが、Throughlineの状態や製品寿命を所有・制御しません。
 MarkItDownは別区分の第三者CLIです。
 
 ## 30 秒で始める
@@ -34,9 +35,10 @@ throughline install     # hook / Codex skill / VS Code monitor task を登録
 ```
 
 これだけ。Claude Code のセッションを開けば、以後すべてのターンが
-`~/.throughline/throughline.db` に自動で流れていく。50 ターン作業した後、
-`/clear` を打てば新セッションはゼロからではなく、**思考の途中から再開** される。
-`/clear` を経由しない新規 chat / VS Code 再起動では `/tl` で前任を指名できる。
+`~/.throughline/throughline.db` に自動で流れていく。VS Code では `/clear` 後の
+`SessionStart source='clear'` から自動で再開する。Claude Desktop はその source を
+送らないため、`/clear` の前に `/tl` を実行する。新規 chat や再起動でも、前任を
+確定的に指名したいときは境界の前に `/tl` を使う。
 
 Grok Desktop も first-class host である。`throughline install` は
 `~/.grok/hooks/throughline.json` を書く。Grok では `/tl` は今の窓へ注入せず、
@@ -105,8 +107,8 @@ current-thread rollback
 | **境界後に残る記憶** | ✅ 直近ターン本文そのまま (予算内ターン原子詰め) + それ以前は `recall` で pull + L3 オンデマンド | ❌ ゼロ | △ 一個の要約 (情報欠落) | △ 要約 (情報欠落) |
 | **ツール I/O の扱い** | L3 に退避、`/sc-detail HH:MM:SS` で取り戻せる | 消える | 要約に溶けて読めない | 要約に溶ける |
 | **コーディング用途への適合** | 高 — ツール I/O こそ重い 80% | 低 — 文脈が切れる | 中 — ただし不可逆 | 中 |
-| **誤継承リスク** | 低 (typed `/clear` / `/tl` が前任を指名) | n/a | n/a | 高 |
-| **ランタイム依存** | **ゼロ** (Node 22.5+ 同梱の `node:sqlite`) | n/a | n/a | 多数 |
+| **誤継承リスク** | 低 (`/tl` は前任を指名、VS Code `/clear` はtranscriptのある候補を凍結) | n/a | n/a | 高 |
+| **ランタイム依存** | **ゼロ** (Node 22.13+ 同梱の `node:sqlite`) | n/a | n/a | 多数 |
 | **マルチセッション トークン監視** | ✅ 実測 `message.usage` / Codex rollout `token_count` | — | — | — |
 
 **ひとことで**: `/clear` は全部捨てる、`/compact` は全部混ぜる、Throughline は **書いた本文はそのまま残し、ツール出力 (= 80% の重量物) だけ退避** する。
@@ -215,17 +217,18 @@ L3 に保存された `kind` 別 (ツール入力 / ツール出力 / hook 出�
 
 ---
 
-## 引き継ぎ: typed `/clear` / `/tl` が前任を指名、source-`clear` は補助
+## 引き継ぎ: `/tl` はbaton、VS Code `/clear` は `source='clear'`
 
-Throughline 0.4.1+ の引き継ぎは 2 経路です。主経路は typed `/clear` または
-`/tl` が書く baton で、`source='clear'` の auto path は `/clear` が
-UserPromptSubmit hook に届かない場合の補助です。
+引き継ぎは2経路です。`/tl` のbatonは前任をsession idで確定指名します。
+適格なbatonが無い場合だけ、VS Code `/clear` の `SessionStart source='clear'` から
+transcriptのある前任を1件凍結します。消費時はbatonを先に確認します。
 
 ```mermaid
 flowchart LR
-    U["ユーザーが入力<br/>/clear または /tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
+    U["ユーザーが入力<br/>/tl"] -->|UserPromptSubmit| W["writeBaton<br/>(session_id + TTL 1h)"]
     W --> B[("handoff_batons<br/>SQLite")]
-    M["VS Code メニュー<br/>clear"] -->|UserPromptSubmit に届かない| X["baton 無し"]
+    M["VS Code<br/>/clear"] -->|SessionStart source='clear'| X["前任を凍結<br/>baton 無し"]
+    D["Claude Desktop<br/>/clear"] -->|source='startup'| N["自動引継ぎなし<br/>先に /tl"]
     NS["次の SessionStart<br/>(intent 登録のみ)"] --> FP["初回ユーザープロンプト<br/>(実セッションの証明)"]
     FP --> C{"baton<br/>あり?"}
     B -.-> C
@@ -244,14 +247,13 @@ flowchart LR
     class P3,INJ neutral
 ```
 
-### baton path (primary): typed `/clear` または `/tl`
+### baton path: `/tl`
 
-ユーザーが prompt に `/clear` または `/tl` を打つと、UserPromptSubmit hook が
-**そのセッションの** `session_id` を `handoff_batons` に書きます。次の新セッション
+ユーザーが `/tl` を実行すると、UserPromptSubmit hook が**そのセッションの**
+`session_id` を `handoff_batons` に書きます。次の新セッション
 は **初回ユーザープロンプト時** に baton を消費し（適格性: セッション誕生が baton
 書き込みから TTL 1 時間以内）、その前任を確定的に merge します。
-複数ウィンドウで「最新更新セッション」と「今 `/clear` したセッション」が違っても、
-指名された前任だけを引き継ぎます。
+複数ウィンドウでも指名された前任だけを引き継ぎます。
 
 なぜ SessionStart でなく初回プロンプトか: Claude Code は同一 project に数百 ms の
 間隔で複数の SessionStart を発火させることがあり、その一部は transcript を一切
@@ -260,22 +262,25 @@ flowchart LR
 が空で始まる事故が起きます。幽霊はプロンプトを発火しないので、消費を初回
 プロンプトへ遅延させればこの事故は構造的に起きません（二相ハンドオフ、ADR 0014）。
 
-### auto path (fallback): `source='clear'`
+### auto path: VS Code `source='clear'`
 
-baton が無く、SessionStart の `source='clear'` が届いた場合だけ、同 project の
+組み込み `/clear` は、実測したどの Claude Code クライアントでも
+UserPromptSubmit hook に届きません。VS Code は代わりに SessionStart の
+`source='clear'` を送ります。baton が無い場合だけ、同 project の
 最新 Claude predecessor を **SessionStart 時点で** 解決・凍結し（transcript の
-無い幽霊は候補から除外）、merge + 注入は初回プロンプト時に行います。これは
-VS Code 拡張メニューなど、typed `/clear` が UserPromptSubmit hook に届かない
-経路のための補助です。
+無い幽霊は候補から除外）、merge + 注入は初回プロンプト時に行います。
 
-`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` はこの fallback path だけを OFF にします。
-typed `/clear` と `/tl` はユーザーの明示意思なので、この env に関係なく baton を
-書いて引き継ぎます。
+`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` はこのauto pathだけをOFFにし、明示 `/tl` の
+batonは止めません。
+
+Claude Desktop は組み込み `/clear` をUserPromptSubmitへ渡さず、SessionStartでも
+`source='clear'` を送りません。Desktopでは `/clear` の前に `/tl` を実行します。
+対照実測とupstream報告はarchiveの
+[`docs/12_desktop_clear_handoff_plan.md`](docs/archive/12_desktop_clear_handoff_plan.md)にあります。
 
 ```
-typed /clear: Session A → /clear → Session B (A の baton を消費して merge)
-typed /tl:    Session A → /tl    → 新 chat / 再起動 → Session B (A の baton を消費して merge)
-fallback:     baton 無し + source='clear' → latest predecessor を merge
+/tl:      Session A → /tl → (/clear・新chat・再起動) → Session B (Aのbatonを消費)
+VS Code:  baton無し + /clear source='clear' → transcriptのある直近前任をmerge
 ```
 
 ### 注入されるもの
@@ -300,7 +305,8 @@ extended thinking セクションは注入されません。
 各マージ行は `origin_session_id` を保持するので、繰り返し引き継ぐと
 記憶がチェーン状に蓄積します:
 
-```
+```text
+VS Code:
 S1 (4 ターン) --/clear--> S2 (S1 を auto-merge + 3 ターン追加) --/clear--> S3 (S2 を auto-merge + 5 ターン追加)
                           origin=S1×4                                    origin=S1×4, S2×3, S3×5
 ```
@@ -320,10 +326,10 @@ adapter / projection として追加されます。
 backend 順は codex-sidecar（`summarize-l1` preset 明示設定時）→ Codex CLI
 （既定 `gpt-5.6-luna`）→ Claude Haiku です（ADR 0015）。
 
-Codex 側 trim (= same-thread context trim) は `throughline trim --execute --host codex`
-で発火します。Codex の bare `$throughline` skill もこの scripted rollback + DB
-memory inject を直接実行します。Claude 側は `/clear` での auto path 引継ぎが本線になったため、
-`/tl-trim` slash command は v0.4.0 で廃止されました。current-work framing は
+Codex 側 trim (= same-thread context trim) は、診断・実験として明示した場合だけ
+`throughline trim --execute --host codex` で発火します。bare `$throughline` は
+`codex-handoff-start` による新スレッド handoff で、current thread をrollbackしません。
+Claude 側の `/tl-trim` slash command は v0.4.0 で廃止されました。current-work framing は
 再開注入の Reading Contract / Continuation Instruction で同じ意図を
 継承しています。
 
@@ -374,6 +380,10 @@ Throughline state をまだ書いていない現在セッションも表示で�
 | `throughline recall --l2\|--l1 --session <id> --before <ISO> ...` | 注入の案内セクションが指す古い記憶を pull (read-only、正確なコマンドは注入に焼き込み済み) |
 | `throughline doctor` | Node バージョン、hook 登録状況、DB、PATH をチェック |
 | `throughline doctor --trim --host claude` | trim boundary と手動手順を診断 |
+| `throughline runtime-errors enable --json` | Throughline所有のruntime error収集を有効化（既定OFF） |
+| `throughline runtime-errors disable --json` | Throughline所有のruntime error収集を無効化 |
+| `throughline runtime-errors snapshot --json` | boundedなlocal aggregateを読み取る（network I/Oなし） |
+| `throughline runtime-errors diagnostics --json` | collection/store状態をpathやraw errorなしで診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
 | `throughline handoff-context --session <id> --json` | SessionStart と同じ引き継ぎ文脈を versioned JSON で取得。記憶行の `session_id` と `sessions.merged_into` は変更せず、同一端末内の別ベンダーランチャーから使える |
 | `throughline grok-continue --session <id>` | handoff-context を初手 user 文にした対話 Grok 席を立てる。cwd は源の `project_path`。ready でなければ spawn しない。`--rules` なし。macOS Terminal のみ |
@@ -384,6 +394,22 @@ Throughline state をまだ書いていない現在セッションも表示で�
 | `throughline doctor --session <id-prefix>` | 特定セッションの state/transcript ズレを診断 |
 | `throughline status` | DB 統計表示 (sessions / skeletons / bodies / details) |
 | `throughline --version` | インストール済みバージョンを表示 |
+
+### 製品所有のruntime error収集
+
+収集は既定OFFです。Throughline自身のCLIで有効化します。
+
+```bash
+throughline runtime-errors enable --json
+throughline runtime-errors diagnostics --json
+```
+
+設定はmacOS/Linuxでは
+`$XDG_CONFIG_HOME/throughline/runtime-errors.config.json`
+（未設定時`~/.config/throughline/...`）、Windowsでは
+`%LOCALAPPDATA%\throughline\runtime-errors.config.json`です。CLIはprivate権限で
+`throughline.runtime_error_config.v1`を書きます。Throughlineはdotagents設定を読まず、
+工場連携側は公開`runtime-errors ... --json`契約だけを利用します。
 
 ### ローカルlauncher向けread-only handoff context
 
@@ -402,18 +428,19 @@ latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変�
 
 | コマンド | 役割 |
 | --- | --- |
-| `/tl` | 引き継ぎバトンを書き込む (auto path を OFF にしているユーザー / `/clear` 経由しない引継ぎの逃げ道)。Grok ではバトン成功後に `grok-continue` も起動する |
+| `/tl` | 前任を確定指名する引き継ぎバトンを書き込む（新規chat・再起動・Claude Desktopの`/clear`前に使う）。Grokではbaton成功後に`grok-continue`も起動する |
 | `/sc-detail <時刻>` | 過去ターンの L2 本文と L3 ツール I/O を取得 |
 
-> v0.4.0 から auto-handoff がデフォルト ON です。`/clear` だけで新セッションが
-> 「途中から」再開されます。`THROUGHLINE_DISABLE_AUTO_HANDOFF=1` で OFF にできます。
-> `/tl` は OFF 設定下、または `/clear` 経由しない引継ぎ用の明示マーカー。
+> 組み込み `/clear` は実測したクライアントのUserPromptSubmitには届きません。
+> VS Codeは別経路の`source='clear'` auto pathで再開します。Claude Desktopは
+> `/clear`前の`/tl`が必要です。`THROUGHLINE_DISABLE_AUTO_HANDOFF=1`はVS Codeの
+> auto pathだけを止め、`/tl` batonは止めません。
 
 ---
 
 ## 動作要件
 
-- **Node.js 22.5 以上** (組み込み `node:sqlite` モジュール使用、ネイティブビルド不要)
+- **Node.js 22.13 以上** (組み込み `node:sqlite` モジュール使用、ネイティブビルド不要)
 - **Claude Code** (`SessionStart`, `Stop`, `UserPromptSubmit` hooks 対応版)
 - **Codex CLI ログイン**（既定の L1 要約 backend、`gpt-5.6-luna`）または
   **Claude Max サブスクリプション**（`claude -p` 経由の Haiku fallback）— どちらも API キー不要
@@ -426,16 +453,16 @@ latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変�
 ## 設計ドキュメント
 
 - [`docs/01_l1_l2_l3_redesign.md`](docs/01_l1_l2_l3_redesign.md) — L1/L2/L3 差分階層モデルの **設計仕様書** (schema v4 ベース + v5 L3 分類拡張)。記憶階層化ルールの正典
-- [`docs/03_inheritance_on_clear_only.md`](docs/03_inheritance_on_clear_only.md) — `/tl` バトン引き継ぎ方式の設計判断記録 (schema v6–v7)
+- [`docs/02_clear_auto_handoff_plan.md`](docs/02_clear_auto_handoff_plan.md) — 現行の `/clear` / `/tl` handoff契約
 - [`docs/08_codex_dual_support.md`](docs/08_codex_dual_support.md) — Claude 主軸を維持したまま Codex 対応を足すための architecture brief
 - [`docs/09_rollback_context_trim_insight.md`](docs/09_rollback_context_trim_insight.md) — rollback / trim 設計 insight。復元 memory を current work として読ませる制約も記録
 - [`docs/adr/0021-grok-host-capture.md`](docs/adr/0021-grok-host-capture.md) — Grok first-class host と `/tl` → `grok-continue` の現行契約
-- [`docs/plan_grok-successor-launch.md`](docs/plan_grok-successor-launch.md) — Grok 後継席の CLI・初手・非目標・実機受入
-- [`docs/07_codex_trim_implementation_plan.md`](docs/07_codex_trim_implementation_plan.md) — Claude/Codex 両対応と rollback trim の統合 TODO 計画
+- [`docs/adr/0022-cursor-host-capture.md`](docs/adr/0022-cursor-host-capture.md) — Cursor first-class host の現行契約
 - [`docs/04_public_release_plan.md`](docs/04_public_release_plan.md) — 公開配布化プラン、§ 0 フォールバック禁止ルール、バージョン別実装ステータス
-- [`docs/15_windows_ci_release_latency_plan.md`](docs/15_windows_ci_release_latency_plan.md) — Windows CI性能gateとACL契約を維持するrelease工程
+- [`docs/archive/12_desktop_clear_handoff_plan.md`](docs/archive/12_desktop_clear_handoff_plan.md) — Claude Desktopの対照実測・NO-GO判断・backfill受入の履歴
+- [`docs/00_overview.md`](docs/00_overview.md) — current/history/evidenceの地図と文書寿命規則
 - [`CHANGELOG.md`](CHANGELOG.md) — リリース履歴
-- [`docs/archive/`](docs/archive/) — 破棄済み旧設計 (CONCEPT 初期案、session-linking 実験記録など)
+- [`docs/archive/`](docs/archive/) — 完了済み計画と置換済み設計。履歴確認時だけ参照
 
 ---
 

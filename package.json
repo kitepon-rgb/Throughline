@@ -1,6 +1,6 @@
 {
   "name": "throughline",
-    "version": "0.10.3",
+    "version": "0.10.4",
     "type": "module",
     "description": "Persistent memory hooks for Claude Code, Codex, Grok, and Cursor (/clear-safe context compression)",
     "keywords": [
@@ -19,12 +19,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitepon-rgb/Throughline.git"
+    "url": "git+https://github.com/kitepon/Throughline.git"
   },
   "bugs": {
-    "url": "https://github.com/kitepon-rgb/Throughline/issues"
+    "url": "https://github.com/kitepon/Throughline/issues"
   },
-  "homepage": "https://github.com/kitepon-rgb/Throughline#readme",
+  "homepage": "https://github.com/kitepon/Throughline#readme",
   "bin": {
     "throughline": "bin/throughline.mjs"
   },
@@ -42,10 +42,17 @@
   ],
   "scripts": {
     "test": "node --import ./src/test-env.mjs --test scripts/verify-release-commit.test.mjs src/*.test.mjs src/cli/*.test.mjs src/hosts/*.test.mjs",
+    "verify:docs": "node scripts/verify-docs.mjs && node scripts/verify-pack-markdown-links.mjs",
     "verify:release-commit": "node scripts/verify-release-commit.mjs",
     "prepublishOnly": "npm run verify:release-commit && npm test"
   },
   "engines": {
     "node": ">=22.13"
+  },
+  "devDependencies": {
+    "micromark-util-decode-string": "^2.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
   }
 }

@@ -58,6 +58,9 @@ test('CLI help exposes guided Codex handoff and guarded execute semantics', () =
   assert.match(result.stdout, /rollout\/app-server turns/);
   assert.match(result.stdout, /--inspect-risky-rollout/);
   assert.match(result.stdout, /risk-evidence inspection/);
+  assert.match(result.stdout, /automatic refresh is disabled/);
+  assert.doesNotMatch(result.stdout, /at 75%/);
+  assert.match(result.stdout, /throughline runtime-errors enable --json/);
 });
 
 test('CLI help Codex commands are dispatchable', () => {

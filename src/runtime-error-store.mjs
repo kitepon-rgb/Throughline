@@ -22,6 +22,7 @@ const require = createRequire(import.meta.url);
 const PACKAGE_VERSION = require('../package.json').version;
 
 export const RUNTIME_ERROR_STORE_SCHEMA = 'throughline.runtime_errors.v1';
+export const RUNTIME_ERROR_CONFIG_SCHEMA = 'throughline.runtime_error_config.v1';
 export const RUNTIME_ERROR_STATE_SCHEMA_VERSION = '1.0';
 export const RUNTIME_ERROR_DIAGNOSTIC = '[throughline:runtime-errors] store_unavailable\n';
 const DEFAULT_SNAPSHOT_LIMIT = 256;
@@ -53,11 +54,11 @@ const DEFINITIONS = Object.freeze({
   }),
 });
 
-export function defaultFactoryReporterConfigPath(env = process.env) {
+export function defaultRuntimeErrorConfigPath(env = process.env) {
   if (isWindows(env)) {
-    return join(windowsLocalAppData(env), 'dotagents', 'factory-reporter', 'config.json');
+    return join(windowsLocalAppData(env), 'throughline', 'runtime-errors.config.json');
   }
-  return join(xdgConfigHome(env), 'dotagents', 'factory-reporter.json');
+  return join(xdgConfigHome(env), 'throughline', 'runtime-errors.config.json');
 }
 
 export function defaultRuntimeErrorStorePath(env = process.env) {
@@ -69,13 +70,43 @@ export function defaultRuntimeErrorStorePath(env = process.env) {
 
 export function isRuntimeErrorCollectionEnabled({ env = process.env, configPath } = {}) {
   try {
-    const path = configPath || defaultFactoryReporterConfigPath(env);
+    const path = configPath || defaultRuntimeErrorConfigPath(env);
     const info = lstatSync(path);
     if (!info.isFile() || info.isSymbolicLink()) return false;
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
-    return isCanonicalFactoryReporterConfig(parsed) && parsed.collection.enabled === true;
+    return isCanonicalRuntimeErrorConfig(parsed) && parsed.collection.enabled === true;
   } catch {
     return false;
+  }
+}
+
+export function setRuntimeErrorCollectionEnabled(enabled, options = {}) {
+  assertExactOptions(options, ['env', 'configPath']);
+  if (typeof enabled !== 'boolean') throw new TypeError('enabled は boolean が必要です');
+  const env = options.env ?? process.env;
+  const path = options.configPath || defaultRuntimeErrorConfigPath(env);
+  const directory = dirname(path);
+  ensurePrivateStoreDirectory(directory, env);
+  const temporary = join(directory, `.runtime-errors-config.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
+  const config = {
+    schema: RUNTIME_ERROR_CONFIG_SCHEMA,
+    collection: { enabled },
+  };
+  try {
+    writeFileSync(temporary, `${JSON.stringify(config)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    if (isWindows(env)) {
+      applyAndVerifyWindowsAcl(temporary, false);
+      assertPrivateStoreFileShape(lstatSync(temporary));
+    } else {
+      chmodSync(temporary, 0o600);
+      assertPrivateStoreFile(lstatSync(temporary), env, temporary);
+    }
+    renameSync(temporary, path);
+    if (isWindows(env)) assertPrivateStoreFileShape(lstatSync(path));
+    else assertPrivateStoreFile(lstatSync(path), env, path);
+    return config;
+  } finally {
+    rmSync(temporary, { force: true });
   }
 }
 
@@ -410,20 +441,11 @@ function assertPrivateStoreFileShape(info) {
   }
 }
 
-function isCanonicalFactoryReporterConfig(value) {
-  if (!isPlainObject(value) || !exactKeys(value, ['schema_version', 'host', 'collection', 'reporting']) || value.schema_version !== '1.0') return false;
-  if (!isPlainObject(value.host) || !exactKeys(value.host, ['id', 'profile']) ||
-    typeof value.host.id !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(value.host.id) ||
-    !['server', 'mac', 'wsl', 'windows-native'].includes(value.host.profile)) return false;
+function isCanonicalRuntimeErrorConfig(value) {
+  if (!isPlainObject(value) || !exactKeys(value, ['schema', 'collection']) ||
+    value.schema !== RUNTIME_ERROR_CONFIG_SCHEMA) return false;
   if (!isPlainObject(value.collection) || !exactKeys(value.collection, ['enabled']) || typeof value.collection.enabled !== 'boolean') return false;
-  if (!isPlainObject(value.reporting) || !exactKeys(value.reporting, ['enabled', 'endpoint', 'credential_file'], true) || typeof value.reporting.enabled !== 'boolean') return false;
-  if (value.reporting.endpoint !== undefined) {
-    if (typeof value.reporting.endpoint !== 'string' || value.reporting.endpoint.length > 2048) return false;
-    try { if (!['http:', 'https:'].includes(new URL(value.reporting.endpoint).protocol)) return false; } catch { return false; }
-  }
-  if (value.reporting.credential_file !== undefined &&
-    (typeof value.reporting.credential_file !== 'string' || value.reporting.credential_file.length < 1 || value.reporting.credential_file.length > 4096)) return false;
-  return !value.reporting.enabled || (value.reporting.endpoint !== undefined && value.reporting.credential_file !== undefined);
+  return true;
 }
 
 function isPlainObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }

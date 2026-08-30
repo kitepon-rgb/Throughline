@@ -10,7 +10,7 @@
 |---|---|
 | [05_codex_first_roadmap.md](05_codex_first_roadmap.md) | 2026-05-06 以降の次フェーズ計画。Codex primary と Codex Rewind 互換を先行する |
 | [06_codex_trim_rollback_fix_plan.md](06_codex_trim_rollback_fix_plan.md) | 2026-05-06 incident 後の修正計画。2026-05-10 の live token_count 実験後、Codex automatic current-thread mutation は無効化し、通常 `$throughline` は新スレッド handoff に戻す |
-| [07_codex_trim_implementation_plan.md](07_codex_trim_implementation_plan.md) | この気づきと Claude / Codex 両対応計画を統合した旧計画と実装履歴。完了済み根拠として参照する |
+| [archive/07_codex_trim_implementation_plan.md](archive/07_codex_trim_implementation_plan.md) | この気づきと Claude / Codex 両対応計画を統合した旧計画と実装履歴。完了済み根拠として参照する |
 | [08_codex_dual_support.md](08_codex_dual_support.md) | Throughline を Claude primary のまま Codex adapter / sidecar に対応させる architecture brief |
 
 この文書は「rollback は欠けていた delete primitive かもしれない」という洞察を残すもの。実装時は、未検証の host primitive を本線仕様にせず、次フェーズ計画 [05_codex_first_roadmap.md](05_codex_first_roadmap.md) の Codex Rewind 互換 Phase で実測してから本線 UX に進む。

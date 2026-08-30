@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * UserPromptSubmit hook — 二相ハンドオフ第二相 + /tl & /clear バトン書き込み + Phase 0-5 spike
+ * UserPromptSubmit hook — 二相ハンドオフ第二相 + /tl バトン書き込み + Phase 0-5 spike
  *
  * stdin: { session_id, cwd, prompt, transcript_path, hook_event_name, ... }
  *
@@ -13,23 +13,21 @@
  *     注入がこの hook に移ったため、SessionStart 側の注入は廃止済み
  *     (旧「二重注入回避」制約はこの構成では発生しない)。
  *   - prompt が /tl (単独 or /tl ... 形式) で始まっていればバトンを書き込んで終了
- *   - prompt が /clear (単独 or /clear ... 形式) で始まっていれば、現セッションの
- *     session_id をバトンに書き込んで終了。
- *     (これにより SessionStart 側の findLatestClaudePredecessor heuristic に頼らず、
- *      確定的に「/clear が打たれたセッション」を新セッションに引き継げる。複数
- *      VSCode ウィンドウ等で「最新更新セッション = clear されたセッション」が
- *      成立しない multi-window シナリオで誤った前任を選ばないための確定的指名)
+ *   - `/clear` 文字列を受け取った場合の互換バトン分岐は残す。ただし、実測した
+ *     Claude Code の組み込み `/clear` はこの hook に届かない。VS Code は
+ *     SessionStart source='clear' の auto path、Desktop は事前 `/tl` を使う。
  *   - それ以外は何もせず exit 0（プロンプトはそのまま Claude に渡る）
- *   - 本 hook は引き継ぎ注入を行わない (SessionStart の stdout 注入と二重にならないため)
+ *   - pending intent がある最初のプロンプトでは、本 hook が引き継ぎ注入を行う。
  *
  *   - **Phase 0-5 spike (SPIKE ONLY)**: marker file `~/.throughline/spike-prompt.flag`
  *     が存在し、当該セッションでまだ spike を打っていなければ、JSONL に user/assistant
  *     行を chain-reachable (= 直前の attachment uuid を parent に取る) で append する。
  *     SessionStart 経路の spike (chain (a) = orphan) ではモデルに届かなかったため、
  *     UserPromptSubmit 経路で chain (b) を成立させて再検証する。
- *     docs/10_transcript_injection_plan.md Phase 0-5 参照。
+ *     docs/archive/10_transcript_injection_plan.md Phase 0-5 参照。
  *
- * 設計背景: docs/03_inheritance_on_clear_only.md バトン方式
+ * 設計背景: docs/archive/03_inheritance_on_clear_only.md バトン方式
+ * 現行契約: docs/02_clear_auto_handoff_plan.md
  */
 
 import { getDb } from './db.mjs';
