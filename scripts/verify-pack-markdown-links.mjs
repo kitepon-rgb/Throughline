@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +8,7 @@ import {
   markdownLinkTargets,
   relativeMarkdownLinkTargets,
 } from './markdown-link-targets.mjs';
+import { spawnPortableSync } from '../src/os/portable-spawn-sync.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -34,7 +34,7 @@ export function findMissingPackedTargets(packagePath, source, packedFiles) {
 
 function packFileSet() {
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(npmCommand, ['pack', '--dry-run', '--ignore-scripts', '--json'], {
+  const result = spawnPortableSync(npmCommand, ['pack', '--dry-run', '--ignore-scripts', '--json'], {
     cwd: root,
     encoding: 'utf8',
   });
