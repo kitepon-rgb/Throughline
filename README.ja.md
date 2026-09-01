@@ -390,7 +390,7 @@ v0.10.4以前には `self-update` が存在しない。該当版からの初回�
 | `throughline runtime-errors snapshot --json` | boundedなlocal aggregateを読み取る（network I/Oなし） |
 | `throughline runtime-errors diagnostics --json` | collection/store状態をpathやraw errorなしで診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
-| `throughline handoff-context --session <id> --json` | SessionStart と同じ引き継ぎ文脈を versioned JSON で取得。記憶行の `session_id` と `sessions.merged_into` は変更せず、同一端末内の別ベンダーランチャーから使える |
+| `throughline handoff-context --session <id> --json [--supplement-file <path>]` | SessionStartと同じ引き継ぎ文脈を取得。任意のproject束縛済み補足を、長期記憶・知識として同じ9,500字枠へ合成できる |
 | `throughline latest-session --project <absolute-path> --json` | 指定した1プロジェクトだけを対象に直近セッションIDを読み取る。既存DBをread-onlyで開き、記録がなければ`empty`を返す |
 | `throughline grok-continue --session <id>` | handoff-context を初手 user 文にした対話 Grok 席を立てる。cwd は源の `project_path`。ready でなければ spawn しない。`--rules` なし。macOS Terminal のみ |
 | `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
@@ -426,7 +426,10 @@ throughline handoff-context --session codex:<thread-id> --json
 ```
 
 成功時の`throughline.handoff_context.v1`は`schema`、`status`、`sessionId`、`context`だけを返す。
-`context`はSessionStartと同じ予算付き継承文脈で、DB作成・migration・baton消費・session merge・
+`context`はSessionStartと同じ予算付き継承文脈である。任意の`--supplement-file <path>`には
+`throughline.handoff_supplement.v1`、源sessionと同じ`projectPath`、`title`と`content`からなる
+`sections`を指定する。補足は会話記憶と同じ9,500字枠へ入り、別projectの補足は拒否する。
+DB作成・migration・baton消費・session merge・
 latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変更は行わない。AItermは任意の
 別harness portable forkでこの境界を使う。Observer feedはcompleted-turn projectionであり代替ではない。
 

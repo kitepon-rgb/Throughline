@@ -1,36 +1,96 @@
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
-import { buildBudgetedResumeContext } from '../resume-context.mjs';
+import { sameProjectPath } from '../project-path.mjs';
+import {
+  buildBudgetedResumeContext,
+  INJECTION_BUDGET_CHARS,
+} from '../resume-context.mjs';
 
 export const HANDOFF_CONTEXT_SCHEMA = 'throughline.handoff_context.v1';
+export const HANDOFF_SUPPLEMENT_SCHEMA = 'throughline.handoff_supplement.v1';
 
 export function parseArgs(argv = []) {
-  if (
-    argv.length !== 3 ||
+  const baseArgsInvalid =
+    (argv.length !== 3 && argv.length !== 5) ||
     argv[0] !== '--session' ||
     typeof argv[1] !== 'string' ||
     argv[1].length === 0 ||
-    argv[2] !== '--json'
-  ) {
+    argv[2] !== '--json';
+  const supplementArgsValid = argv.length === 3 || (
+    argv[3] === '--supplement-file' &&
+    typeof argv[4] === 'string' &&
+    argv[4].length > 0
+  );
+  if (baseArgsInvalid || !supplementArgsValid) {
     throw new TypeError('usage error');
   }
-  return { sessionId: argv[1] };
+  return {
+    sessionId: argv[1],
+    supplementFile: argv.length === 5 ? argv[4] : null,
+  };
+}
+
+export function renderHandoffSupplement(value, projectPath) {
+  if (
+    value?.schema !== HANDOFF_SUPPLEMENT_SCHEMA ||
+    !isAbsolute(value.projectPath) ||
+    !sameProjectPath(value.projectPath, projectPath) ||
+    !Array.isArray(value.sections) ||
+    value.sections.length === 0
+  ) {
+    throw new TypeError('invalid handoff supplement');
+  }
+
+  const sections = value.sections.map((section) => {
+    if (
+      typeof section?.title !== 'string' || section.title.length === 0 ||
+      typeof section?.content !== 'string' || section.content.length === 0
+    ) {
+      throw new TypeError('invalid handoff supplement section');
+    }
+    return `### ${section.title}\n${section.content}`;
+  });
+  return ['## このBotの長期記憶と関連知識', ...sections].join('\n\n');
 }
 
 export function readHandoffContext(sessionId, {
   dbPath = join(homedir(), '.throughline', 'throughline.db'),
+  supplementFile = null,
 } = {}) {
   if (!existsSync(dbPath)) return null;
 
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    return buildBudgetedResumeContext(db, {
+    let supplementContext = null;
+    if (supplementFile) {
+      const row = db.prepare(
+        'SELECT project_path FROM sessions WHERE session_id = ?',
+      ).get(sessionId);
+      if (!row?.project_path) return null;
+      supplementContext = renderHandoffSupplement(
+        JSON.parse(readFileSync(supplementFile, 'utf8')),
+        row.project_path,
+      );
+    }
+
+    const separator = supplementContext ? '\n\n' : '';
+    const context = buildBudgetedResumeContext(db, {
       sessionId,
       isInheritance: true,
+      maxChars: INJECTION_BUDGET_CHARS - (supplementContext?.length ?? 0) - separator.length,
     })?.text ?? null;
+    if (!context) return null;
+
+    const combined = supplementContext
+      ? `${supplementContext}${separator}${context}`
+      : context;
+    if (combined.length > INJECTION_BUDGET_CHARS) {
+      throw new RangeError('handoff context exceeds injection budget');
+    }
+    return combined;
   } finally {
     db.close();
   }
@@ -61,16 +121,19 @@ export function run(argv = [], {
   readContext = readHandoffContext,
 } = {}) {
   let sessionId;
+  let supplementFile;
   try {
-    ({ sessionId } = parseArgs(argv));
+    ({ sessionId, supplementFile } = parseArgs(argv));
   } catch {
-    stderr.write('Usage: throughline handoff-context --session <id> --json\n');
+    stderr.write(
+      'Usage: throughline handoff-context --session <id> --json [--supplement-file <path>]\n',
+    );
     return 2;
   }
 
   let context;
   try {
-    context = readContext(sessionId);
+    context = readContext(sessionId, { supplementFile });
   } catch {
     stderr.write('Throughline handoff context could not be read.\n');
     return 1;

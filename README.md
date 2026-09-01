@@ -817,7 +817,7 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.7.** Throughline supports Claude Code, Codex,
+**The current release is v0.10.8.** Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,
@@ -855,7 +855,7 @@ once with `npm install --global throughline@latest`, then run
 | `throughline runtime-errors reopen <fingerprint> --json` | Explicitly reopen a resolved aggregate without fabricating a new occurrence |
 | `throughline runtime-errors compact --json`    | Remove only acknowledged, resolved aggregates after retention; open or unacknowledged records remain |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
-| `throughline handoff-context --session <id> --json` | Print the exact SessionStart inheritance context as versioned JSON without moving memory rows or changing `sessions.merged_into`; intended for local launchers that need portable cross-harness context |
+| `throughline handoff-context --session <id> --json [--supplement-file <path>]` | Print the SessionStart inheritance context without moving memory rows; an optional project-bound supplement adds long-term memory and knowledge inside the same 9,500-character budget |
 | `throughline latest-session --project <absolute-path> --json` | Read the latest session id strictly scoped to one project; opens the existing database read-only and returns `empty` when the project has no captured session |
 | `throughline grok-continue --session <id>` | Spawn a person-facing Grok seat whose first user text is the handoff-context body. cwd is the source session `project_path`. Does not spawn without ready context. No `--rules`. macOS Terminal only |
 | `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
@@ -909,7 +909,22 @@ throughline handoff-context --session codex:<thread-id> --json
 
 The successful `throughline.handoff_context.v1` object contains only `schema`,
 `status`, `sessionId`, and `context`. The context is the same budgeted
-inheritance text used by SessionStart. The command does not create or migrate a
+inheritance text used by SessionStart. A launcher may append
+`--supplement-file <path>` with a `throughline.handoff_supplement.v1` JSON object:
+
+```json
+{
+  "schema": "throughline.handoff_supplement.v1",
+  "projectPath": "/absolute/bot/project",
+  "sections": [
+    { "title": "Long-term memory", "content": "..." },
+    { "title": "Relevant knowledge", "content": "..." }
+  ]
+}
+```
+
+The supplement is included only when `projectPath` matches the source session
+and shares the 9,500-character budget with conversation memory. The command does not create or migrate a
 database, consume a baton, merge sessions, infer a latest session, change
 `sessions.merged_into`, or reassign L1/L2/L3 rows. AIterm uses this boundary for
 its optional cross-harness portable fork; the Observer feed is a separate

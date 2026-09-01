@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
-import { buildBudgetedResumeContext } from '../resume-context.mjs';
-import { readSessionProjectPath } from './handoff-context.mjs';
+import { buildBudgetedResumeContext, INJECTION_BUDGET_CHARS } from '../resume-context.mjs';
+import { parseArgs, readSessionProjectPath } from './handoff-context.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'bin/throughline.mjs');
@@ -130,6 +130,80 @@ test('handoff-context emits the exact inheritance context without changing DB ow
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('handoff-context adds a project-bound supplement inside the shared budget', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-supplement-'));
+  try {
+    const { db, dbPath } = createFixture(home);
+    const before = ownershipSnapshot(db);
+    db.close();
+    const supplementFile = join(home, 'supplement.json');
+    writeFileSync(supplementFile, JSON.stringify({
+      schema: 'throughline.handoff_supplement.v1',
+      projectPath: '/work/project',
+      sections: [
+        { title: '長期記憶', content: 'オーナーとの約束を大切にしている' },
+        { title: '関連知識', content: 'BellTeamではBotごとにprojectを分離する' },
+      ],
+    }));
+
+    const result = runCli(home, [
+      'handoff-context', '--session', SESSION_ID, '--json',
+      '--supplement-file', supplementFile,
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const context = JSON.parse(result.stdout).context;
+    assert.match(context, /このBotの長期記憶と関連知識/);
+    assert.match(context, /オーナーとの約束を大切にしている/);
+    assert.match(context, /BellTeamではBotごとにprojectを分離する/);
+    assert.match(context, /所有権を変えずに記憶を渡して/);
+    assert.ok(context.indexOf('長期記憶') < context.indexOf('直前の対話'));
+    assert.ok(context.length <= INJECTION_BUDGET_CHARS);
+
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    assert.deepEqual(ownershipSnapshot(verify), before);
+    verify.close();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('handoff-context refuses a supplement from another bot project', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-supplement-scope-'));
+  try {
+    const { db } = createFixture(home);
+    db.close();
+    const supplementFile = join(home, 'supplement.json');
+    writeFileSync(supplementFile, JSON.stringify({
+      schema: 'throughline.handoff_supplement.v1',
+      projectPath: '/work/other-bot',
+      sections: [{ title: '長期記憶', content: 'B_PRIVATE_MEMORY' }],
+    }));
+
+    const result = runCli(home, [
+      'handoff-context', '--session', SESSION_ID, '--json',
+      '--supplement-file', supplementFile,
+    ]);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout, /B_PRIVATE_MEMORY/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('handoff-context accepts only the documented supplement argument shape', () => {
+  assert.deepEqual(parseArgs(['--session', 's', '--json']), {
+    sessionId: 's',
+    supplementFile: null,
+  });
+  assert.deepEqual(parseArgs([
+    '--session', 's', '--json', '--supplement-file', '/tmp/memory.json',
+  ]), {
+    sessionId: 's',
+    supplementFile: '/tmp/memory.json',
+  });
+  assert.throws(() => parseArgs(['--session', 's', '--supplement-file', '/tmp/memory.json', '--json']));
 });
 
 test('readSessionProjectPath returns the source session project', () => {

@@ -11,7 +11,7 @@ release判定まで完結する。dotagentsは工場への配線と統合契約�
 状態や製品寿命を所有・制御しない。runtime-error collectionはThroughline自身の
 `runtime-errors enable|disable --json`と製品所有configが管理し、工場側は公開JSON契約だけを使う。
 
-**現行版は v0.10.7（schema v9）**。Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。現行host契約はREADMEとADR 0021／0022、release gateはdocs/04_public_release_plan.mdを正とする。版ごとの変更・公開commit・CI・npm・tag・smoke履歴はCHANGELOG.mdとdocs/archive/, evidence/に置き、この常時読込正本へ複製しない。
+**現行版は v0.10.8（schema v9）**。Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。現行host契約はREADMEとADR 0021／0022、release gateはdocs/04_public_release_plan.mdを正とする。版ごとの変更・公開commit・CI・npm・tag・smoke履歴はCHANGELOG.mdとdocs/archive/, evidence/に置き、この常時読込正本へ複製しない。
 
 **設計の核** (v0.4.0 以降 + ADR 0014 二相化、docs/02_clear_auto_handoff_plan.md)
 
@@ -135,7 +135,7 @@ release判定まで完結する。dotagentsは工場への配線と統合契約�
 | [src/cli/doctor.mjs](src/cli/doctor.mjs) | `doctor` — 環境チェック。`doctor --session <id-prefix>` で特定セッションの state/transcript 整合性を診断。`doctor --trim --host claude|codex|unknown` で trim host boundary を診断し、Codex では host primitive audit status も表示する。`doctor --codex` で Codex primary の thread env / rollout candidates / captured DB sessions / context refresh memory source と `/tl` memory contract、new-thread handoff / safe continuation status、host primitive audit、VSCode monitor task の登録状態 / Reload Window note を診断 |
 | [src/cli/status.mjs](src/cli/status.mjs) | `status` — DB 統計表示 |
 | [src/cli/handoff-preview.mjs](src/cli/handoff-preview.mjs) | `handoff-preview` — sidecar 実行なしで `throughline_handoff` JSON projection を stdout に出す。`--session <id>` / `--host-mode claude-primary|codex-primary|unknown` |
-| [src/cli/handoff-context.mjs](src/cli/handoff-context.mjs) | `handoff-context --session <id> --json` — 既存DBをread-onlyで開き、SessionStartと同じ9,500字予算のinheritance contextをversioned JSONで返す。DB作成・migration・merge・baton・既定session解決は行わない |
+| [src/cli/handoff-context.mjs](src/cli/handoff-context.mjs) | `handoff-context --session <id> --json [--supplement-file <path>]` — 既存DBをread-onlyで開き、SessionStartと同じ9,500字予算のinheritance contextをversioned JSONで返す。任意の補足JSONは源sessionと同じprojectだけを長期記憶・知識として合成する。DB作成・migration・merge・baton・既定session解決は行わない |
 | [src/cli/grok-continue.mjs](src/cli/grok-continue.mjs) | `grok-continue --session <id>` — handoff-context を初手 user 文にして、源セッションの `project_path` で macOS Terminal の対話 `grok` を立てる。context / project_path 失敗では spawn しない。末尾は待機。`--rules` なし |
 | [src/cli/auditor-context.mjs](src/cli/auditor-context.mjs) | `auditor-context` — Spotter 専用・JSON-only の read-only projection。`--session` / `--project` と、explicit pair identity/hash または `--host claude\|codex --transcript` を受ける（排他）。`fresh` だけに L2 body を含め、`empty` / `stale` / `session_mismatch` / `unavailable` / `schema_mismatch` は空 turns を返す。DB は create/migrate/write しない |
 | [src/cli/observer-read.mjs](src/cli/observer-read.mjs) | `observer-read` — existing absolute project向けJSON-only completed-turn page。opaque cursorを受け、snapshot / delta / thread・host switch、`resync_required`、`projection_pending`を返す |
@@ -326,7 +326,7 @@ node bin/throughline.mjs status
 node bin/throughline.mjs handoff-preview --session <id>
 
 # Portable cross-harness handoff context (read-only, ownership unchanged)
-node bin/throughline.mjs handoff-context --session <id> --json
+node bin/throughline.mjs handoff-context --session <id> --json [--supplement-file <path>]
 node bin/throughline.mjs grok-continue --session grok:<id>
 
 # Codex primary active-work context

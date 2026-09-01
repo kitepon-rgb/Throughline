@@ -10,6 +10,14 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.8] — 2026-09-01
+
+### Added
+
+- `handoff-context`へ任意の`--supplement-file`を追加した。補足JSONは元sessionの
+  `project_path`と一致する場合だけ、長期記憶・RAGとして既存の9,500字枠へ合成する。
+  DBの所有権と既存の補足なし出力は変えない。
+
 ## [0.10.7] — 2026-09-01
 
 ### Added
@@ -1379,7 +1387,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.7...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.8...HEAD
+[0.10.8]: https://github.com/kitepon/Throughline/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/kitepon/Throughline/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/kitepon/Throughline/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/kitepon/Throughline/compare/v0.10.4...v0.10.5
