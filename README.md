@@ -817,7 +817,7 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.11.** Throughline supports Claude Code, Codex,
+**The current release is v0.10.12.** Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,

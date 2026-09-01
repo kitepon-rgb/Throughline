@@ -24,15 +24,16 @@ test('Markdown-only CI runs the product-owned documentation contract', () => {
   );
   assert.match(
     workflow,
-    /documentation-command:\s+npm install --ignore-scripts --no-package-lock --no-audit --no-fund && npm run verify:docs/,
+    /documentation-command:\s+npm run verify:docs/,
   );
   assert.doesNotMatch(workflow, /documentation-command:\s*(?:["']{2})?\s*$/m);
 
   const reusable = readFileSync(new URL('../.github/workflows/product-full-ci.yml', import.meta.url), 'utf8');
-  assert.match(reusable, /setup documentation Node[\s\S]*actions\/setup-node@[0-9a-f]{40}[\s\S]*node-version:\s*22/);
+  assert.match(reusable, /name: documentation dependency install/);
+  assert.match(reusable, /scripts\/product-ci-plan\.mjs verify/);
   assert.ok(
-    reusable.indexOf('setup documentation Node') < reusable.indexOf('- name: documentation check'),
-    'documentation Node must be configured before dependency installation and verification',
+    reusable.indexOf('documentation dependency install') < reusable.indexOf('- name: documentation check'),
+    'documentation dependencies must be installed before verification',
   );
 
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';

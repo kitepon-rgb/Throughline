@@ -10,6 +10,13 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.12] — 2026-09-01
+
+### Changed
+
+- 変更した実装の依存関係から必要なテストと工場環境を選び、依存を確定できない変更だけ全件へ広げ、選択jobのskip・cancel・failureを最終gateで拒否する製品所有CIへ更新した。
+- 文書だけの変更はLinuxの文書検査だけを実行し、共通・未分類の製品変更は従来どおり3環境で検証する。
+
 ## [0.10.11] — 2026-09-01
 
 ### Fixed
@@ -1414,7 +1421,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.11...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.12...HEAD
+[0.10.12]: https://github.com/kitepon/Throughline/compare/v0.10.11...v0.10.12
 [0.10.11]: https://github.com/kitepon/Throughline/compare/v0.10.10...v0.10.11
 [0.10.10]: https://github.com/kitepon/Throughline/compare/v0.10.9...v0.10.10
 [0.10.9]: https://github.com/kitepon/Throughline/compare/v0.10.8...v0.10.9
