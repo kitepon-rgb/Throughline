@@ -10,6 +10,15 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.6] — 2026-09-01
+
+### Fixed
+
+- Document the one-time official npm bootstrap required when upgrading from
+  v0.10.4 or earlier, whose CLI predates `throughline self-update`. Once the
+  current CLI is installed, all later updates continue through the single
+  `throughline self-update` entry.
+
 ## [0.10.5] — 2026-09-01
 
 ### Added
@@ -1361,7 +1370,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.5...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.6...HEAD
+[0.10.6]: https://github.com/kitepon/Throughline/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/kitepon/Throughline/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/kitepon/Throughline/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/kitepon/Throughline/compare/v0.10.2...v0.10.3

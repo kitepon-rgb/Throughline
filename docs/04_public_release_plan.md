@@ -6,7 +6,7 @@
 
 ## 現行状態
 
-- release candidateのpackage版は `0.10.5`。tagとnpmの公開確認はpublish後に行う。
+- release candidateのpackage版は `0.10.6`。tagとnpmの公開確認はpublish後に行う。
 - Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。
 - 現行DB schemaはv9。schemaの正本は [src/db.mjs](../src/db.mjs) の
   `CURRENT_VERSION`、二相handoffの判断は
@@ -29,6 +29,10 @@ Throughline は次の入口を自分で所有し、dotagentsが無くても利�
 | 復旧 | READMEのTroubleshootingと、診断が返す明示的な修復手順 |
 | 更新 | `throughline self-update`。公式package更新、更新先global rootと公開PATHが同じ新CLI・versionを指すことの確認、host配線の再適用、既存DB migration、公開diagnosticsの`ready`確認までを一回で行う |
 | 削除 | `throughline uninstall`。Throughline管理面だけを除去する |
+
+v0.10.4以前からの初回更新だけは、その版に `self-update` が無いため
+`npm install --global throughline@latest` の後に `throughline self-update` を実行する。
+v0.10.5以降は `throughline self-update` だけを公開更新入口とする。
 | release判断 | この文書のrelease gateと `scripts/verify-release-commit.mjs` |
 
 dotagentsは工場への配線と統合結果を所有するが、ThroughlineのDB、schema、migration、

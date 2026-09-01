@@ -817,7 +817,7 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.5.** Throughline supports Claude Code, Codex,
+**The current release is v0.10.6.** Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,
@@ -830,6 +830,10 @@ under the same explicit-failure and local-only contracts.
 | `throughline install --project`                | Register Claude hooks/slash commands in this repo only       |
 | `throughline self-update [--json]`             | Update the official npm package, verify that public PATH resolves to that new CLI/version, reapply product-owned integrations, migrate an existing database, and verify public diagnostics in one call |
 | `throughline uninstall`                        | Remove Throughline-managed Claude hooks/slash commands, only the Throughline-managed Codex hook, and the `$throughline` Codex skill |
+
+Versions before v0.10.5 do not contain `self-update`. Upgrade those versions
+once with `npm install --global throughline@latest`, then run
+`throughline self-update`. Later updates use `throughline self-update` alone.
 | `throughline monitor [--all] [--session <id>]` | Run the multi-session token monitor                          |
 | `throughline monitor --diag`                   | Dump TTY/columns/env diagnostics (for debugging monitor render bugs) |
 | `throughline detail <time>`                    | Retrieve L2 body text and L3 tool I/O for a turn (see below) |

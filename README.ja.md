@@ -375,6 +375,10 @@ Throughline state をまだ書いていない現在セッションも表示で�
 | `throughline install --project` | 現リポジトリの `.claude/settings.json` だけに hook を登録 |
 | `throughline self-update [--json]` | 公式npm package更新、公開PATHがその新CLI・versionを指すことの確認、製品所有連携の再適用、既存DB migration、公開diagnosticsの確認までを一回で実行 |
 | `throughline uninstall` | hook を削除 |
+
+v0.10.4以前には `self-update` が存在しない。該当版からの初回だけ
+`npm install --global throughline@latest` を実行し、続けて
+`throughline self-update` を実行する。以後の更新は `throughline self-update` だけで完結する。
 | `throughline monitor` | マルチセッション監視を起動 |
 | `throughline monitor --diag` | TTY/columns/env 診断ダンプ (描画バグ切り分け用) |
 | `throughline detail <時刻>` | あるターンの L2 本文と L3 ツール I/O を取得 (Claude が使う) |
