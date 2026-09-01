@@ -13,6 +13,8 @@
  * SessionStart 時に凍結した transcript-backed predecessor からだけ発火する。
  */
 
+import { sameProjectPath } from './project-path.mjs';
+
 const MAX_CHAIN_DEPTH = 10;
 
 /**
@@ -63,7 +65,7 @@ export function resolveMergeTarget(db, sessionId) {
  *   merged: boolean,
  *   predecessorId?: string,
  *   rowCounts?: { sk: number, dt: number, bd: number },
- *   skipReason?: 'self_handoff' | 'predecessor_not_found' | 'already_merged' | 'predecessor_not_older',
+ *   skipReason?: 'self_handoff' | 'predecessor_not_found' | 'already_merged' | 'project_mismatch' | 'predecessor_not_older',
  * }}
  */
 export function mergeSpecificPredecessor(db, { newSessionId, predecessorId, now = Date.now() }) {
@@ -74,7 +76,7 @@ export function mergeSpecificPredecessor(db, { newSessionId, predecessorId, now 
   db.exec('BEGIN IMMEDIATE');
   try {
     const pred = db
-      .prepare('SELECT session_id, created_at, merged_into FROM sessions WHERE session_id = ?')
+      .prepare('SELECT session_id, project_path, created_at, merged_into FROM sessions WHERE session_id = ?')
       .get(predecessorId);
 
     if (!pred) {
@@ -87,8 +89,13 @@ export function mergeSpecificPredecessor(db, { newSessionId, predecessorId, now 
     }
 
     const self = db
-      .prepare('SELECT created_at FROM sessions WHERE session_id = ?')
+      .prepare('SELECT project_path, created_at FROM sessions WHERE session_id = ?')
       .get(newSessionId);
+
+    if (self && !sameProjectPath(pred.project_path, self.project_path)) {
+      db.exec('COMMIT');
+      return { merged: false, skipReason: 'project_mismatch' };
+    }
 
     // 時系列単調制約: 前任は新セッションより created_at が古いこと。
     // バトンが自分より新しい session を指していたら（異常データ）merge しない。

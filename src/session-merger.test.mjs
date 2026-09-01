@@ -151,6 +151,33 @@ test('mergeSpecificPredecessor: predecessor already merged into third session', 
   assert.equal(result.skipReason, 'already_merged');
 });
 
+test('mergeSpecificPredecessor: refuses to move memory across projects', () => {
+  const db = makeDb();
+  insertSession(db, 'bot-a-old', 100, null, '/bots/bot-a');
+  insertSession(db, 'bot-b-new', 200, null, '/bots/bot-b');
+  db.prepare(
+    `INSERT INTO bodies
+       (session_id, origin_session_id, turn_number, role, text, created_at)
+     VALUES ('bot-a-old', 'bot-a-old', 1, 'user', 'A_PRIVATE_MEMORY', 100)`,
+  ).run();
+
+  const result = mergeSpecificPredecessor(db, {
+    newSessionId: 'bot-b-new',
+    predecessorId: 'bot-a-old',
+    now: 200,
+  });
+
+  assert.deepEqual(result, { merged: false, skipReason: 'project_mismatch' });
+  assert.equal(
+    db.prepare('SELECT session_id FROM bodies WHERE text = ?').get('A_PRIVATE_MEMORY').session_id,
+    'bot-a-old',
+  );
+  assert.equal(
+    db.prepare('SELECT merged_into FROM sessions WHERE session_id = ?').get('bot-a-old').merged_into,
+    null,
+  );
+});
+
 test('mergeSpecificPredecessor: refuses predecessor with created_at >= self', () => {
   const db = makeDb();
   insertSession(db, 'new', 100);

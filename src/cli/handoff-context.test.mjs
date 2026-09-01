@@ -144,6 +144,42 @@ test('readSessionProjectPath returns the source session project', () => {
   }
 });
 
+test('handoff-context excludes another bot project from every memory layer', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-context-project-scope-'));
+  try {
+    const { db } = createFixture(home);
+    db.prepare(
+      `INSERT INTO sessions
+         (session_id, project_path, status, created_at, updated_at, merged_into)
+       VALUES ('bot-b-session', '/work/other-bot', 'active', 1, 4, NULL)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO skeletons
+         (session_id, origin_session_id, turn_number, role, summary, created_at)
+       VALUES ('bot-b-session', 'bot-b-session', 1, 'assistant', 'B_PRIVATE_L1', 1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO bodies
+         (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES ('bot-b-session', 'bot-b-session', 2, 'user', 'B_PRIVATE_L2', 4, 2)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO details
+         (session_id, origin_session_id, turn_number, tool_name, output_text, created_at, kind, source_id)
+       VALUES ('bot-b-session', 'bot-b-session', 2, 'B_PRIVATE_L3', 'B_PRIVATE_DETAIL', 3, 'tool_output', 'bot-b-detail')`,
+    ).run();
+    db.close();
+
+    const result = runCli(home);
+    assert.equal(result.status, 0, result.stderr);
+    const context = JSON.parse(result.stdout).context;
+    assert.doesNotMatch(context, /B_PRIVATE_L1|B_PRIVATE_L2|B_PRIVATE_L3|B_PRIVATE_DETAIL/);
+    assert.match(context, /所有権を変えずに記憶を渡して/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('handoff-context fails without creating a missing database', () => {
   const home = mkdtempSync(join(tmpdir(), 'tl-handoff-context-missing-'));
   try {

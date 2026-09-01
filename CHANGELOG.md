@@ -10,6 +10,8 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.5] — 2026-09-01
+
 ### Added
 
 - `throughline self-update` now owns the complete product update path: official
@@ -21,6 +23,13 @@ shipped to npm but were not individually tagged on GitHub.
   errors, and uses `npm.cmd` through PowerShell 7 on Windows. It also refuses a
   mixed-prefix update when the public `throughline` on PATH does not resolve to
   the newly installed CLI and version.
+
+### Fixed
+
+- Session inheritance now refuses to reassign L1/L2/L3 memory when the named
+  predecessor and successor belong to different projects. Project-scoped
+  predecessor discovery already filtered candidates, but the final merge
+  state transition did not enforce the same ownership invariant itself.
 
 ## [0.10.4] — 2026-08-30
 
