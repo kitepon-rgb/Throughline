@@ -17,6 +17,8 @@ shipped to npm but were not individually tagged on GitHub.
 - `handoff-context --supplement-file`は、capture済みsessionに会話本文がまだ無い場合でも、
   同じprojectに束縛された補足記憶だけを9,500字予算内で返す。Cursorの初回Workspace
   Trust直後など、session行だけが先に作られたBotも記憶付きで再起動できる。
+- Windowsの子プロセスとowner-only ACL処理を、工場標準のPowerShell 7へ統一した。
+  製品CIも現行の3環境（macOS・Linux workstation・Windows native）を直接検証する。
 
 ## [0.10.8] — 2026-09-01
 

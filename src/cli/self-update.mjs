@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, win32 } from 'node:path';
+import { dirname, join, posix, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { spawnPortableSync } from '../os/portable-spawn-sync.mjs';
@@ -94,7 +94,7 @@ export function resolveGlobalCliPath(result, platform = process.platform) {
   if (!succeeded(result) || typeof result.stdout !== 'string') return null;
   const lines = result.stdout.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
   if (lines.length !== 1) return null;
-  const path = platform === 'win32' ? win32 : { isAbsolute, join };
+  const path = platform === 'win32' ? win32 : posix;
   if (!path.isAbsolute(lines[0])) return null;
   return path.join(lines[0], 'throughline', 'bin', 'throughline.mjs');
 }
@@ -110,7 +110,7 @@ export function validateSelfUpdateIdentity(value, {
   if (Object.keys(value).sort().join('\0') !== exact.sort().join('\0')) return false;
   if (value.schema !== SELF_UPDATE_IDENTITY_SCHEMA || value.version !== version ||
     typeof value.cliPath !== 'string') return false;
-  const path = platform === 'win32' ? win32 : { isAbsolute };
+  const path = platform === 'win32' ? win32 : posix;
   if (!path.isAbsolute(value.cliPath) || !path.isAbsolute(cliPath ?? '')) return false;
   try {
     const actual = canonicalizePath(value.cliPath);

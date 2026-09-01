@@ -118,6 +118,7 @@ test('self-update delegates post-install work to the newly installed CLI', () =>
     env: { PATH: '/fixture/bin' },
     runner,
     packageVersion: '0.10.4',
+    platform: 'linux',
     nodePath: '/node',
     cliPath: '/old-throughline.mjs',
     canonicalizePath: fakeCanonicalizePath,
@@ -160,6 +161,7 @@ test('new CLI completes install, migration, and diagnostics in order', () => {
     },
     runner,
     packageVersion: '0.10.5',
+    platform: 'linux',
     nodePath: '/node',
     cliPath: '/throughline.mjs',
   }), 0);
@@ -257,6 +259,7 @@ test('old CLI help with exit 0 cannot satisfy the post-install protocol', () => 
     stderr: sink(),
     runner,
     packageVersion: '0.10.4',
+    platform: 'linux',
     nodePath: '/node',
     canonicalizePath: fakeCanonicalizePath,
   }), 1);
@@ -293,6 +296,7 @@ test('post-install non-JSON failure preserves child stderr as the cause', () => 
     stderr,
     runner,
     packageVersion: '0.10.4',
+    platform: 'linux',
     nodePath: '/node',
     canonicalizePath: fakeCanonicalizePath,
   }), 1);
@@ -330,6 +334,7 @@ test('post-install structured failure preserves its stage and stderr', () => {
     stderr,
     runner,
     packageVersion: '0.10.4',
+    platform: 'linux',
     nodePath: '/node',
     canonicalizePath: fakeCanonicalizePath,
   }), 7);

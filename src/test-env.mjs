@@ -15,8 +15,9 @@ process.env.NODE_NO_WARNINGS = '1';
 // app-server fixtures.  Run their .mjs bodies with this test runner's Node
 // executable, preserving the command arguments the production code sends.
 import childProcess from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import { basename, dirname, extname, join } from 'node:path';
 
 const { spawn: nativeSpawn, spawnSync: nativeSpawnSync } = childProcess;
 
@@ -25,6 +26,16 @@ function normalizeNodeFixture(command, args = []) {
     return [command, args];
   }
   if (command.endsWith('.mjs')) return [process.execPath, [command, ...args]];
+  const extension = extname(command).toLowerCase();
+  if (extension === '.cmd' || extension === '.bat') {
+    const sibling = join(dirname(command), `${basename(command, extension)}.ps1`);
+    if (existsSync(sibling)) {
+      return ['pwsh.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', sibling, ...args]];
+    }
+  }
+  if (extension === '.ps1') {
+    return ['pwsh.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', command, ...args]];
+  }
   try {
     const header = readFileSync(command, 'utf8').slice(0, 128);
     if (/^#!.*\bnode(?:\.exe)?\b/.test(header)) return [process.execPath, [command, ...args]];

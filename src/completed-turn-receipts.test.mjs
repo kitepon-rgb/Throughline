@@ -148,7 +148,7 @@ test('completed turn receipt: one Windows mutation spends ACL processes only on 
   try {
     writeCompletedTurnReceipt(input(1), options);
     assert.equal(calls.length, 3, 'new directory, lock, and store each require one apply+verify process');
-    assert.ok(calls.every((call) => call.command === 'powershell.exe'));
+    assert.ok(calls.every((call) => call.command === 'pwsh.exe'));
     calls.length = 0;
 
     writeCompletedTurnReceipt(input(2), options);

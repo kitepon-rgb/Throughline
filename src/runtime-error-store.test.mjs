@@ -123,7 +123,7 @@ test('runtime error store: one Windows mutation spends ACL processes only on dis
 
   assert.equal(observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, options).status, 'recorded');
   assert.equal(calls.length, 3, 'new directory, lock, and store each require one apply+verify process');
-  assert.ok(calls.every((call) => call.command === 'powershell.exe'));
+  assert.ok(calls.every((call) => call.command === 'pwsh.exe'));
   calls.length = 0;
 
   assert.equal(observeRuntimeError({ code: 'HOOK_CODEX_FAILED' }, options).status, 'recorded');

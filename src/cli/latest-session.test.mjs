@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
@@ -49,7 +49,7 @@ test('readyとemptyをJSONで返す', () => {
   assert.deepEqual(JSON.parse(stdout.read()), {
     schema: 'throughline.latest_session.v1',
     status: 'ready',
-    projectPath: '/bots/a',
+    projectPath: resolve('/bots/a'),
     sessionId: 'claude:abc',
     updatedAt: 'now',
   });

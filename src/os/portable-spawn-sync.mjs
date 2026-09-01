@@ -43,7 +43,7 @@ export function spawnPortableSync(command, args, options = {}) {
     return spawnSync(process.execPath, [resolved, ...args], spawnOptions);
   }
   if (extension === '.ps1') {
-    return spawnSync('powershell.exe', [
+    return spawnSync('pwsh.exe', [
       '-NoLogo',
       '-NoProfile',
       '-NonInteractive',

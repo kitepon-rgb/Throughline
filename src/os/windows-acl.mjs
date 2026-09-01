@@ -33,7 +33,7 @@ export function verifyWindowsAcl(path, directory) {
 }
 
 function runWindowsAclScript(path, directory, script) {
-  const result = childProcess.spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+  const result = childProcess.spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     env: { ...process.env, THROUGHLINE_ACL_PATH: path, THROUGHLINE_ACL_DIRECTORY: directory ? '1' : '0' },
     stdio: 'ignore', timeout: WINDOWS_ACL_TIMEOUT_MS, windowsHide: true,
   });

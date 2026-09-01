@@ -18,7 +18,7 @@ $rule=New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullCo
 $acl.AddAccessRule($rule)
 if($isDir){[System.IO.Directory]::SetAccessControl($target,$acl)}else{[System.IO.File]::SetAccessControl($target,$acl)}
 `;
-  const result = spawnSync('powershell.exe', [
+  const result = spawnSync('pwsh.exe', [
     '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script,
   ], {
     encoding: 'utf8',
@@ -47,7 +47,7 @@ if($rules.Count -ne 1){exit 42}
 $rule=$rules[0]
 if($rule.IdentityReference.Value -ne $sid -or $rule.AccessControlType -ne 'Allow' -or $rule.IsInherited -or ($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl){exit 43}
 `;
-  const result = spawnSync('powershell.exe', [
+  const result = spawnSync('pwsh.exe', [
     '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script,
   ], {
     encoding: 'utf8',
