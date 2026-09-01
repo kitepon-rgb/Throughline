@@ -11,7 +11,7 @@ release判定まで完結する。dotagentsは工場への配線と統合契約�
 状態や製品寿命を所有・制御しない。runtime-error collectionはThroughline自身の
 `runtime-errors enable|disable --json`と製品所有configが管理し、工場側は公開JSON契約だけを使う。
 
-**現行版は v0.10.4（schema v9）**。Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。現行host契約はREADMEとADR 0021／0022、release gateはdocs/04_public_release_plan.mdを正とする。版ごとの変更・公開commit・CI・npm・tag・smoke履歴はCHANGELOG.mdとdocs/archive/, evidence/に置き、この常時読込正本へ複製しない。
+**現行版は v0.10.5（schema v9）**。Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。現行host契約はREADMEとADR 0021／0022、release gateはdocs/04_public_release_plan.mdを正とする。版ごとの変更・公開commit・CI・npm・tag・smoke履歴はCHANGELOG.mdとdocs/archive/, evidence/に置き、この常時読込正本へ複製しない。
 
 **設計の核** (v0.4.0 以降 + ADR 0014 二相化、docs/02_clear_auto_handoff_plan.md)
 
