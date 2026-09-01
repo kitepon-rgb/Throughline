@@ -106,21 +106,20 @@ export function parseCodexRolloutFile(
     }
 
     if (row?.type === 'response_item') {
-      const responseUserMessage = responseItemToUserMessage(payload, row.timestamp);
-      if (responseUserMessage) {
+      const responseMessage = responseItemToConversationMessage(payload, row.timestamp);
+      if (responseMessage?.role === 'user') {
         if (stats.rollbackEvents > 0) {
           stats.userMessagesAfterRollback++;
         }
         notePotentialResurrectedUserMessage({
-          message: responseUserMessage,
+          message: responseMessage,
           compactedReplacementUserTexts,
           rolledBackUserTexts,
           resurrectedUserTexts,
           stats,
         });
       }
-      const injectedMessage = responseItemToMemoryMessage(payload, row.timestamp);
-      if (injectedMessage) {
+      if (responseMessage?.role === 'developer') {
         stats.injectedDeveloperMessages++;
       }
       const detail = responseItemToDetail(payload, row.timestamp, toolNameByCallId);
@@ -142,6 +141,24 @@ export function parseCodexRolloutFile(
           postRollbackTurn.details.push(detail);
         } else {
           pendingDetails.push(detail);
+        }
+      }
+      if (responseMessage && responseMessage.role !== 'developer') {
+        if (openTurn) {
+          appendUniqueMessage(openTurn.messages, responseMessage);
+        } else if (afterRollback && responseMessage.role === 'assistant') {
+          if (!postRollbackTurn) {
+            postRollbackTurn = {
+              number: `rollout-${stats.parsedRows}`,
+              messages: [],
+              details: [],
+              completedAt: null,
+            };
+            activeTurns.push(postRollbackTurn);
+          }
+          appendUniqueMessage(postRollbackTurn.messages, responseMessage);
+        } else {
+          appendUniqueMessage(pendingMessages, responseMessage);
         }
       }
       continue;
@@ -226,7 +243,7 @@ export function parseCodexRolloutFile(
     }
 
     if (openTurn) {
-      openTurn.messages.push(message);
+      appendUniqueMessage(openTurn.messages, message);
     } else if (afterRollback && message.role === 'assistant') {
       if (!postRollbackTurn) {
         postRollbackTurn = {
@@ -237,9 +254,9 @@ export function parseCodexRolloutFile(
         };
         activeTurns.push(postRollbackTurn);
       }
-      postRollbackTurn.messages.push(message);
+      appendUniqueMessage(postRollbackTurn.messages, message);
     } else {
-      pendingMessages.push(message);
+      appendUniqueMessage(pendingMessages, message);
     }
   }
 
@@ -490,27 +507,22 @@ function eventPayloadToMemoryMessage(payload, timestamp) {
   return null;
 }
 
-function responseItemToMemoryMessage(payload, timestamp) {
-  if (payload?.type !== 'message' || payload.role !== 'developer') return null;
+function responseItemToConversationMessage(payload, timestamp) {
+  if (payload?.type !== 'message' || !['user', 'assistant', 'developer'].includes(payload.role)) return null;
   const text = normalizeMessageText(messageContentToText(payload.content));
-  if (!isThroughlineInjectedDeveloperMemory(text)) return null;
   if (!text) return null;
+  if (payload.role === 'developer' && !isThroughlineInjectedDeveloperMemory(text)) return null;
+  if (payload.role === 'user' && shouldSkipUserMessage(text)) return null;
   return {
     time: timestamp ?? null,
-    role: 'developer',
+    role: payload.role,
     text,
   };
 }
 
-function responseItemToUserMessage(payload, timestamp) {
-  if (payload?.type !== 'message' || payload.role !== 'user') return null;
-  const text = normalizeMessageText(messageContentToText(payload.content));
-  if (!text || shouldSkipUserMessage(text)) return null;
-  return {
-    time: timestamp ?? null,
-    role: 'user',
-    text,
-  };
+function appendUniqueMessage(messages, message) {
+  if (messages.some((item) => item.role === message.role && item.text === message.text)) return;
+  messages.push(message);
 }
 
 function isThroughlineInjectedDeveloperMemory(text) {

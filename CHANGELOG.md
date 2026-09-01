@@ -10,6 +10,13 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.11] — 2026-09-01
+
+### Fixed
+
+- Codex 0.151以降が会話本文を`response_item`だけに記録するrolloutでも、userとassistantの
+  発言をL2へ取り込む。旧`event_msg`が併記されるrolloutでは同じ発言を二重保存しない。
+
 ## [0.10.10] — 2026-09-01
 
 ### Fixed
@@ -1407,7 +1414,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.10...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.11...HEAD
+[0.10.11]: https://github.com/kitepon/Throughline/compare/v0.10.10...v0.10.11
 [0.10.10]: https://github.com/kitepon/Throughline/compare/v0.10.9...v0.10.10
 [0.10.9]: https://github.com/kitepon/Throughline/compare/v0.10.8...v0.10.9
 [0.10.8]: https://github.com/kitepon/Throughline/compare/v0.10.7...v0.10.8

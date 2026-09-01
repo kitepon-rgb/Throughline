@@ -248,6 +248,69 @@ test('captureCodexRolloutToDb: rebuilds namespaced Codex session from active rol
   }
 });
 
+test('captureCodexRolloutToDb: Codex 0.151 response_item会話を取り込み旧event_msgとの重複を除く', () => {
+  const db = makeDb();
+  const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'tl-codex-project-'));
+  const threadId = '019dfaba-f87e-7f41-a144-d5ca7c6dd7f9';
+  try {
+    writeRollout(home, {
+      id: threadId,
+      cwd: project,
+      events: [
+        event('task_started'),
+        responseItem({
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'current request' }],
+        }),
+        responseItem({
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'current answer' }],
+        }),
+        event('task_complete'),
+        event('user_message', { message: 'dual request' }),
+        event('task_started'),
+        responseItem({
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'dual request' }],
+        }),
+        event('agent_message', { message: 'dual answer' }),
+        responseItem({
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'dual answer' }],
+        }),
+        event('task_complete'),
+      ],
+    });
+
+    const result = captureCodexRolloutToDb(db, {
+      threadId,
+      codexHome: home,
+      projectPath: project,
+      now: 1234,
+    });
+
+    assert.equal(result.capturedTurns, 2);
+    assert.equal(result.capturedRows, 4);
+    assert.deepEqual(
+      db.prepare('SELECT turn_number, role, text FROM bodies ORDER BY id').all().map((row) => ({ ...row })),
+      [
+        { turn_number: 1, role: 'user', text: 'current request' },
+        { turn_number: 1, role: 'assistant', text: 'current answer' },
+        { turn_number: 2, role: 'user', text: 'dual request' },
+        { turn_number: 2, role: 'assistant', text: 'dual answer' },
+      ],
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
 test('captureCodexRolloutToDb: second capture removes stale rows from previous active tail', () => {
   const db = makeDb();
   const home = mkdtempSync(join(tmpdir(), 'tl-codex-home-'));
