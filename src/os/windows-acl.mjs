@@ -42,7 +42,7 @@ function runWindowsAclScript(path, directory, script) {
 
 const WINDOWS_ACL_VERIFY_SCRIPT = String.raw`
 $p=$env:THROUGHLINE_ACL_PATH; $isDir=$env:THROUGHLINE_ACL_DIRECTORY -eq '1'; $sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$acl=if($isDir){[System.IO.Directory]::GetAccessControl($p)}else{[System.IO.File]::GetAccessControl($p)}
+$acl=Get-Acl -LiteralPath $p
 $owner=$acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
 if($owner -ne $sid){exit 41}; $rules=@($acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])); if($rules.Count -ne 1){exit 42}
 $r=$rules[0]; if($r.IdentityReference.Value -ne $sid -or $r.AccessControlType -ne 'Allow' -or $r.IsInherited -or ($r.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl){exit 43}
@@ -53,5 +53,5 @@ $p=$env:THROUGHLINE_ACL_PATH; $sid=[System.Security.Principal.WindowsIdentity]::
 $isDir=$env:THROUGHLINE_ACL_DIRECTORY -eq '1'; $acl=if($isDir){New-Object System.Security.AccessControl.DirectorySecurity}else{New-Object System.Security.AccessControl.FileSecurity}; $acl.SetAccessRuleProtection($true,$false)
 $flags=if($isDir){[System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'}else{[System.Security.AccessControl.InheritanceFlags]::None}
 $rule=New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl',$flags,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow)
-$acl.SetOwner($sid); $acl.AddAccessRule($rule); if($isDir){[System.IO.Directory]::SetAccessControl($p,$acl)}else{[System.IO.File]::SetAccessControl($p,$acl)}
+$acl.SetOwner($sid); $acl.AddAccessRule($rule); Set-Acl -LiteralPath $p -AclObject $acl
 ` + WINDOWS_ACL_VERIFY_SCRIPT;

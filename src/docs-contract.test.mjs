@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +7,7 @@ import {
   extractMarkdownTargets,
   findMissingPackedTargets,
 } from '../scripts/verify-pack-markdown-links.mjs';
+import { spawnPortableSync } from './os/portable-spawn-sync.mjs';
 
 test('Markdown-only CI runs the product-owned documentation contract', () => {
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -36,7 +36,7 @@ test('Markdown-only CI runs the product-owned documentation contract', () => {
   );
 
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(npmCommand, ['run', 'verify:docs', '--silent'], {
+  const result = spawnPortableSync(npmCommand, ['run', 'verify:docs', '--silent'], {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     encoding: 'utf8',
   });
