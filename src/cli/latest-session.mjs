@@ -1,8 +1,8 @@
-import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { openReadOnlyDb } from '../db.mjs';
 import { sameProjectPath } from '../project-path.mjs';
 
 export const LATEST_SESSION_SCHEMA = 'throughline.latest_session.v1';
@@ -25,7 +25,7 @@ export function findLatestSession(projectPath, {
 } = {}) {
   if (!existsSync(dbPath)) return null;
 
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+  const db = openReadOnlyDb(dbPath);
   try {
     const rows = db.prepare(
       `SELECT session_id, project_path, updated_at

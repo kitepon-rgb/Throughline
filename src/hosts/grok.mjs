@@ -1,10 +1,10 @@
 /**
  * hosts/grok.mjs — Grok host 境界 (envelope 正規化 + hook adapter)
  *
- * Grok sends Claude-compatible hook commands with a camelCase wire
- * (sessionId, hookEventName) and no session_id. Throughline treats that
- * envelope as host=grok: normalize to the Claude snake_case contract and
- * prefix session ids so they never mix with Claude predecessor search.
+ * Grok sends Claude-compatible hook commands and may expose both camelCase
+ * and snake_case aliases. The reserved GROK_* hook environment binds the
+ * host; Throughline normalizes either wire to the Claude snake_case contract
+ * and prefixes session ids so they never mix with other host identities.
  *
  * Grok 固有の挙動 (v0.10.0 / ADR 0021):
  *   - UserPromptSubmit stdout はモデルへ渡らないため、引き継ぎ注入は
@@ -30,8 +30,7 @@ export function isGrokEnvelope(payload) {
     && typeof payload.sessionId === 'string'
     && payload.sessionId.length > 0
     && typeof payload.hookEventName === 'string'
-    && payload.hookEventName.length > 0
-    && !Object.hasOwn(payload, 'session_id');
+    && payload.hookEventName.length > 0;
 }
 
 export function deriveGrokChatHistoryPath(projectPath, sessionId, { home = homedir() } = {}) {
@@ -40,21 +39,23 @@ export function deriveGrokChatHistoryPath(projectPath, sessionId, { home = homed
   return join(home, '.grok', 'sessions', encodeURIComponent(projectPath), bare, 'chat_history.jsonl');
 }
 
-export function normalizeGrokHookPayload(payload, { home = homedir() } = {}) {
-  if (!isGrokEnvelope(payload)) return payload;
+export function normalizeGrokHookPayload(payload, { home = homedir(), force = false, env = {} } = {}) {
+  if (!force && !isGrokEnvelope(payload)) return payload;
+  const rawSessionId = payload.sessionId ?? payload.session_id ?? env.GROK_SESSION_ID;
+  const hookEventName = payload.hookEventName ?? payload.hook_event_name ?? env.GROK_HOOK_EVENT;
   const cwd = typeof payload.cwd === 'string' && payload.cwd.length > 0
     ? payload.cwd
-    : (typeof payload.workspaceRoot === 'string' ? payload.workspaceRoot : undefined);
+    : (typeof payload.workspaceRoot === 'string' ? payload.workspaceRoot : env.GROK_WORKSPACE_ROOT);
   // Live Grok Stop sets transcriptPath to updates.jsonl (sessionUpdate frames,
   // no user/assistant rows). L2 lives in chat_history.jsonl only.
-  const transcriptPath = deriveGrokChatHistoryPath(cwd, payload.sessionId, { home });
+  const transcriptPath = deriveGrokChatHistoryPath(cwd, rawSessionId, { home });
   return {
     ...payload,
-    session_id: `${GROK_SESSION_PREFIX}${payload.sessionId}`,
+    session_id: `${GROK_SESSION_PREFIX}${rawSessionId}`,
     cwd,
     source: payload.source,
     prompt: payload.prompt,
-    hook_event_name: payload.hookEventName,
+    hook_event_name: hookEventName,
     transcript_path: transcriptPath,
     last_assistant_message: payload.lastAssistantMessage,
   };

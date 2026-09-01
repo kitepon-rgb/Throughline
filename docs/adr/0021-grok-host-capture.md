@@ -14,8 +14,10 @@ Grok stores turns in `~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/cha
 
 ## Decision
 
-- Detect the camelCase envelope (`sessionId` + `hookEventName`, no `session_id`) as host=grok.
-- Normalize it to the existing snake_case hook contract and prefix ids with `grok:`.
+- Grokの予約環境変数（`GROK_HOOK_EVENT` / `GROK_SESSION_ID`）をhost境界とする。
+- camelCase (`sessionId` / `hookEventName`) とsnake_case (`session_id` /
+  `hook_event_name`) のどちらも既存hook契約へ正規化し、idへ`grok:`を付ける。
+  Grok 1.0.13のように両方が同居してもCursorとして分類しない。
 - Read L2 from Grok `chat_history.jsonl`. Do not invent a Claude-shaped transcript.
 - Grok host ignores payload `transcriptPath`. Live Stop sends `updates.jsonl`, which has no user/assistant rows.
 - Install product hooks at `~/.grok/hooks/throughline.json`. Do not write factory.json.

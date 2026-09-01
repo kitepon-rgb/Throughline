@@ -1,9 +1,9 @@
-import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 
 import { sameProjectPath } from '../project-path.mjs';
+import { openReadOnlyDb } from '../db.mjs';
 import {
   buildBudgetedResumeContext,
   INJECTION_BUDGET_CHARS,
@@ -62,7 +62,7 @@ export function readHandoffContext(sessionId, {
 } = {}) {
   if (!existsSync(dbPath)) return null;
 
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+  const db = openReadOnlyDb(dbPath);
   try {
     let supplementContext = null;
     if (supplementFile) {
@@ -101,7 +101,7 @@ export function readSessionProjectPath(sessionId, {
 } = {}) {
   if (!existsSync(dbPath)) return null;
 
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+  const db = openReadOnlyDb(dbPath);
   try {
     const row = db.prepare(
       'SELECT project_path FROM sessions WHERE session_id = ?',

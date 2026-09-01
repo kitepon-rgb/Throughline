@@ -9,10 +9,21 @@ import { join } from 'path';
 
 const DB_DIR = join(homedir(), '.throughline');
 const DB_PATH = join(DB_DIR, 'throughline.db');
-const DB_BUSY_TIMEOUT_MS = 5_000;
+export const DB_BUSY_TIMEOUT_MS = 5_000;
 export const CURRENT_VERSION = 9;
 
 let _db = null;
+
+export function openReadOnlyDb(path = DB_PATH) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    db.exec(`PRAGMA busy_timeout = ${DB_BUSY_TIMEOUT_MS}`);
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
 
 function initSchema(db) {
   const row = db.prepare('PRAGMA user_version').get();

@@ -19,10 +19,47 @@ test('isGrokEnvelope detects camelCase wire without session_id', () => {
   );
   assert.equal(
     isGrokEnvelope({
+      sessionId: '01a00aa2-dead-beef',
+      session_id: '01a00aa2-dead-beef',
+      hookEventName: 'stop',
+      hook_event_name: 'stop',
+    }),
+    true,
+  );
+  assert.equal(
+    isGrokEnvelope({
       session_id: 'claude-session',
       hook_event_name: 'SessionStart',
     }),
     false,
+  );
+});
+
+test('Grok予約環境がsnake_case payloadをCursorではなくGrokへ固定する', () => {
+  const home = '/tmp/tl-home';
+  const cwd = '/srv/bellteam/bots/bot-a6fbf921';
+  const sessionId = '15e10cc9-ba86-4056-874b-0d1724b1bed3';
+  const payload = normalizeHookPayload(
+    {
+      session_id: sessionId,
+      hook_event_name: 'stop',
+      cwd,
+      last_assistant_message: 'done',
+    },
+    {
+      home,
+      env: {
+        GROK_HOOK_EVENT: 'stop',
+        GROK_SESSION_ID: sessionId,
+        GROK_WORKSPACE_ROOT: cwd,
+      },
+    },
+  );
+  assert.equal(payload.session_id, `grok:${sessionId}`);
+  assert.equal(payload.hook_event_name, 'stop');
+  assert.equal(
+    payload.transcript_path,
+    join(home, '.grok', 'sessions', encodeURIComponent(cwd), sessionId, 'chat_history.jsonl'),
   );
 });
 

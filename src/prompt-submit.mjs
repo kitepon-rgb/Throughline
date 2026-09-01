@@ -152,7 +152,7 @@ export async function run() {
     process.stdin.on('end', resolve);
   });
 
-  const payload = normalizeHookPayload(JSON.parse(raw));
+  const payload = normalizeHookPayload(JSON.parse(raw), { env: process.env });
   const { session_id, cwd, prompt } = payload;
   const hostAdapter = hostAdapterForSessionId(session_id);
 

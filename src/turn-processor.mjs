@@ -191,7 +191,7 @@ export async function run() {
     process.stdin.on('end', resolve);
   });
 
-  const payload = normalizeHookPayload(JSON.parse(raw || '{}'));
+  const payload = normalizeHookPayload(JSON.parse(raw || '{}'), { env: process.env });
   const { session_id, transcript_path, cwd, last_assistant_message } = payload;
   if (!session_id) throw new Error('Missing session_id in Stop payload');
 

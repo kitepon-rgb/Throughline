@@ -6,7 +6,7 @@
 
 ## 現行状態
 
-- release candidateのpackage版は `0.10.9`。tagとnpmの公開確認はpublish後に行う。
+- release candidateのpackage版は `0.10.10`。tagとnpmの公開確認はpublish後に行う。
 - Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。
 - 現行DB schemaはv9。schemaの正本は [src/db.mjs](../src/db.mjs) の
   `CURRENT_VERSION`、二相handoffの判断は
@@ -77,6 +77,7 @@ publish済みでも、上の確認が終わるまではrelease完了としない
 - Codex: UserPromptSubmit / PostToolUse / Stop hook、feature flags、`$throughline` skill。
   絶対Node + installed CLI pathを使う。
 - Grok: `~/.grok/hooks/throughline.json`と`grok-continue`。絶対pathを使う。
+  Grok予約環境変数でhostを確定し、camelCase／snake_caseの属性名を同じ境界で正規化する。
 - Cursor: `~/.cursor/hooks.json`へsessionStart / beforeSubmitPrompt / stopをupsertし、
   既存hookを保持する。注入は`additional_context`を使う。
 

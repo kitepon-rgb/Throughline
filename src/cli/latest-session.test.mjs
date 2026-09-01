@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -34,6 +36,38 @@ test('同じprojectの最新sessionだけを返す', () => {
     assert.equal(findLatestSession(join(root, 'bot'), { dbPath }).session_id, 'same-new');
     assert.equal(findLatestSession(join(root, 'missing'), { dbPath }), null);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('別hook processの短いwriter lockを待って同じprojectを読む', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'throughline-latest-session-lock-'));
+  const dbPath = join(root, 'throughline.db');
+  const project = join(root, 'bot');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA journal_mode=DELETE; CREATE TABLE sessions (session_id TEXT, project_path TEXT, updated_at TEXT)');
+  db.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run('same', project, '2026-09-01T02:00:00Z');
+  db.close();
+
+  const holder = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { DatabaseSync } from 'node:sqlite';
+    const db = new DatabaseSync(process.argv[1]);
+    db.exec('BEGIN EXCLUSIVE');
+    process.stdout.write('locked\\n');
+    setTimeout(() => { db.exec('COMMIT'); db.close(); }, 200);
+  `, dbPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const holderExit = once(holder, 'exit');
+  await new Promise((resolve, reject) => {
+    holder.stdout.once('data', resolve);
+    holder.once('error', reject);
+  });
+
+  try {
+    assert.equal(findLatestSession(project, { dbPath }).session_id, 'same');
+    const [code] = await holderExit;
+    assert.equal(code, 0);
+  } finally {
+    if (holder.exitCode === null) holder.kill();
     rmSync(root, { recursive: true, force: true });
   }
 });

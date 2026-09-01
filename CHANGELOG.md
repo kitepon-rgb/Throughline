@@ -10,6 +10,16 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.10] — 2026-09-01
+
+### Fixed
+
+- Grok 1.0.13がcamelCaseとsnake_caseのhook属性を同時に送る場合でも、Grokの
+  予約環境変数をhost境界として`grok:` sessionへ正規化する。Stop hookをCursorと
+  誤認して同じBotに`cursor:` sessionを作る問題を修正した。
+- `latest-session`と`handoff-context`のread-only SQLite接続にも、書込接続と同じ
+  5秒の競合待ちを適用した。hook書込と再起動時の記憶読取が重なっても、即時失敗しない。
+
 ## [0.10.9] — 2026-09-01
 
 ### Fixed
@@ -1397,7 +1407,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.9...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.10...HEAD
+[0.10.10]: https://github.com/kitepon/Throughline/compare/v0.10.9...v0.10.10
 [0.10.9]: https://github.com/kitepon/Throughline/compare/v0.10.8...v0.10.9
 [0.10.8]: https://github.com/kitepon/Throughline/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/kitepon/Throughline/compare/v0.10.6...v0.10.7

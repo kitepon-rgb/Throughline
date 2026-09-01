@@ -32,6 +32,9 @@ const ADAPTERS = Object.freeze({
  * Grok は camelCase wire、Cursor は hook_event_name が sessionStart 等。
  */
 export function normalizeHookPayload(payload, options = {}) {
+  if (options.env?.GROK_HOOK_EVENT || options.env?.GROK_SESSION_ID) {
+    return normalizeGrokHookPayload(payload, { ...options, force: true });
+  }
   if (isGrokEnvelope(payload)) return normalizeGrokHookPayload(payload, options);
   if (isCursorEnvelope(payload)) return normalizeCursorHookPayload(payload, options);
   return payload;
