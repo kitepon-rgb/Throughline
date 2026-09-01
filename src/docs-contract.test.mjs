@@ -29,12 +29,14 @@ test('Markdown-only CI runs the product-owned documentation contract', () => {
   assert.doesNotMatch(workflow, /documentation-command:\s*(?:["']{2})?\s*$/m);
 
   const reusable = readFileSync(new URL('../.github/workflows/product-full-ci.yml', import.meta.url), 'utf8');
+  const runner = readFileSync(new URL('../scripts/run-product-ci-tests.mjs', import.meta.url), 'utf8');
   assert.match(reusable, /name: documentation dependency install/);
   assert.match(reusable, /scripts\/product-ci-plan\.mjs verify/);
   assert.ok(
     reusable.indexOf('documentation dependency install') < reusable.indexOf('- name: documentation check'),
     'documentation dependencies must be installed before verification',
   );
+  assert.doesNotMatch(runner, /npm\.cmd|cmd\.exe/);
 
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const result = spawnPortableSync(npmCommand, ['run', 'verify:docs', '--silent'], {

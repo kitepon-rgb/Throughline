@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: 'inherit', windowsHide: true });
@@ -10,7 +11,13 @@ function run(command, args) {
 
 const scope = process.env.PRODUCT_CI_TEST_SCOPE;
 if (scope === 'all') {
-  run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test']);
+  const files = [
+    'scripts/verify-release-commit.test.mjs',
+    ...readdirSync('src').filter((file) => file.endsWith('.test.mjs')).map((file) => `src/${file}`),
+    ...readdirSync('src/cli').filter((file) => file.endsWith('.test.mjs')).map((file) => `src/cli/${file}`),
+    ...readdirSync('src/hosts').filter((file) => file.endsWith('.test.mjs')).map((file) => `src/hosts/${file}`),
+  ];
+  run(process.execPath, ['--import', './src/test-env.mjs', '--test', ...files]);
 } else if (scope === 'selected') {
   const files = JSON.parse(process.env.PRODUCT_CI_TEST_FILES ?? '[]');
   if (!Array.isArray(files) || files.length === 0 || files.some((file) => typeof file !== 'string')) {
