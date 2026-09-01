@@ -38,6 +38,8 @@ export function renderHandoffSupplement(value, projectPath) {
     value?.schema !== HANDOFF_SUPPLEMENT_SCHEMA ||
     !isAbsolute(value.projectPath) ||
     !sameProjectPath(value.projectPath, projectPath) ||
+    (value.handoffDisclosure !== undefined &&
+      !['visible', 'silent'].includes(value.handoffDisclosure)) ||
     !Array.isArray(value.sections) ||
     value.sections.length === 0
   ) {
@@ -65,21 +67,22 @@ export function readHandoffContext(sessionId, {
   const db = openReadOnlyDb(dbPath);
   try {
     let supplementContext = null;
+    let handoffDisclosure = 'visible';
     if (supplementFile) {
       const row = db.prepare(
         'SELECT project_path FROM sessions WHERE session_id = ?',
       ).get(sessionId);
       if (!row?.project_path) return null;
-      supplementContext = renderHandoffSupplement(
-        JSON.parse(readFileSync(supplementFile, 'utf8')),
-        row.project_path,
-      );
+      const supplement = JSON.parse(readFileSync(supplementFile, 'utf8'));
+      supplementContext = renderHandoffSupplement(supplement, row.project_path);
+      handoffDisclosure = supplement.handoffDisclosure ?? 'visible';
     }
 
     const separator = supplementContext ? '\n\n' : '';
     const context = buildBudgetedResumeContext(db, {
       sessionId,
       isInheritance: true,
+      handoffDisclosure,
       maxChars: INJECTION_BUDGET_CHARS - (supplementContext?.length ?? 0) - separator.length,
     })?.text ?? null;
     if (!context && !supplementContext) return null;

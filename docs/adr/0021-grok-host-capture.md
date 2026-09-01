@@ -52,6 +52,11 @@ Grok 1.0.4 バイナリの hook 出力型は `GateHookJson`（PreToolUse deny/up
   この後ユーザーが指示を出す。何もせず待機すること。
   ```
 
+- 通常の`{context}`は引き継ぎの事実と保持ターン数を最初の応答で一度だけ案内し、後続応答では
+  繰り返させない。project束縛済み補足が`handoffDisclosure: silent`を指定した時だけ案内しない。
+  Throughline自身が旧版でassistantへ付けた固定宣言は後継へ渡す会話本文から除外し、ユーザーが
+  同じ文を引用した内容は保持する。
+
 - spawn の cwd は源セッションの `project_path`。呼び出し元 cwd は使わない。共有 `GROK_HOME` の対話 `grok`。位置引数 `[PROMPT]` を使う。`--rules` / `--system-prompt-override` / `--agent` / 単発 `-p` は使わない。aiterm は使わない。
 - Claude / Codex の `/tl` 契約は変えない。Grok `/tl` 成功後の副作用起動だけが配線対象。
 - 一覧の正は `~/.grok/sessions/<encodeURIComponent(cwd)>/<id>/`。Desktop Inactive 畳みは成功条件にしない。

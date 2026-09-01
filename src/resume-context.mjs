@@ -24,11 +24,14 @@
 import { buildHandoffRecord } from './handoff-record.mjs';
 import { groupL3ByTurn, buildPartsSummary } from './l3-summary.mjs';
 
-const RESUME_HEADER_TEMPLATE = (turnCount) =>
+const RESUME_HEADER_TEMPLATE = (turnCount, handoffDisclosure) =>
   `## Throughline: 直前スレッドの継続応答用コンテキスト（${turnCount} ターン分の文脈を保持）\n` +
-  `\n` +
-  `**応答の冒頭で必ず以下を 1 行宣言してください** (会話の継続性をユーザーに見せるため):\n` +
-  `> 「Throughline で前のセッションから ${turnCount} ターン分の記憶を引き継いだ状態で続けます」\n` +
+  (handoffDisclosure === 'visible'
+    ? `\n` +
+      `**この引き継ぎ直後の最初の応答だけ、冒頭で以下を 1 行宣言してください**:\n` +
+      `> 「Throughline で前のセッションから ${turnCount} ターン分の記憶を引き継いだ状態で続けます」\n` +
+      `**2 回目以降の応答では、この宣言を繰り返さないでください。**\n`
+    : '') +
   `\n` +
   `**読み方 (重要):**\n` +
   `- 下記「現在地」「L1」「L2」は **あなた自身が直前にユーザーと交わした会話** です ` +
@@ -51,6 +54,17 @@ const RESUME_HEADER_TEMPLATE = (turnCount) =>
   `(該当ターンの本文＋詳細を stdout に返します)`;
 
 const NORMAL_HEADER = '## Throughline: セッション記憶';
+
+// v0.10.12以前にThroughline自身がassistantへ付与させていた宣言行。
+// 製品由来のメタ情報だけを引き継ぎ材料から除き、会話本文への模倣連鎖を止める。
+// userが同じ文を引用した場合は会話内容なので保持する。
+const LEGACY_HANDOFF_DISCLOSURE =
+  /^「Throughline で前のセッションから \d+ ターン分の記憶を引き継いだ状態で続けます」[ \t]*(?:\r?\n[ \t]*)*/u;
+
+function textForHandoff(row) {
+  if (row.role !== 'assistant') return row.text;
+  return row.text.replace(LEGACY_HANDOFF_DISCLOSURE, '');
+}
 
 // 現在地アンカーは最新 user / assistant 本文を再掲する。長すぎると注入全体が膨らむので
 // この文字数で打ち切り、全文は L2 セクション側を参照させる。
@@ -93,7 +107,13 @@ function pickLatestExchange(recentBodies) {
  *   l2Lines: { text: string, time: string }[],
  * } | null}
  */
-function buildResumeSections(db, { sessionId, isInheritance, excludeOriginId = null }) {
+function buildResumeSections(
+  db,
+  { sessionId, isInheritance, excludeOriginId = null, handoffDisclosure = 'visible' },
+) {
+  if (!['visible', 'silent'].includes(handoffDisclosure)) {
+    throw new TypeError('invalid handoff disclosure');
+  }
   const record = buildHandoffRecord(db, {
     sessionId,
     isInheritance,
@@ -102,15 +122,21 @@ function buildResumeSections(db, { sessionId, isInheritance, excludeOriginId = n
   if (!record) return null;
 
   const turnCount = record.stats.preservedContextRows;
-  const header = isInheritance ? RESUME_HEADER_TEMPLATE(turnCount) : NORMAL_HEADER;
+  const header = isInheritance
+    ? RESUME_HEADER_TEMPLATE(turnCount, handoffDisclosure)
+    : NORMAL_HEADER;
+  const recentBodies = record.memory.recentBodies.map((row) => ({
+    ...row,
+    text: textForHandoff(row),
+  }));
 
   const l3ByTurn = groupL3ByTurn(record.references.l3);
 
   // 現在地アンカー: 引き継ぎ時のみ、最新 user / assistant turn をヘッダ直下に再掲する。
   // L2 末尾アンカーだけだと、長い L2 で注意が前半に固着して話の流れを取り違える事例があった。
   const anchorLines = [];
-  if (isInheritance && record.memory.recentBodies.length > 0) {
-    const { latestUser, latestAssistant } = pickLatestExchange(record.memory.recentBodies);
+  if (isInheritance && recentBodies.length > 0) {
+    const { latestUser, latestAssistant } = pickLatestExchange(recentBodies);
     if (latestUser) {
       anchorLines.push(
         `**最新ユーザー指示** [${latestUser.time}]: ${truncateForAnchor(latestUser.text)}`,
@@ -145,14 +171,14 @@ function buildResumeSections(db, { sessionId, isInheritance, excludeOriginId = n
   // 同じターンの user 行と assistant 行の両方に貼ると同じ内容が二度出て紛らわしい。
   const l2Lines = [];
   const lastIdxPerTurn = new Map();
-  for (let i = 0; i < record.memory.recentBodies.length; i += 1) {
-    const r = record.memory.recentBodies[i];
+  for (let i = 0; i < recentBodies.length; i += 1) {
+    const r = recentBodies[i];
     if (!r.text) continue;
     const key = `${r.originSessionId}\x00${r.turnNumber}`;
     lastIdxPerTurn.set(key, i);
   }
-  for (let i = 0; i < record.memory.recentBodies.length; i += 1) {
-    const r = record.memory.recentBodies[i];
+  for (let i = 0; i < recentBodies.length; i += 1) {
+    const r = recentBodies[i];
     if (!r.text) continue;
     const key = `${r.originSessionId}\x00${r.turnNumber}`;
     const isLastOfTurn = lastIdxPerTurn.get(key) === i;
@@ -207,9 +233,20 @@ function joinSections({ header, anchorLines, l1Lines, l2Lines }, { l1Note = null
  */
 export function buildResumeContext(
   db,
-  { sessionId, isInheritance, excludeOriginId = null, inflightMemo: _ignoredMemo = null },
+  {
+    sessionId,
+    isInheritance,
+    excludeOriginId = null,
+    inflightMemo: _ignoredMemo = null,
+    handoffDisclosure = 'visible',
+  },
 ) {
-  const sections = buildResumeSections(db, { sessionId, isInheritance, excludeOriginId });
+  const sections = buildResumeSections(db, {
+    sessionId,
+    isInheritance,
+    excludeOriginId,
+    handoffDisclosure,
+  });
   if (!sections) return null;
   return joinSections(sections);
 }
@@ -344,9 +381,20 @@ function buildGuidanceLines({ sessionId, boundaryMs, remainingTurns, remainingRa
  */
 export function buildBudgetedResumeContext(
   db,
-  { sessionId, isInheritance, excludeOriginId = null, maxChars = INJECTION_BUDGET_CHARS },
+  {
+    sessionId,
+    isInheritance,
+    excludeOriginId = null,
+    maxChars = INJECTION_BUDGET_CHARS,
+    handoffDisclosure = 'visible',
+  },
 ) {
-  const sections = buildResumeSections(db, { sessionId, isInheritance, excludeOriginId });
+  const sections = buildResumeSections(db, {
+    sessionId,
+    isInheritance,
+    excludeOriginId,
+    handoffDisclosure,
+  });
   if (!sections) return null;
 
   const lineCost = (s) => s.length + 1; // join('\n') 分

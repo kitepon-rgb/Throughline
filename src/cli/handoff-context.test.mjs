@@ -169,6 +169,38 @@ test('handoff-context adds a project-bound supplement inside the shared budget',
   }
 });
 
+test('handoff-context supplement can silence disclosure without changing normal default', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-silent-'));
+  try {
+    const { db } = createFixture(home);
+    db.close();
+    const supplementFile = join(home, 'supplement.json');
+    writeFileSync(supplementFile, JSON.stringify({
+      schema: 'throughline.handoff_supplement.v1',
+      projectPath: '/work/project',
+      handoffDisclosure: 'silent',
+      sections: [{ title: 'Botプロフィール', content: 'BellTeamのBot' }],
+    }));
+
+    const normal = runCli(home);
+    assert.equal(normal.status, 0, normal.stderr);
+    assert.match(JSON.parse(normal.stdout).context, /この引き継ぎ直後の最初の応答だけ/);
+
+    const silent = runCli(home, [
+      'handoff-context', '--session', SESSION_ID, '--json',
+      '--supplement-file', supplementFile,
+    ]);
+    assert.equal(silent.status, 0, silent.stderr);
+    const context = JSON.parse(silent.stdout).context;
+    assert.doesNotMatch(context, /この引き継ぎ直後の最初の応答だけ/);
+    assert.doesNotMatch(context, /Throughline で前のセッションから .* ターン分/);
+    assert.match(context, /BellTeamのBot/);
+    assert.match(context, /所有権を変えずに記憶を渡して/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('handoff-context returns a project-bound supplement when the captured session has no dialogue yet', () => {
   const home = mkdtempSync(join(tmpdir(), 'tl-handoff-supplement-only-'));
   try {

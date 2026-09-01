@@ -6,7 +6,7 @@
 
 ## 現行状態
 
-- release candidateのpackage版は `0.10.12`。tagとnpmの公開確認はpublish後に行う。
+- release candidateのpackage版は `0.10.13`。tagとnpmの公開確認はpublish後に行う。
 - Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。
 - 現行DB schemaはv9。schemaの正本は [src/db.mjs](../src/db.mjs) の
   `CURRENT_VERSION`、二相handoffの判断は

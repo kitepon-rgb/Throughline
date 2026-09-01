@@ -113,10 +113,10 @@ test('buildResumeContext: header is terse and announces the Bash invocation cont
   assert.match(text, /新規依頼ではなく、上記スレッドの \*\*続き\*\*/);
   assert.match(text, /続きよろしく.*OK.*次は？/s);
   assert.match(text, /新規会話ではない/);
-  // β 経路 (early-style explicit report-back instruction): モデルが冒頭で
-  // 「引き継いだ状態で続けます」と明示的に表明することで、user が体感する継続感を強める
-  assert.match(text, /応答の冒頭で必ず以下を 1 行宣言/);
+  // 通常のThroughline引き継ぎは最初の一度だけ可視化し、後続応答では反復させない。
+  assert.match(text, /この引き継ぎ直後の最初の応答だけ/);
   assert.match(text, /Throughline で前のセッションから .* ターン分の記憶を引き継いだ状態で続けます/);
+  assert.match(text, /2 回目以降の応答では、この宣言を繰り返さない/);
   assert.match(
     text,
     /\*\*各ターンの詳細\*\*: \*\*`Bash` ツールで `throughline detail HH:MM:SS` を実行\*\* \(該当ターンの本文＋詳細を stdout に返します\)/,
@@ -128,6 +128,61 @@ test('buildResumeContext: header is terse and announces the Bash invocation cont
   assert.match(text, /古い番号リストの再実行禁止/);
   assert.match(text, /既に直前アシスタントターンで実装\/実行済み/);
   assert.match(text, /最新アシスタント発話の指示が、過去ターンのリストへの参照より上位/);
+});
+
+test('buildResumeContext: silent disclosure keeps inheritance internal', () => {
+  const db = makeDb();
+  insertBody(db, {
+    session: 'new',
+    origin: 'old',
+    turn: 1,
+    role: 'assistant',
+    text: '続きの本文',
+    createdAt: 1000,
+  });
+
+  const text = buildResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+    handoffDisclosure: 'silent',
+  });
+
+  assert.ok(text);
+  assert.doesNotMatch(text, /この引き継ぎ直後の最初の応答だけ/);
+  assert.doesNotMatch(text, /Throughline で前のセッションから .* ターン分の記憶を引き継いだ状態で続けます/);
+  assert.match(text, /\[assistant\]: 続きの本文/);
+});
+
+test('buildResumeContext: legacy disclosure is removed only from assistant memory', () => {
+  const db = makeDb();
+  const disclosure = '「Throughline で前のセッションから 20 ターン分の記憶を引き継いだ状態で続けます」';
+  insertBody(db, {
+    session: 'new',
+    origin: 'old',
+    turn: 1,
+    role: 'user',
+    text: `この表示は何？ ${disclosure}`,
+    createdAt: 1000,
+  });
+  insertBody(db, {
+    session: 'new',
+    origin: 'old',
+    turn: 1,
+    role: 'assistant',
+    text: `${disclosure}\n\n本題の応答です。`,
+    createdAt: 1001,
+  });
+
+  const text = buildResumeContext(db, {
+    sessionId: 'new',
+    isInheritance: true,
+  });
+
+  assert.ok(text);
+  assert.equal(text.split(disclosure).length - 1, 2, 'user quote remains in anchor and L2 only');
+  assert.doesNotMatch(text, /\[assistant\]: 「Throughline で前のセッションから/);
+  assert.match(text, /\[assistant\]: 本題の応答です。/);
+  assert.match(text, /\*\*直前のアシスタント\*\* \[\d\d:\d\d:\d\d\]: 本題の応答です。/);
 });
 
 test('buildResumeContext: 現在地 anchor surfaces the latest user/assistant exchange above L1/L2', () => {

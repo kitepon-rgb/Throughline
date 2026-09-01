@@ -74,6 +74,11 @@ cwd は源セッションの `project_path` であり、呼び出し元 cwd は�
 `/clear` では起動しない。aiterm / `--rules` / `--from` は使わない。
 macOS Terminal のみ。
 
+通常のhandoff-contextは、引き継いだことを最初の応答で一度だけ案内し、後続応答では
+繰り返させない。project束縛済み補足へ`handoffDisclosure: "silent"`を指定した埋込製品だけは
+案内を出さない。旧版がassistant本文へ付けた固定宣言は次回引き継ぎから除外し、ユーザーの
+引用と実際の応答本文は保持する。
+
 新席は `~/.grok/sessions/<encodeURIComponent(cwd)>/` のトップレベル
 ディレクトリ。Desktop の Inactive 畳みは成功条件にしない。L2 が無い源
 （`merged_into` チェーンの空席など）では起動しない。新しい chat で 1〜2
@@ -428,7 +433,8 @@ throughline handoff-context --session codex:<thread-id> --json
 成功時の`throughline.handoff_context.v1`は`schema`、`status`、`sessionId`、`context`だけを返す。
 `context`はSessionStartと同じ予算付き継承文脈である。任意の`--supplement-file <path>`には
 `throughline.handoff_supplement.v1`、源sessionと同じ`projectPath`、`title`と`content`からなる
-`sections`を指定する。補足は会話記憶と同じ9,500字枠へ入り、別projectの補足は拒否する。
+`sections`を指定する。任意の`handoffDisclosure`は`visible`（既定）または`silent`を受け取る。
+補足は会話記憶と同じ9,500字枠へ入り、別projectの補足は拒否する。
 DB作成・migration・baton消費・session merge・
 latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変更は行わない。AItermは任意の
 別harness portable forkでこの境界を使う。Observer feedはcompleted-turn projectionであり代替ではない。

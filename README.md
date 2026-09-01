@@ -817,12 +817,19 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.12.** Throughline supports Claude Code, Codex,
+**The current release is v0.10.13.** Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,
 Observer, runtime-error, capture, and normal handoff behavior remain available
 under the same explicit-failure and local-only contracts.
+
+Normal handoffs announce inherited continuity once in the first response and
+explicitly forbid repeating that line in later responses. A project-bound
+supplement may set `handoffDisclosure` to `silent` for an embedded product that
+keeps continuity metadata out of its chat. Legacy Throughline disclosure lines
+in assistant memory are omitted from the next handoff; user quotations and the
+actual reply body remain intact.
 
 | Command                                        | What it does                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------ |
@@ -916,6 +923,7 @@ inheritance text used by SessionStart. A launcher may append
 {
   "schema": "throughline.handoff_supplement.v1",
   "projectPath": "/absolute/bot/project",
+  "handoffDisclosure": "silent",
   "sections": [
     { "title": "Long-term memory", "content": "..." },
     { "title": "Relevant knowledge", "content": "..." }
@@ -923,6 +931,7 @@ inheritance text used by SessionStart. A launcher may append
 }
 ```
 
+`handoffDisclosure` is optional and accepts `visible` (the default) or `silent`.
 The supplement is included only when `projectPath` matches the source session
 and shares the 9,500-character budget with conversation memory. If the captured
 session has no dialogue context yet, a valid project-bound supplement is returned

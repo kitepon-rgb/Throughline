@@ -10,6 +10,15 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.13] — 2026-09-02
+
+### Fixed
+
+- 通常の引き継ぎ案内を最初の応答だけに限定し、project束縛済み補足から
+  `handoffDisclosure: "silent"`を指定したlauncherは案内を非表示にできるようにした。
+- Throughline旧版がassistant本文へ付けた固定宣言行だけを次回引き継ぎ時に除外し、
+  ユーザーの引用と宣言後の会話本文は保持する。
+
 ## [0.10.12] — 2026-09-01
 
 ### Changed
@@ -1421,7 +1430,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.12...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.13...HEAD
+[0.10.13]: https://github.com/kitepon/Throughline/compare/v0.10.12...v0.10.13
 [0.10.12]: https://github.com/kitepon/Throughline/compare/v0.10.11...v0.10.12
 [0.10.11]: https://github.com/kitepon/Throughline/compare/v0.10.10...v0.10.11
 [0.10.10]: https://github.com/kitepon/Throughline/compare/v0.10.9...v0.10.10
