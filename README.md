@@ -817,7 +817,7 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.6.** Throughline supports Claude Code, Codex,
+**The current release is v0.10.7.** Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,
@@ -856,6 +856,7 @@ once with `npm install --global throughline@latest`, then run
 | `throughline runtime-errors compact --json`    | Remove only acknowledged, resolved aggregates after retention; open or unacknowledged records remain |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
 | `throughline handoff-context --session <id> --json` | Print the exact SessionStart inheritance context as versioned JSON without moving memory rows or changing `sessions.merged_into`; intended for local launchers that need portable cross-harness context |
+| `throughline latest-session --project <absolute-path> --json` | Read the latest session id strictly scoped to one project; opens the existing database read-only and returns `empty` when the project has no captured session |
 | `throughline grok-continue --session <id>` | Spawn a person-facing Grok seat whose first user text is the handoff-context body. cwd is the source session `project_path`. Does not spawn without ready context. No `--rules`. macOS Terminal only |
 | `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
 | `throughline codex-summarize --session codex:<id>` | Summarize captured Codex L2 into L1 with the Codex CLI backend |

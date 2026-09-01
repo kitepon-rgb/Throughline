@@ -12,6 +12,7 @@
  *   throughline recall --l2|--l1 # 注入案内から辿る pull 用 read-only 記憶取得
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
  *   throughline handoff-context --session <id> --json # Read-only inheritance context JSON
+ *   throughline latest-session --project <path> --json # Latest session strictly scoped to one project
  *   throughline grok-continue --session <id> # Spawn a Grok seat whose first user text is handoff-context
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
  *   throughline factory-diagnostics --json # Native factory read-only readiness JSON
@@ -82,6 +83,11 @@ switch (cmd) {
     break;
   case 'handoff-context': {
     const exitCode = (await import('../src/cli/handoff-context.mjs')).run(rest);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    break;
+  }
+  case 'latest-session': {
+    const exitCode = (await import('../src/cli/latest-session.mjs')).run(rest);
     if (exitCode !== 0) process.exitCode = exitCode;
     break;
   }
@@ -233,6 +239,8 @@ Usage:
   throughline handoff-context --session <id> --json
                               Print the exact inheritance context without
                               changing database ownership
+  throughline latest-session --project <absolute-path> --json
+                              Read the latest session id for exactly one project
   throughline grok-continue --session <id>
                               Spawn a person-facing Grok seat whose first
                               user text is the handoff-context body. Does not

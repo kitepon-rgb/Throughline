@@ -391,6 +391,7 @@ v0.10.4以前には `self-update` が存在しない。該当版からの初回�
 | `throughline runtime-errors diagnostics --json` | collection/store状態をpathやraw errorなしで診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
 | `throughline handoff-context --session <id> --json` | SessionStart と同じ引き継ぎ文脈を versioned JSON で取得。記憶行の `session_id` と `sessions.merged_into` は変更せず、同一端末内の別ベンダーランチャーから使える |
+| `throughline latest-session --project <absolute-path> --json` | 指定した1プロジェクトだけを対象に直近セッションIDを読み取る。既存DBをread-onlyで開き、記録がなければ`empty`を返す |
 | `throughline grok-continue --session <id>` | handoff-context を初手 user 文にした対話 Grok 席を立てる。cwd は源の `project_path`。ready でなければ spawn しない。`--rules` なし。macOS Terminal のみ |
 | `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
 | `throughline codex-sidecar-dry-run` | App Server を呼ばずに read-only sidecar request を正規化表示 |
