@@ -169,6 +169,40 @@ test('handoff-context adds a project-bound supplement inside the shared budget',
   }
 });
 
+test('handoff-context returns a project-bound supplement when the captured session has no dialogue yet', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-supplement-only-'));
+  try {
+    const { db, dbPath } = createFixture(home);
+    db.exec('DELETE FROM details; DELETE FROM bodies; DELETE FROM skeletons;');
+    const before = ownershipSnapshot(db);
+    db.close();
+    const supplementFile = join(home, 'supplement.json');
+    writeFileSync(supplementFile, JSON.stringify({
+      schema: 'throughline.handoff_supplement.v1',
+      projectPath: '/work/project',
+      sections: [{ title: 'Botプロフィール', content: '名前はCursor確認担当' }],
+    }));
+
+    const result = runCli(home, [
+      'handoff-context', '--session', SESSION_ID, '--json',
+      '--supplement-file', supplementFile,
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      schema: 'throughline.handoff_context.v1',
+      status: 'ready',
+      sessionId: SESSION_ID,
+      context: '## このBotの長期記憶と関連知識\n\n### Botプロフィール\n名前はCursor確認担当',
+    });
+
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    assert.deepEqual(ownershipSnapshot(verify), before);
+    verify.close();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('handoff-context refuses a supplement from another bot project', () => {
   const home = mkdtempSync(join(tmpdir(), 'tl-handoff-supplement-scope-'));
   try {

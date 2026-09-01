@@ -82,11 +82,11 @@ export function readHandoffContext(sessionId, {
       isInheritance: true,
       maxChars: INJECTION_BUDGET_CHARS - (supplementContext?.length ?? 0) - separator.length,
     })?.text ?? null;
-    if (!context) return null;
+    if (!context && !supplementContext) return null;
 
-    const combined = supplementContext
+    const combined = supplementContext && context
       ? `${supplementContext}${separator}${context}`
-      : context;
+      : supplementContext ?? context;
     if (combined.length > INJECTION_BUDGET_CHARS) {
       throw new RangeError('handoff context exceeds injection budget');
     }

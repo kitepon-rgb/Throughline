@@ -817,7 +817,7 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.8.** Throughline supports Claude Code, Codex,
+**The current release is v0.10.9.** Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,
@@ -924,7 +924,9 @@ inheritance text used by SessionStart. A launcher may append
 ```
 
 The supplement is included only when `projectPath` matches the source session
-and shares the 9,500-character budget with conversation memory. The command does not create or migrate a
+and shares the 9,500-character budget with conversation memory. If the captured
+session has no dialogue context yet, a valid project-bound supplement is returned
+by itself. The command does not create or migrate a
 database, consume a baton, merge sessions, infer a latest session, change
 `sessions.merged_into`, or reassign L1/L2/L3 rows. AIterm uses this boundary for
 its optional cross-harness portable fork; the Observer feed is a separate

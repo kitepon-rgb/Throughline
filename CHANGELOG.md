@@ -10,6 +10,14 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.9] — 2026-09-01
+
+### Fixed
+
+- `handoff-context --supplement-file`は、capture済みsessionに会話本文がまだ無い場合でも、
+  同じprojectに束縛された補足記憶だけを9,500字予算内で返す。Cursorの初回Workspace
+  Trust直後など、session行だけが先に作られたBotも記憶付きで再起動できる。
+
 ## [0.10.8] — 2026-09-01
 
 ### Added
@@ -1387,7 +1395,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.8...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.9...HEAD
+[0.10.9]: https://github.com/kitepon/Throughline/compare/v0.10.8...v0.10.9
 [0.10.8]: https://github.com/kitepon/Throughline/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/kitepon/Throughline/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/kitepon/Throughline/compare/v0.10.5...v0.10.6
