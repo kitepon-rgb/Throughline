@@ -51,7 +51,8 @@ test('CLI help exposes guided Codex handoff and guarded execute semantics', () =
   assert.match(result.stdout, /Use --execute to/);
   assert.match(result.stdout, /--open-host auto\|desktop\|vscode\|cli\|none/);
   assert.match(result.stdout, /throughline trim --execute/);
-  assert.match(result.stdout, /throughline handoff-context --session <id> --json/);
+  assert.match(result.stdout, /throughline handoff-context \(--session <id> \| --project <path>\) --json/);
+  assert.match(result.stdout, /--disclosure silent/);
   assert.match(result.stdout, /throughline latest-session --project <absolute-path> --json/);
   assert.match(result.stdout, /without\s+changing database ownership/);
   assert.match(result.stdout, /injectable DB memory/);
