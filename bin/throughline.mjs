@@ -11,7 +11,7 @@
  *   throughline detail <時刻> # L2+L3 詳細取得 (Claude が Bash 経由で呼ぶ想定)
  *   throughline recall --l2|--l1 # 注入案内から辿る pull 用 read-only 記憶取得
  *   throughline handoff-preview # Codex-facing throughline_handoff JSON preview
- *   throughline handoff-context --session <id> --json [--supplement-file <path>] # Read-only inheritance context JSON
+ *   throughline handoff-context (--session <id> | --project <path>) --json # Read-only inheritance context JSON
  *   throughline latest-session --project <path> --json # Latest session strictly scoped to one project
  *   throughline grok-continue --session <id> # Spawn a Grok seat whose first user text is handoff-context
  *   throughline auditor-context --json # Read-only bounded auditor context JSON
@@ -236,10 +236,12 @@ Usage:
   throughline monitor           Multi-session token monitor (use --all, --session <id>)
   throughline detail <time>     Retrieve L2+L3 detail for a turn (e.g. 14:23:05 or 14:23-14:30)
   throughline handoff-preview   Print Codex-facing throughline_handoff JSON
-  throughline handoff-context --session <id> --json [--supplement-file <path>]
+  throughline handoff-context (--session <id> | --project <path>) --json
                               Print the exact inheritance context without
-                              changing database ownership; optionally include
-                              project-bound long-term memory and knowledge
+                              changing database ownership. Project mode selects
+                              the newest session with dialogue and may use
+                              --disclosure silent. Session mode may use a
+                              project-bound --supplement-file
   throughline latest-session --project <absolute-path> --json
                               Read the latest session id for exactly one project
   throughline grok-continue --session <id>

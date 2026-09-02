@@ -8,7 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 import { buildBudgetedResumeContext, INJECTION_BUDGET_CHARS } from '../resume-context.mjs';
-import { parseArgs, readSessionProjectPath } from './handoff-context.mjs';
+import {
+  parseArgs,
+  readLatestProjectHandoffContext,
+  readSessionProjectPath,
+} from './handoff-context.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'bin/throughline.mjs');
@@ -201,6 +205,93 @@ test('handoff-context supplement can silence disclosure without changing normal 
   }
 });
 
+test('handoff-context can silence disclosure without a long-term-memory supplement', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-direct-silent-'));
+  try {
+    const { db } = createFixture(home);
+    db.close();
+
+    const result = runCli(home, [
+      'handoff-context', '--session', SESSION_ID, '--json',
+      '--disclosure', 'silent',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const context = JSON.parse(result.stdout).context;
+    assert.doesNotMatch(context, /この引き継ぎ直後の最初の応答だけ/);
+    assert.doesNotMatch(context, /Throughline で前のセッションから .* ターン分/);
+    assert.match(context, /所有権を変えずに記憶を渡して/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('handoff-context project selector skips the newest empty session', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-project-'));
+  try {
+    const { db, dbPath } = createFixture(home);
+    db.prepare(
+      `INSERT INTO sessions
+         (session_id, project_path, status, created_at, updated_at, merged_into)
+       VALUES ('newest-empty', '/work/project', 'active', ?, ?, NULL)`,
+    ).run(1_700_000_005_000, 1_700_000_006_000);
+    db.prepare(
+      `INSERT INTO sessions
+         (session_id, project_path, status, created_at, updated_at, merged_into)
+       VALUES ('other-newest', '/work/other', 'active', ?, ?, NULL)`,
+    ).run(1_700_000_007_000, 1_700_000_008_000);
+    db.prepare(
+      `INSERT INTO bodies
+         (session_id, origin_session_id, turn_number, role, text, token_count, created_at)
+       VALUES ('other-newest', 'other-newest', 1, 'user', 'OTHER_PROJECT_PRIVATE', 4, ?)`,
+    ).run(1_700_000_007_500);
+    db.close();
+
+    const selected = readLatestProjectHandoffContext('/work/project', {
+      dbPath,
+      handoffDisclosure: 'silent',
+    });
+    assert.equal(selected.sessionId, SESSION_ID);
+    assert.match(selected.context, /所有権を変えずに記憶を渡して/);
+
+    const result = runCli(home, [
+      'handoff-context', '--project', '/work/project', '--json',
+      '--disclosure', 'silent',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.status, 'ready');
+    assert.equal(payload.sessionId, SESSION_ID);
+    assert.match(payload.context, /所有権を変えずに記憶を渡して/);
+    assert.doesNotMatch(payload.context, /OTHER_PROJECT_PRIVATE/);
+    assert.doesNotMatch(payload.context, /この引き継ぎ直後の最初の応答だけ/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('handoff-context project selector returns empty when the project has no dialogue', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tl-handoff-project-empty-'));
+  try {
+    const { db } = createFixture(home);
+    db.exec('DELETE FROM details; DELETE FROM bodies; DELETE FROM skeletons;');
+    db.close();
+
+    const result = runCli(home, [
+      'handoff-context', '--project', '/work/project', '--json',
+      '--disclosure', 'silent',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      schema: 'throughline.handoff_context.v1',
+      status: 'empty',
+      sessionId: null,
+      context: '',
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('handoff-context returns a project-bound supplement when the captured session has no dialogue yet', () => {
   const home = mkdtempSync(join(tmpdir(), 'tl-handoff-supplement-only-'));
   try {
@@ -261,15 +352,33 @@ test('handoff-context refuses a supplement from another bot project', () => {
 test('handoff-context accepts only the documented supplement argument shape', () => {
   assert.deepEqual(parseArgs(['--session', 's', '--json']), {
     sessionId: 's',
+    projectPath: null,
     supplementFile: null,
+    handoffDisclosure: 'visible',
   });
   assert.deepEqual(parseArgs([
     '--session', 's', '--json', '--supplement-file', '/tmp/memory.json',
   ]), {
     sessionId: 's',
+    projectPath: null,
     supplementFile: '/tmp/memory.json',
+    handoffDisclosure: 'visible',
+  });
+  assert.deepEqual(parseArgs([
+    '--project', '.', '--json', '--disclosure', 'silent',
+  ]), {
+    sessionId: null,
+    projectPath: process.cwd(),
+    supplementFile: null,
+    handoffDisclosure: 'silent',
   });
   assert.throws(() => parseArgs(['--session', 's', '--supplement-file', '/tmp/memory.json', '--json']));
+  assert.throws(() => parseArgs(['--project', '.', '--json', '--supplement-file', '/tmp/memory.json']));
+  assert.throws(() => parseArgs(['--session', 's', '--json', '--disclosure', 'hidden']));
+  assert.throws(() => parseArgs([
+    '--session', 's', '--json', '--disclosure', 'silent',
+    '--supplement-file', '/tmp/memory.json',
+  ]));
 });
 
 test('readSessionProjectPath returns the source session project', () => {

@@ -817,7 +817,7 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.13.** Throughline supports Claude Code, Codex,
+**The current release is v0.10.14.** Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,
@@ -826,8 +826,9 @@ under the same explicit-failure and local-only contracts.
 
 Normal handoffs announce inherited continuity once in the first response and
 explicitly forbid repeating that line in later responses. A project-bound
-supplement may set `handoffDisclosure` to `silent` for an embedded product that
-keeps continuity metadata out of its chat. Legacy Throughline disclosure lines
+launcher may pass `--disclosure silent` for an embedded product that keeps
+continuity metadata out of its chat. A supplement may also set
+`handoffDisclosure` to `silent`. Legacy Throughline disclosure lines
 in assistant memory are omitted from the next handoff; user quotations and the
 actual reply body remain intact.
 
@@ -862,7 +863,7 @@ once with `npm install --global throughline@latest`, then run
 | `throughline runtime-errors reopen <fingerprint> --json` | Explicitly reopen a resolved aggregate without fabricating a new occurrence |
 | `throughline runtime-errors compact --json`    | Remove only acknowledged, resolved aggregates after retention; open or unacknowledged records remain |
 | `throughline handoff-preview --session <id>`   | Print a Codex-facing `throughline_handoff` JSON projection    |
-| `throughline handoff-context --session <id> --json [--supplement-file <path>]` | Print the SessionStart inheritance context without moving memory rows; an optional project-bound supplement adds long-term memory and knowledge inside the same 9,500-character budget |
+| `throughline handoff-context (--session <id> \| --project <path>) --json` | Print the SessionStart inheritance context without moving memory rows. Project mode selects the newest captured session with dialogue, supports `--disclosure silent`, and returns `empty` when no dialogue exists. Session mode may add a project-bound supplement inside the same 9,500-character budget |
 | `throughline latest-session --project <absolute-path> --json` | Read the latest session id strictly scoped to one project; opens the existing database read-only and returns `empty` when the project has no captured session |
 | `throughline grok-continue --session <id>` | Spawn a person-facing Grok seat whose first user text is the handoff-context body. cwd is the source session `project_path`. Does not spawn without ready context. No `--rules`. macOS Terminal only |
 | `throughline codex-capture --codex-thread-id <id>` | Capture active Codex rollout turns into a `codex:<thread_id>` DB session |
@@ -912,11 +913,15 @@ performing a normal handoff:
 
 ```bash
 throughline handoff-context --session codex:<thread-id> --json
+throughline handoff-context --project /absolute/bot/project --json --disclosure silent
 ```
 
-The successful `throughline.handoff_context.v1` object contains only `schema`,
-`status`, `sessionId`, and `context`. The context is the same budgeted
-inheritance text used by SessionStart. A launcher may append
+The `throughline.handoff_context.v1` object contains only `schema`, `status`,
+`sessionId`, and `context`. With `--project`, Throughline selects the newest
+session in that project that has dialogue context; it returns `status: "empty"`
+when none exists. `--disclosure silent` removes the Throughline announcement
+without adding long-term memory. The context uses the same budget as
+SessionStart. With `--session`, a launcher may append
 `--supplement-file <path>` with a `throughline.handoff_supplement.v1` JSON object:
 
 ```json
@@ -936,7 +941,7 @@ The supplement is included only when `projectPath` matches the source session
 and shares the 9,500-character budget with conversation memory. If the captured
 session has no dialogue context yet, a valid project-bound supplement is returned
 by itself. The command does not create or migrate a
-database, consume a baton, merge sessions, infer a latest session, change
+database, consume a baton, merge sessions, change
 `sessions.merged_into`, or reassign L1/L2/L3 rows. AIterm uses this boundary for
 its optional cross-harness portable fork; the Observer feed is a separate
 completed-turn projection and is not a substitute.

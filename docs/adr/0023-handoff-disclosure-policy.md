@@ -20,8 +20,10 @@ Nターン分の記憶を引き継いだ」と応答冒頭で宣言させてい�
 
 - 通常の引き継ぎは、引き継ぎの事実と保持ターン数を最初の応答で一度だけ案内する。
 - 同じhost sessionの2回目以降の応答では案内を繰り返させない。
-- project束縛済み`throughline.handoff_supplement.v1`は任意の`handoffDisclosure`として
-  `visible`（既定）または`silent`を持てる。`silent`を指定した埋込製品では案内しない。
+- `handoff-context`は`--disclosure visible|silent`を受け取り、`silent`を指定した埋込製品では
+  補足ファイルを作らずに案内を消せる。
+- project束縛済み`throughline.handoff_supplement.v1`も任意の`handoffDisclosure`として
+  `visible`（既定）または`silent`を持てる。
 - Throughline自身が旧版でassistantへ付けた固定宣言行は、後継へ渡すassistant本文から除外する。
 - ユーザー発言に含まれる同じ文字列は会話内容として保持する。
 - 引き継ぎの成立はsession対応、生成コンテキスト、継続応答の内容で検証する。宣言の反復を
@@ -30,6 +32,6 @@ Nターン分の記憶を引き継いだ」と応答冒頭で宣言させてい�
 ## Consequences
 
 - 通常のThroughline利用では従来の引き継ぎ案内が残る。
-- 埋込製品は既存のproject分離境界を使って案内だけを非表示にできる。
+- 埋込製品はproject分離境界と公開CLI引数を使って案内だけを非表示にできる。
 - 旧宣言が保存済みのsessionも、次回の正規引き継ぎでメタ行を持ち越さない。
 - 保存済みの原会話は監査記録として変更しない。

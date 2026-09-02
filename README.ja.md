@@ -75,8 +75,9 @@ cwd は源セッションの `project_path` であり、呼び出し元 cwd は�
 macOS Terminal のみ。
 
 通常のhandoff-contextは、引き継いだことを最初の応答で一度だけ案内し、後続応答では
-繰り返させない。project束縛済み補足へ`handoffDisclosure: "silent"`を指定した埋込製品だけは
-案内を出さない。旧版がassistant本文へ付けた固定宣言は次回引き継ぎから除外し、ユーザーの
+繰り返させない。埋込製品は`handoff-context --disclosure silent`で案内を消せる。
+project束縛済み補足の`handoffDisclosure: "silent"`も同じ扱いになる。旧版がassistant本文へ
+付けた固定宣言は次回引き継ぎから除外し、ユーザーの
 引用と実際の応答本文は保持する。
 
 新席は `~/.grok/sessions/<encodeURIComponent(cwd)>/` のトップレベル
@@ -395,7 +396,7 @@ v0.10.4以前には `self-update` が存在しない。該当版からの初回�
 | `throughline runtime-errors snapshot --json` | boundedなlocal aggregateを読み取る（network I/Oなし） |
 | `throughline runtime-errors diagnostics --json` | collection/store状態をpathやraw errorなしで診断 |
 | `throughline handoff-preview --session <id>` | Codex 向け `throughline_handoff` JSON projection を表示 |
-| `throughline handoff-context --session <id> --json [--supplement-file <path>]` | SessionStartと同じ引き継ぎ文脈を取得。任意のproject束縛済み補足を、長期記憶・知識として同じ9,500字枠へ合成できる |
+| `throughline handoff-context (--session <id> \| --project <path>) --json` | SessionStartと同じ引き継ぎ文脈を取得。project指定時は会話本文を持つ最新sessionを選び、`--disclosure silent`に対応し、本文がなければ`empty`を返す。session指定時はproject束縛済み補足を同じ9,500字枠へ合成できる |
 | `throughline latest-session --project <absolute-path> --json` | 指定した1プロジェクトだけを対象に直近セッションIDを読み取る。既存DBをread-onlyで開き、記録がなければ`empty`を返す |
 | `throughline grok-continue --session <id>` | handoff-context を初手 user 文にした対話 Grok 席を立てる。cwd は源の `project_path`。ready でなければ spawn しない。`--rules` なし。macOS Terminal のみ |
 | `throughline codex-sidecar-diagnostics` | この project の `codex-sidecar` diagnostics status を確認 |
@@ -428,15 +429,18 @@ throughline runtime-errors diagnostics --json
 
 ```bash
 throughline handoff-context --session codex:<thread-id> --json
+throughline handoff-context --project /absolute/bot/project --json --disclosure silent
 ```
 
-成功時の`throughline.handoff_context.v1`は`schema`、`status`、`sessionId`、`context`だけを返す。
-`context`はSessionStartと同じ予算付き継承文脈である。任意の`--supplement-file <path>`には
+`throughline.handoff_context.v1`は`schema`、`status`、`sessionId`、`context`だけを返す。
+`--project`ではそのproject内で会話本文を持つ最新sessionを選び、存在しなければ`empty`を返す。
+`--disclosure silent`は長期記憶を追加せずThroughlineの案内を消す。`context`はSessionStartと
+同じ予算付き継承文脈である。`--session`で使える任意の`--supplement-file <path>`には
 `throughline.handoff_supplement.v1`、源sessionと同じ`projectPath`、`title`と`content`からなる
 `sections`を指定する。任意の`handoffDisclosure`は`visible`（既定）または`silent`を受け取る。
 補足は会話記憶と同じ9,500字枠へ入り、別projectの補足は拒否する。
 DB作成・migration・baton消費・session merge・
-latest session推測・`sessions.merged_into`変更・L1/L2/L3 rowの所属変更は行わない。AItermは任意の
+`sessions.merged_into`変更・L1/L2/L3 rowの所属変更は行わない。AItermは任意の
 別harness portable forkでこの境界を使う。Observer feedはcompleted-turn projectionであり代替ではない。
 
 スラッシュコマンド (Claude Code 内でユーザーが叩く):

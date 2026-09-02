@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { sameProjectPath } from '../project-path.mjs';
 import { openReadOnlyDb } from '../db.mjs';
@@ -13,23 +13,50 @@ export const HANDOFF_CONTEXT_SCHEMA = 'throughline.handoff_context.v1';
 export const HANDOFF_SUPPLEMENT_SCHEMA = 'throughline.handoff_supplement.v1';
 
 export function parseArgs(argv = []) {
-  const baseArgsInvalid =
-    (argv.length !== 3 && argv.length !== 5) ||
-    argv[0] !== '--session' ||
+  if (
+    (argv[0] !== '--session' && argv[0] !== '--project') ||
     typeof argv[1] !== 'string' ||
     argv[1].length === 0 ||
-    argv[2] !== '--json';
-  const supplementArgsValid = argv.length === 3 || (
-    argv[3] === '--supplement-file' &&
-    typeof argv[4] === 'string' &&
-    argv[4].length > 0
-  );
-  if (baseArgsInvalid || !supplementArgsValid) {
+    argv[2] !== '--json' ||
+    argv.length % 2 === 0
+  ) {
     throw new TypeError('usage error');
   }
+
+  let supplementFile = null;
+  let handoffDisclosure = 'visible';
+  const seen = new Set();
+  for (let index = 3; index < argv.length; index += 2) {
+    const option = argv[index];
+    const value = argv[index + 1];
+    if (
+      seen.has(option) ||
+      typeof value !== 'string' ||
+      value.length === 0
+    ) {
+      throw new TypeError('usage error');
+    }
+    seen.add(option);
+    if (option === '--supplement-file') {
+      supplementFile = value;
+    } else if (option === '--disclosure' && ['visible', 'silent'].includes(value)) {
+      handoffDisclosure = value;
+    } else {
+      throw new TypeError('usage error');
+    }
+  }
+  if (
+    (argv[0] === '--project' && supplementFile) ||
+    (supplementFile && seen.has('--disclosure'))
+  ) {
+    throw new TypeError('usage error');
+  }
+
   return {
-    sessionId: argv[1],
-    supplementFile: argv.length === 5 ? argv[4] : null,
+    sessionId: argv[0] === '--session' ? argv[1] : null,
+    projectPath: argv[0] === '--project' ? resolve(argv[1]) : null,
+    supplementFile,
+    handoffDisclosure,
   };
 }
 
@@ -61,13 +88,14 @@ export function renderHandoffSupplement(value, projectPath) {
 export function readHandoffContext(sessionId, {
   dbPath = join(homedir(), '.throughline', 'throughline.db'),
   supplementFile = null,
+  handoffDisclosure = 'visible',
 } = {}) {
   if (!existsSync(dbPath)) return null;
 
   const db = openReadOnlyDb(dbPath);
   try {
     let supplementContext = null;
-    let handoffDisclosure = 'visible';
+    let resolvedHandoffDisclosure = handoffDisclosure;
     if (supplementFile) {
       const row = db.prepare(
         'SELECT project_path FROM sessions WHERE session_id = ?',
@@ -75,14 +103,14 @@ export function readHandoffContext(sessionId, {
       if (!row?.project_path) return null;
       const supplement = JSON.parse(readFileSync(supplementFile, 'utf8'));
       supplementContext = renderHandoffSupplement(supplement, row.project_path);
-      handoffDisclosure = supplement.handoffDisclosure ?? 'visible';
+      resolvedHandoffDisclosure = supplement.handoffDisclosure ?? handoffDisclosure;
     }
 
     const separator = supplementContext ? '\n\n' : '';
     const context = buildBudgetedResumeContext(db, {
       sessionId,
       isInheritance: true,
-      handoffDisclosure,
+      handoffDisclosure: resolvedHandoffDisclosure,
       maxChars: INJECTION_BUDGET_CHARS - (supplementContext?.length ?? 0) - separator.length,
     })?.text ?? null;
     if (!context && !supplementContext) return null;
@@ -94,6 +122,34 @@ export function readHandoffContext(sessionId, {
       throw new RangeError('handoff context exceeds injection budget');
     }
     return combined;
+  } finally {
+    db.close();
+  }
+}
+
+export function readLatestProjectHandoffContext(projectPath, {
+  dbPath = join(homedir(), '.throughline', 'throughline.db'),
+  handoffDisclosure = 'visible',
+} = {}) {
+  if (!existsSync(dbPath)) return null;
+
+  const db = openReadOnlyDb(dbPath);
+  try {
+    const sessions = db.prepare(
+      `SELECT session_id, project_path
+       FROM sessions
+       ORDER BY updated_at DESC`,
+    ).all();
+    for (const session of sessions) {
+      if (!sameProjectPath(session.project_path, projectPath)) continue;
+      const context = buildBudgetedResumeContext(db, {
+        sessionId: session.session_id,
+        isInheritance: true,
+        handoffDisclosure,
+      })?.text ?? null;
+      if (context) return { sessionId: session.session_id, context };
+    }
+    return null;
   } finally {
     db.close();
   }
@@ -122,26 +178,43 @@ export function run(argv = [], {
   stdout = process.stdout,
   stderr = process.stderr,
   readContext = readHandoffContext,
+  readProjectContext = readLatestProjectHandoffContext,
 } = {}) {
   let sessionId;
+  let projectPath;
   let supplementFile;
+  let handoffDisclosure;
   try {
-    ({ sessionId, supplementFile } = parseArgs(argv));
+    ({ sessionId, projectPath, supplementFile, handoffDisclosure } = parseArgs(argv));
   } catch {
     stderr.write(
-      'Usage: throughline handoff-context --session <id> --json [--supplement-file <path>]\n',
+      'Usage: throughline handoff-context (--session <id> | --project <path>) --json [--disclosure visible|silent | --supplement-file <path>]\n',
     );
     return 2;
   }
 
-  let context;
+  let result;
   try {
-    context = readContext(sessionId, { supplementFile });
+    result = projectPath
+      ? readProjectContext(projectPath, { handoffDisclosure })
+      : {
+          sessionId,
+          context: readContext(sessionId, { supplementFile, handoffDisclosure }),
+        };
   } catch {
     stderr.write('Throughline handoff context could not be read.\n');
     return 1;
   }
-  if (!context) {
+  if (!result?.context && projectPath) {
+    stdout.write(`${JSON.stringify({
+      schema: HANDOFF_CONTEXT_SCHEMA,
+      status: 'empty',
+      sessionId: null,
+      context: '',
+    })}\n`);
+    return 0;
+  }
+  if (!result?.context) {
     stderr.write('Throughline handoff context is not available for that session.\n');
     return 1;
   }
@@ -149,8 +222,8 @@ export function run(argv = [], {
   stdout.write(`${JSON.stringify({
     schema: HANDOFF_CONTEXT_SCHEMA,
     status: 'ready',
-    sessionId,
-    context,
+    sessionId: result.sessionId,
+    context: result.context,
   })}\n`);
   return 0;
 }

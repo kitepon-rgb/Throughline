@@ -10,6 +10,15 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.14] — 2026-09-02
+
+### Added
+
+- `handoff-context --project <path> --json`で、指定project内の会話本文を持つ最新sessionを
+  read-onlyで選び、本文がなければ`empty`を返せるようにした。
+- `--disclosure silent`を補足ファイルなしで指定できるようにし、埋込製品が短期記憶だけを
+  基盤案内なしで受け取れるようにした。
+
 ## [0.10.13] — 2026-09-02
 
 ### Fixed
@@ -1430,7 +1439,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.13...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.14...HEAD
+[0.10.14]: https://github.com/kitepon/Throughline/compare/v0.10.13...v0.10.14
 [0.10.13]: https://github.com/kitepon/Throughline/compare/v0.10.12...v0.10.13
 [0.10.12]: https://github.com/kitepon/Throughline/compare/v0.10.11...v0.10.12
 [0.10.11]: https://github.com/kitepon/Throughline/compare/v0.10.10...v0.10.11
