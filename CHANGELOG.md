@@ -17,6 +17,8 @@ shipped to npm but were not individually tagged on GitHub.
 - Windowsでnpmから導入したCodexをThroughlineの新規タスク引き継ぎと診断から起動できるようにした。
   OS境界の起動処理を通し、PowerShell 7経由の標準入出力をUTF-8で受け渡す。
 - Windowsの起動試験を通常のテストと製品CIへ含め、日本語と接続中の要求・応答を検証する。
+- Windowsの起動条件、Codexフックの承認、既存ログの回収を文書化した。
+  自動refreshの古い案内を直し、公開版と開発中の版の参照先を分けた。
 
 ## [0.10.14] — 2026-09-02
 

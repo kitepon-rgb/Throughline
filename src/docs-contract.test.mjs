@@ -48,7 +48,7 @@ test('Markdown-only CI runs the product-owned documentation contract', () => {
   assert.match(result.stdout, /packed Markdown links:/);
 });
 
-test('release candidate version is synchronized across current product documents', () => {
+test('現行文書は版の正本を参照し、変更履歴は候補版と一致する', () => {
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const version = packageJson.version;
   const currentSources = [
@@ -56,7 +56,10 @@ test('release candidate version is synchronized across current product documents
     readFileSync(new URL('../CLAUDE.md', import.meta.url), 'utf8'),
     readFileSync(new URL('../docs/04_public_release_plan.md', import.meta.url), 'utf8'),
   ];
-  for (const source of currentSources) assert.match(source, new RegExp(`\\bv?${version.replaceAll('.', '\\.')}\\b`));
+  for (const source of currentSources) {
+    assert.match(source, /`package\.json`/);
+    assert.match(source, /公開版はnpm|公開版は冒頭のnpm/);
+  }
 
   const changelog = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
   assert.match(changelog, new RegExp(`^## \\[${version.replaceAll('.', '\\.')}\\]`, 'm'));
