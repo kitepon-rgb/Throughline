@@ -54,3 +54,27 @@ registry公開完了と自動記録の継続成功は、今回の実測成果に
 
 npmの認証確認は引き続き401であり、利用者へ `npm.cmd login` を依頼した。
 公開版のインストールはregistry公開後に行う。未公開の候補版を、npm公開済みとは扱わない。
+
+## npm公開と導入の完了
+
+利用者によるnpmログインと公開時の追加認証後、`npm publish --access public` が成功した。
+公開前処理の `verify:release-commit` と `npm test` は成功した。registryへの反映には待ち時間があり、
+再公開せず反映後に次の一致を確認した。
+
+- 公開版: `0.10.15`
+- 公開commit: `d29b43f281afe4fc34f9bd541eda62de291f6494`（mainの祖先）
+- registryのshasum: `745fc839deed7aaeca587cc999c83c2e105a2fa5`（公開時の梱包値と一致）
+- GitHubの `v0.10.15` tagとReleaseは同じ公開commitを対象とする。
+
+利用者設定をtarへ退避した後、正規入口 `throughline self-update --json` で
+`npm install -g throughline@latest`、host設定の再適用、migration、公開PATHの実体確認まで成功した。
+結果は `already_current`、版は `0.10.15`、migrationは `already_current`、診断は `ready`。
+事前導入した候補と版番号が同じでも、この入口はnpmから再インストールする。
+
+registryから別ディレクトリへ同じ版を導入し、隔離した利用者ホームで版確認、
+`install`、`status`、`migrate --json`、`doctor` を実行して成功した。
+実際の利用者環境でも公開CLIの `codex-host-primitive-audit --json` がexit 0となり、
+Windowsで実Codexのschemaを取得できた。元タスクへのrollbackや注入は行っていない。
+
+Codexのフック承認は引き続き0/3であり、自動記録の継続成功は未確認。
+GitHub Actionsはこの確認時点で待機中であり、CI成功とは扱わない。
