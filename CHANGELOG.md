@@ -10,6 +10,14 @@ shipped to npm but were not individually tagged on GitHub.
 
 ## [Unreleased]
 
+## [0.10.15] — 2026-09-06
+
+### Fixed
+
+- Windowsでnpmから導入したCodexをThroughlineの新規タスク引き継ぎと診断から起動できるようにした。
+  OS境界の起動処理を通し、PowerShell 7経由の標準入出力をUTF-8で受け渡す。
+- Windowsの起動試験を通常のテストと製品CIへ含め、日本語と接続中の要求・応答を検証する。
+
 ## [0.10.14] — 2026-09-02
 
 ### Added
@@ -1439,7 +1447,8 @@ two attempts, instrument first instead of patching again.
 
 ---
 
-[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.14...HEAD
+[Unreleased]: https://github.com/kitepon/Throughline/compare/v0.10.15...HEAD
+[0.10.15]: https://github.com/kitepon/Throughline/compare/v0.10.14...v0.10.15
 [0.10.14]: https://github.com/kitepon/Throughline/compare/v0.10.13...v0.10.14
 [0.10.13]: https://github.com/kitepon/Throughline/compare/v0.10.12...v0.10.13
 [0.10.12]: https://github.com/kitepon/Throughline/compare/v0.10.11...v0.10.12

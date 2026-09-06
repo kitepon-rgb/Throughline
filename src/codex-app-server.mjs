@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawnPortable as spawn } from './os/portable-spawn-sync.mjs';
 import { randomUUID } from 'node:crypto';
 
 export const CODEX_APP_SERVER_METHODS = Object.freeze({

@@ -16,6 +16,7 @@ if (scope === 'all') {
     ...readdirSync('src').filter((file) => file.endsWith('.test.mjs')).map((file) => `src/${file}`),
     ...readdirSync('src/cli').filter((file) => file.endsWith('.test.mjs')).map((file) => `src/cli/${file}`),
     ...readdirSync('src/hosts').filter((file) => file.endsWith('.test.mjs')).map((file) => `src/hosts/${file}`),
+    ...readdirSync('src/os').filter((file) => file.endsWith('.test.mjs')).map((file) => `src/os/${file}`),
   ];
   run(process.execPath, ['--import', './src/test-env.mjs', '--test', ...files]);
 } else if (scope === 'selected') {
