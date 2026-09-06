@@ -22,6 +22,11 @@
 
 ## 現状認識
 
+Windowsの通常の新規タスク引き継ぎは実機確認済み。
+起動条件とフック承認は [README](../README.md#codex-windows)、
+当時の検証と未完了事項は [実測記録](https://github.com/kitepon/Throughline/blob/main/evidence/2026-09-06-windows-codex-handoff.md) を参照する。
+この確認は同一タスクのrollbackや自動記録の承認を保証しない。
+
 - Throughline 本体は、ほとんどが hook から起動されるローカル Node.js コードベースで動く。
 - 現行 Claude path は、Claude hooks、slash command、handoff baton、DB、resume context、L1 / L2 / L3 persistence で成立している。
 - 外部モデル的に呼ぶ主要箇所は L2 -> L1 要約。

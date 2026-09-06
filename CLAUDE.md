@@ -11,7 +11,7 @@ release判定まで完結する。dotagentsは工場への配線と統合契約�
 状態や製品寿命を所有・制御しない。runtime-error collectionはThroughline自身の
 `runtime-errors enable|disable --json`と製品所有configが管理し、工場側は公開JSON契約だけを使う。
 
-**現行版は v0.10.15（schema v9）**。Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。現行host契約はREADMEとADR 0021／0022／0023、release gateはdocs/04_public_release_plan.mdを正とする。版ごとの変更・公開commit・CI・npm・tag・smoke履歴はCHANGELOG.mdとdocs/archive/, evidence/に置き、この常時読込正本へ複製しない。
+版番号の正本は `package.json`、公開版はnpm、schemaの正本は `src/db.mjs` の `CURRENT_VERSION` とする。Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。現行host契約はREADMEとADR 0021／0022／0023、release gateはdocs/04_public_release_plan.mdを正とする。版ごとの変更・公開commit・CI・npm・tag・smoke履歴はCHANGELOG.mdとdocs/archive/, evidence/に置き、この常時読込正本へ複製しない。
 
 **設計の核** (v0.4.0 以降 + ADR 0014 二相化、docs/02_clear_auto_handoff_plan.md)
 
@@ -90,7 +90,7 @@ release判定まで完結する。dotagentsは工場への配線と統合契約�
 | ファイル | 役割 |
 |---|---|
 | [src/os/windows-acl.mjs](src/os/windows-acl.mjs) | Windows owner-only ACL の apply / verify (PowerShell) と `isWindows`。runtime-error-store と completed-turn-receipts に二重実装されていたものを集約 (15 秒 timeout・explicit failure 契約は不変) |
-| [src/os/portable-spawn-sync.mjs](src/os/portable-spawn-sync.mjs) | 旧 src/portable-spawn-sync.mjs。Windows の .cmd/.ps1/.mjs shim 解決つき spawnSync |
+| [src/os/portable-spawn-sync.mjs](src/os/portable-spawn-sync.mjs) | 同期・非同期の子プロセス起動。WindowsはnpmのPowerShell起動ファイルを解決し、PowerShell 7で標準入出力をUTF-8へ統一する。macOS/LinuxはNodeの起動APIをそのまま使う |
 | [src/os/macos-terminal.mjs](src/os/macos-terminal.mjs) | macOS Terminal.app 起動 (detached exec 形 / do script 形)。grok-continue と codex-handoff-start が共用 |
 | [src/os/open-url.mjs](src/os/open-url.mjs) | URL を OS 既定 handler で開く (darwin `open` / win32 `start` / linux `xdg-open`) |
 | [src/os/shell.mjs](src/os/shell.mjs) | `shQuote` / `appleString` (POSIX / AppleScript quote の唯一の正本) |

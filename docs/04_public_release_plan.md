@@ -6,7 +6,7 @@
 
 ## 現行状態
 
-- release candidateのpackage版は `0.10.15`。tagとnpmの公開確認はpublish後に行う。
+- 候補の版は `package.json`、公開版はnpm registryを正とする。tagとnpmの一致はpublish後に確認する。
 - Claude Code、Codex、Grok、Cursorをfirst-class hostとして扱う。
 - 現行DB schemaはv9。schemaの正本は [src/db.mjs](../src/db.mjs) の
   `CURRENT_VERSION`、二相handoffの判断は
@@ -58,7 +58,8 @@ Windows PowerShell 5.1へ切り替えない。更新前CLIを再利用せず、�
 
 release候補は次の全条件を満たしたときだけ公開する。
 
-1. `package.json`、`CHANGELOG.md`、README、CLAUDE.mdの現行版・schema・host契約が一致する。
+1. `package.json` と `CHANGELOG.md` の候補版が一致し、READMEとCLAUDE.mdが版の正本を参照する。
+   schema・host契約も実装と一致し、`npm run verify:docs` が全Markdownと梱包内リンクを検査する。
 2. 変更に直結するfocused testがgreenで、その後に `npm test` を最終確認として1回通す。
 3. `npm run verify:release-commit` が、clean working treeかつHEADが`origin`既定ブランチの
    祖先であることを確認する。既定ブランチへ着地していないcommitからpublishしない。
@@ -76,6 +77,8 @@ publish済みでも、上の確認が終わるまではrelease完了としない
 - Claude Code: user/project hooksとslash command。PATH解決型CLIを使う。
 - Codex: UserPromptSubmit / PostToolUse / Stop hook、feature flags、`$throughline` skill。
   絶対Node + installed CLI pathを使う。
+  登録と利用者の承認は別であり、未承認は `doctor --codex` で確認する。
+  Windowsのnpm版Codex起動は `src/os/portable-spawn-sync.mjs` が所有し、PowerShell 7を使う。
 - Grok: `~/.grok/hooks/throughline.json`と`grok-continue`。絶対pathを使う。
   Grok予約環境変数でhostを確定し、camelCase／snake_caseの属性名を同じ境界で正規化する。
 - Cursor: `~/.cursor/hooks.json`へsessionStart / beforeSubmitPrompt / stopをupsertし、

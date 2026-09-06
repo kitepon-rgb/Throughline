@@ -21,7 +21,10 @@
 
 Throughline は agent-neutral な handoff / context compression infrastructure になるべきです。
 
-Claude Code transcript と handoff behavior は守りつつ、Codex primary bridge と `codex-sidecar` 経由の compact context も生成できるようにします。現行の `HandoffRecord` は安定した中間表現だが、保存元はまだ Claude transcript 由来であり、Codex capture を実装して初めて source adapter が Codex 由来になる。
+Claude Code transcript と handoff behavior を維持し、Codex対応はadapterとして追加する。
+Codexの保存元は実装済みの `src/codex-capture.mjs` が読むrolloutであり、
+`codex:<thread_id>` の記憶を保存する。通常の引き継ぎは新規タスクへdeveloper itemを注入する。
+フック承認とWindows起動条件は [README](../README.md#codex-windows) を正とする。
 
 目指す形:
 
@@ -33,7 +36,7 @@ Claude Code transcript と handoff behavior は守りつつ、Codex primary brid
 ## 優先順位
 
 1. Throughline を Codex primary で使えるようにする。Codex primary の L2 -> L1 backend は Codex CLI を本線にする。
-2. Codex で Claude Rewind 相当の context trim を完成させる。2026-05-09 時点では Codex current-thread trim execute / auto-refresh は再有効化済みで、DB memory を必須にし、turn-count mismatch は diagnostics と app-server count 由来の rollback `numTurns` 補正に使う。
+2. Codexの同一タスクのtrimは明示的な診断として維持する。自動refreshは無効であり、通常の `$throughline` は新規タスクへ引き継ぐ。同一タスクでの継続的な使用量削減は保証しない。
 3. そのあと Claude 側の `/rewind` UX / 自動化 surface を詰める。
 
 Claude transcript handling の置き換えから始めないでください。Codex 対応は adapter / bridge / Codex primary entrypoint として追加します。

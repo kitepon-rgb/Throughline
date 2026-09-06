@@ -102,6 +102,11 @@ current-thread rollback
 診断が要る時だけ明示的に `trim --execute --host codex` を使う。既存の
 非 Throughline Codex hook は保持される。
 
+登録後は `throughline doctor --codex` で承認状態も確認する。未承認のフックは
+Codexのフック承認画面で利用者が承認する。Throughlineは承認状態を書き換えない。
+Windowsの起動条件と、記録が見つからない場合の確認手順は
+[Codexの診断と復旧](README.md#codex-windows)を参照。
+
 </details>
 
 ## 他の手段との比較
@@ -464,6 +469,7 @@ DB作成・migration・baton消費・session merge・
 - **Codex CLI ログイン**（既定の L1 要約 backend、`gpt-5.6-luna`）または
   **Claude Max サブスクリプション**（`claude -p` 経由の Haiku fallback）— どちらも API キー不要
 - 対応 OS: **Windows / macOS / Linux**
+- Windowsでnpm版Codexを起動する場合は **PowerShell 7**（`pwsh.exe`）がPATHに必要。
 
 ランタイム依存 **ゼロ**。npm パッケージは純 `.mjs` ファイルのみで構成されています。
 

@@ -72,6 +72,8 @@ DB handoff memory as a developer item, and opens that thread in the selected
 host; ask explicitly for current-thread rollback diagnostics when you want the
 guarded `trim --execute --host codex` surface.
 
+フック登録後の承認とWindowsでの起動条件は、[Codexの診断と復旧](#codex-windows)を参照。
+
 </details>
 
 <details>
@@ -817,7 +819,7 @@ entry to the `tasks` array yourself:
 
 ## Commands
 
-**The current release is v0.10.15.** Throughline supports Claude Code, Codex,
+公開版は冒頭のnpmバッジ、開発中の版は `package.json`、版ごとの変更は [CHANGELOG.md](CHANGELOG.md) を参照。Throughline supports Claude Code, Codex,
 Grok, and Cursor as documented host adapters. The versioned, read-only
 `handoff-context` boundary opens only an existing database and leaves baton
 state, session ownership, and memory rows unchanged. Factory diagnostics,
@@ -1117,6 +1119,24 @@ See [`src/haiku-summarizer.mjs`](src/haiku-summarizer.mjs) for the implementatio
 ---
 
 ## Troubleshooting
+
+<a id="codex-windows"></a>
+
+### Codexの診断と復旧（Windowsを含む）
+
+Windowsでnpm版Codexを使う場合、`codex` とPowerShell 7の `pwsh.exe` がPATHに必要。
+Throughlineはnpmが生成したPowerShell起動ファイルを使い、引数と標準入出力を
+UTF-8で渡す。macOS/Linuxの起動方法は変わらない。
+
+引き継ぐ記録が見つからない場合は、対象プロジェクトで `throughline doctor --codex` を実行する。
+登録済みでも未承認のフックは動作しないため、Codexのフック承認画面で利用者が承認する。
+Throughlineのinstallや更新は、その承認を代行しない。
+
+旧版を使っている場合は、[更新手順](docs/04_public_release_plan.md#製品単独運用)で更新する。
+未承認期間の既存ログを回収する必要がある場合は、対象IDを確定して
+`throughline codex-capture --codex-thread-id <id> --json` を実行する。
+その後、通常のターン終了で記録が増えることを確認する。一度の手動回収を
+自動記録の復旧とは扱わない。現在のタスクへのrollbackや注入は復旧手順に含めない。
 
 ### Claude Code Desktop `/clear`
 
